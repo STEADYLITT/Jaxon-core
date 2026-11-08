@@ -1,0 +1,83 @@
+# Local development stack. Not a production deployment.
+#   cp .env.example .env   # then fill ANTHROPIC_API_KEY
+#   docker compose up --build
+name: jaxon
+
+x-backend-env: &backend-env
+  DATABASE_URL: postgresql+asyncpg://jaxon:${POSTGRES_PASSWORD:-jaxon}@postgres:5432/jaxon
+  REDIS_URL: redis://redis:6379/0
+  ENVIRONMENT: ${ENVIRONMENT:-development}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  DEFAULT_MODEL: ${DEFAULT_MODEL:-claude-opus-5-5}
+  MODEL_EFFORT: ${MODEL_EFFORT:-high}
+  JAXON_API_TOKEN: ${JAXON_API_TOKEN:-}
+  ALLOWED_WEB_DOMAINS: ${ALLOWED_WEB_DOMAINS:-}
+  CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+  GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: jaxon
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-jaxon}
+      POSTGRES_DB: jaxon
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jaxon -d jaxon"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    build: ./backend
+    command: ["alembic", "upgrade", "head"]
+    environment: *backend-env
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  api:
+    build: ./backend
+    environment: *backend-env
+    ports: ["8000:8000"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  worker:
+    build: ./backend
+    command: ["python", "-m", "jaxon.workers.run_worker"]
+    environment:
+      <<: *backend-env
+      WORKER_ID: worker-1
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  web:
+    build: ./frontend
+    environment:
+      JAXON_API_URL: http://api:8000
+      JAXON_API_TOKEN: ${JAXON_API_TOKEN:-}
+    ports: ["3000:3000"]
+    depends_on:
+      api: { condition: service_healthy }
+
+volumes:
+  pgdata:
