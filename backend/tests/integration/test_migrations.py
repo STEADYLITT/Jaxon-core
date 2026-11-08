@@ -7,11 +7,14 @@ pytestmark = pytest.mark.integration
 
 
 def test_downgrade_and_upgrade_roundtrip(migrated_db_url):
-    _alembic("downgrade", "base", url=migrated_db_url)
     sync_url = migrated_db_url.replace("+asyncpg", "+psycopg")
     eng = create_engine(sync_url)
-    assert "agent_runs" not in inspect(eng).get_table_names()
-    _alembic("upgrade", "head", url=migrated_db_url)
+    try:
+        _alembic("downgrade", "base", url=migrated_db_url)
+        assert "agent_runs" not in inspect(eng).get_table_names()
+    finally:
+        # Always restore the schema so later tests are unaffected by a failure here.
+        _alembic("upgrade", "head", url=migrated_db_url)
     tables = set(inspect(eng).get_table_names())
     eng.dispose()
     assert {"agent_definitions", "agent_runs", "run_steps", "memories", "alembic_version"} <= tables
