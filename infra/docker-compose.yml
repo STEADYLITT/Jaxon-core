@@ -1,7 +1,7 @@
 # Local development infrastructure only. Not a deployment.
 # Usage: cp .env.example .env  (set POSTGRES_PASSWORD), then
 #        docker compose -f infra/docker-compose.yml --env-file .env up -d
-# Temporal is added in phase 06; object storage (MinIO) when artifacts land.
+# The task queue lives in Postgres (ADR-016); object storage (MinIO) when artifacts land.
 services:
   postgres:
     image: pgvector/pgvector:pg16
