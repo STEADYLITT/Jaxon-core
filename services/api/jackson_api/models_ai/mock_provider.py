@@ -26,6 +26,7 @@ class MockProvider:
                 "assumptions": ["[MOCK] none: no model was consulted"],
                 "risks": ["[MOCK] this output is not real analysis"],
                 "evidence_needed": [],
+                "memory_used": [],
             })
         else:
             text = "[MOCK] No AI model is connected."

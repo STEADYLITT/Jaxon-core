@@ -43,6 +43,7 @@ from .governance import (
     reserve,
     settle,
 )
+from .memory import citation, recall, write_memory
 from .models import AuditEvent, Business, ModelUsage, RunEvent, Task, WorkflowRun
 from .models_ai import ModelRequest, ModelResponse, ModelRouter
 from .policy import Action
@@ -85,6 +86,10 @@ class TaskContext:
     # budget, routes to a provider (MOCK if none is configured) and meters usage.
     call_model: Callable[[str, "ModelRequest"], "ModelResponse"] = None  # type: ignore
     business: dict | None = None  # name/kind/autonomy of the run's business, if any
+    # Phase 09: memory. Recall returns active, tenant-scope records with citations;
+    # remember records provenance (this run/task) automatically.
+    recall: Callable[..., list[dict]] = lambda query, limit=5: []
+    remember: Callable[..., dict] = None  # type: ignore
     constraints: list = field(default_factory=list)
     success_criteria: list = field(default_factory=list)
 
@@ -242,6 +247,8 @@ class Worker:
                 reserve_budget=lambda cents, desc: self._reserve(task_id, cents, desc),
                 settle_spend=lambda rid, cents, desc: self._settle(task_id, rid, cents, desc),
                 call_model=lambda profile, req: self._call_model(task_id, profile, req),
+                recall=lambda query, limit=5: self._recall(task_id, query, limit),
+                remember=lambda **kw: self._remember(task_id, **kw),
                 business=({"name": biz.name, "kind": biz.kind,
                            "autonomy_level": biz.autonomy_level} if biz else None),
                 constraints=list(run.constraints or []),
@@ -329,6 +336,31 @@ class Worker:
                 "route": route.reason}))
             db.commit()
         return resp
+
+    def _recall(self, task_id: uuid.UUID, query: str, limit: int) -> list[dict]:
+        with self.maker() as db:
+            task, run = self._locked(db, task_id)
+            rows = recall(db, task.tenant_id, query, business_id=run.business_id, limit=limit)
+            out = [{"memory_id": str(r.id), "kind": r.kind, "epistemic": r.epistemic,
+                    "content": r.content, "citation": citation(r)} for r in rows]
+            db.rollback()
+            return out
+
+    def _remember(self, task_id: uuid.UUID, *, kind: str, epistemic: str, content: str,
+                  key: str | None = None, impact: str = "low",
+                  confidence: float = 0.7) -> dict:
+        with self.maker() as db:
+            task, run = self._locked(db, task_id)
+            rec = write_memory(
+                db, tenant_id=task.tenant_id, business_id=run.business_id, kind=kind,
+                epistemic=epistemic, content=content, key=key, impact=impact,
+                confidence=confidence, source_type="run",
+                source_ref=f"{task.run_id}:{task.sequence}",
+                source_detail={"run_id": str(task.run_id), "task_id": str(task.id)},
+                agent=self.worker_id)
+            _event(db, task, "memory.written", memory_id=str(rec.id), status=rec.status)
+            db.commit()
+            return {"memory_id": str(rec.id), "status": rec.status}
 
     def _record_waiting(self, task_id: uuid.UUID, exc: ApprovalRequired) -> None:
         with self.maker() as db:

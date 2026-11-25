@@ -224,7 +224,8 @@ def test_plan_with_claude_records_cost_and_sends_context(
     Worker(maker, router=router, retry_base_seconds=0).run_once()
     run, tasks = run_state(owner_db, run_id)
     assert run.status == "succeeded"
-    assert tasks[0].output["plan"] == PLAN and tasks[0].output["mode"] == "live"
+    assert tasks[0].output["plan"] == {**PLAN, "memory_used": []}
+    assert tasks[0].output["mode"] == "live"
     body = rec.last_json
     assert "Jackson Vale" in body["system"]
     assert "Find a product for the Shopify store" in body["messages"][0]["content"]
