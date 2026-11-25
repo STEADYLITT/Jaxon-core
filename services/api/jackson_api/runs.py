@@ -5,8 +5,8 @@ Rules:
   returns the original run; the same key with a different payload is a conflict.
 - Run state changes only through `transition()`; terminal states never change.
 - A canceled (or otherwise finished) run never receives new tasks.
-- EXECUTE is refused until the policy engine exists (phase 07). With no
-  ToolGrants defined, nothing is "already within granted scope" (vol. 04).
+- EXECUTE must name a business; its autonomy level is the granted scope, and every
+  action in the run passes the policy engine (phase 07, governance.py).
 - Nothing here executes work. Workers pick up queued, unpaused runs in phase 06.
 """
 
@@ -25,7 +25,7 @@ from .models import AuditEvent, Business, RunEvent, Task, WorkflowRun
 
 RUN_CREATING = frozenset({
     CommandType.PLAN, CommandType.SIMULATE, CommandType.REPORT,
-    CommandType.OPTIMIZE, CommandType.BUILD,
+    CommandType.OPTIMIZE, CommandType.BUILD, CommandType.EXECUTE,
 })
 CONTROL = frozenset({CommandType.PAUSE, CommandType.RESUME, CommandType.STOP})
 
@@ -98,11 +98,12 @@ def create_run(
 ) -> tuple[WorkflowRun, bool]:
     """Returns (run, created). created=False means an idempotent replay."""
     ctype = CommandType(payload["type"])
-    if ctype == CommandType.EXECUTE:
-        raise CommandError(
-            422, "execute_not_authorized",
-            "EXECUTE needs granted scope; the policy engine and approvals arrive in phase 07",
-        )
+    if ctype == CommandType.EXECUTE and payload.get("business_id") is None:
+        # Vol. 04: EXECUTE only covers actions already inside granted scope. Scope is the
+        # business's autonomy level, so EXECUTE must name a business. Every action inside
+        # the run still goes through the policy engine (phase 07).
+        raise CommandError(422, "execute_needs_business",
+                           "EXECUTE must name a business_id (its autonomy level sets the scope)")
     if ctype not in RUN_CREATING:
         raise CommandError(422, "not_a_run_command", f"{ctype} controls an existing run")
     if not (payload.get("objective") or "").strip():

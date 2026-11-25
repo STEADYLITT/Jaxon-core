@@ -2,7 +2,7 @@
 
 Date: 2026-11-25 · Repo: `STEADYLITT/Jaxon-core` · Inspected at commit `cb722b6` (before any changes in this PR)
 Scope: phase 01 (inventory + gap report) delivered in full; phase 02 (scaffold + CI) delivered as a minimal, safe skeleton.
-Update: phases 03–04 delivered — see [PHASE_03_04_REPORT.md](PHASE_03_04_REPORT.md); phase 05 — see [PHASE_05_REPORT.md](PHASE_05_REPORT.md); phase 06 — see [PHASE_06_REPORT.md](PHASE_06_REPORT.md). Status rows below are kept current.
+Update: phases 03–04 delivered — see [PHASE_03_04_REPORT.md](PHASE_03_04_REPORT.md); phase 05 — see [PHASE_05_REPORT.md](PHASE_05_REPORT.md); phase 06 — see [PHASE_06_REPORT.md](PHASE_06_REPORT.md); phase 07 — see [PHASE_07_REPORT.md](PHASE_07_REPORT.md). Status rows below are kept current.
 
 ---
 
@@ -64,7 +64,7 @@ Legend: ✅ done · 🟡 scaffolded (shape only, no behaviour) · ❌ missing
 | Auth + tenant isolation (02/05) | | ✅ hosted-provider JWT + API scoping + Postgres RLS (phase 03) | 03 |
 | PostgreSQL + pgvector, Redis (02) | | 🟡 Postgres schema for 5 entities; pgvector extension and Redis unused yet | 04 |
 | Durable workflows (02) | retries, idempotency, DLQ, leases | ✅ Postgres queue with leases, retries, dead letters, quotas (ADR-016) | 06 |
-| Policy, approvals, budget ledger (04) | autonomy 0–3, approval-required actions, reservations | 🟡 autonomy levels defined; no enforcement | 07 |
+| Policy, approvals, budget ledger (04) | autonomy 0–3, approval-required actions, reservations | ✅ policy engine, approvals inbox, append-only ledger with locked reservations (ADR-017) | 07 |
 | Model adapters (01) | Claude, OpenAI, local | ❌ none connected | 08 |
 | Memory with provenance (01) | fact/inference/hypothesis, export/delete | ❌ | 09 |
 | Tool registry + sandbox (02) | schema, perms, cost, timeout, idempotency, verification | ❌ | 10 |
@@ -80,10 +80,10 @@ Legend: ✅ done · 🟡 scaffolded (shape only, no behaviour) · ❌ missing
 | Acceptance test | Status |
 |---|---|
 | Cross-tenant access denied | ✅ phase 03 — `services/api/tests/test_tenancy.py` |
-| Unapproved spend blocked | ❌ phase 07 |
+| Unapproved spend blocked | ✅ phase 07 (`test_governance.py`) |
 | Repeated request does not duplicate external action | ✅ command layer, phase 05 (`test_runs.py`); connectors must forward keys later |
 | Failed worker resumes safely | ✅ phase 06 (`test_failed_worker_resumes_safely`) |
-| Prompt injection cannot elevate grants | ❌ phase 07/10 |
+| Prompt injection cannot elevate grants | ✅ phase 07 for policy/approvals (`test_prompt_injection_cannot_elevate_grants`); tool-level grants in phase 10 |
 | Agent cannot spawn beyond quota | ❌ phase 12 |
 | Cancellation prevents new tasks | ✅ phase 05 (`test_cancellation_prevents_new_tasks`) |
 | Secrets absent from logs | 🟡 secrets absent from **repo** is tested now; log redaction in phase 10 |
@@ -122,6 +122,8 @@ Legend: ✅ done · 🟡 scaffolded (shape only, no behaviour) · ❌ missing
 **ADR-015 — Commands are idempotent and tenant-scoped, and EXECUTE stays locked until policy exists.** Commands live at `/tenants/{id}/commands`, not the spec's bare `/commands`, so the tenant is always explicit and ADR-013 applies. Every command needs an `idempotency_key`. Same key with the same body returns the original run (200, `Idempotent-Replay: true`). Same key with a different body returns 409. A unique constraint backs this up under concurrency. EXECUTE returns 422 until phase 07, because with no ToolGrants nothing is "already within granted scope" (vol. 04). PAUSE/RESUME/STOP are idempotent by state. The spec's task states don't include "paused", so pausing is a `paused` flag that workers must respect. Run history (`run_events`) is append-only, and its ids double as SSE event ids.
 
 **ADR-016 — Durable execution uses a Postgres-backed queue, not Temporal (supersedes ADR-006).** Tasks are claimed with `SELECT … FOR UPDATE SKIP LOCKED` and leases, with heartbeat, exponential-backoff retries, dead-lettering and per-tenant quotas. This keeps one source of truth, transactional consistency between queue state and run state, and no extra infrastructure. The worker runs as role `jackson_worker`, which has cross-tenant access to queue tables only, no deletes, append-only history, and no users/memberships. Revisit Temporal if we need multi-week timers, complex sagas, or more than roughly 50 claims per second.
+
+**ADR-017 — Policy decides from database facts only; approvals and money are DB-enforced.** `policy.evaluate()` is pure, and its inputs (business autonomy level, remaining run budget, an approval matching the exact action fingerprint) are loaded from Postgres, never from model or tool text. Restricted categories always need approval. `live_trade` is always denied (ADR-011). Spend runs autonomously only at level 3 and within budget. Approvals can be decided only through the API by owner/admin; the worker role has INSERT but no UPDATE on approvals, and no UPDATE on businesses or the ledger. Budget reservations lock the run row, so concurrent reservations serialize. EXECUTE is accepted when it names a business, and every action inside still passes policy (this updates ADR-015).
 
 **ADR-011 — Trading is simulation-only.** APEX-7 and any trading work are backtest/paper-trade only (vol. 00, vol. 03). No live-trade connector will be built without a new ADR and explicit owner approval.
 
