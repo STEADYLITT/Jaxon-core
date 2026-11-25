@@ -8,7 +8,7 @@ Update: phases 03–04 delivered — see [PHASE_03_04_REPORT.md](PHASE_03_04_REP
 
 ## 0. Plain-English summary (for Steady)
 
-- **The repo was basically empty.** It had a one-line README and a list of two Python libraries. No working code existed, so nothing was overwritten.
+- **`main` was basically empty**, so nothing was overwritten. **Correction:** an unmerged pull request (#1, Nov 8) holds a large earlier build: a Claude connection, skills, agents, memory and a dashboard. It wasn't caught in the first pass. It will be reused piece by piece (see the correction in §1).
 - **Jackson v1 still lives in Base44 (Steady Growth OS).** This repo is where the real, long-term version gets built. Nothing in Growth OS was touched or read in this phase.
 - **What I added:** the spec, this report, and an empty-but-correct skeleton: folders laid out per the spec, a tiny API that only answers "I'm alive", shared definitions (task states, commands, autonomy levels, entity names) in both languages, automatic tests, and a CI pipeline that runs those tests on every pull request.
 - **Nothing is connected to the outside world.** No Shopify, Whop, OpenAI/Claude, Apify, ElevenLabs, FAL or Upload-Post calls exist. No keys were used or needed. No deployment exists.
@@ -24,12 +24,30 @@ Update: phases 03–04 delivered — see [PHASE_03_04_REPORT.md](PHASE_03_04_REP
 | Branches | `main`, plus this working branch |
 | `README.md` | 1 line: "core brain & memory system for Jaxon Vale — AI partner" |
 | `requirements.txt` | `flask`, `requests` — unpinned; **no code imports them** |
-| Source code | none |
+| Source code | none on `main` — **but see the PR #1 correction below** |
 | Tests / CI | none |
 | Secrets in history | none found (2 files, both inspected) |
 | Repo name | Spec says `jaxon-os`; actual repo is `Jaxon-core`. Treated as the same project (ADR-001). |
 
 **Outside this repo (reported by owner, not inspected):** Jackson v1 in Base44 "Steady Growth OS" — CEO chat, daily briefing, Decision Queue, Opportunity Board, Agent Factory (AgentSpecs), Second Brain (MemoryRecords), run log, and 6 agents: Lead-Gen (Apify), Marketing (Upload-Post), Voice (ElevenLabs), Ad Creation (FAL), Service & Follow-up, Social Trends.
+
+### Correction (found after first draft): unmerged PR #1 holds substantial earlier work
+
+The first inventory only inspected `main`. Branch `claude/modest-babbage-6qy5nq` (PR #1, 2026-11-08, unmerged, ~12k lines, 111 files) contains a working "Phase 1: JAXON OS core platform", built to an earlier plan. Its own BUILD_STATUS reports 81 tests passing in its sandbox. **On GitHub Actions its backend test job fails:** integration tests hit `relation "run_steps" does not exist` during table cleanup. The likely cause is the migration round-trip test leaving the DB without tables; this has not been confirmed.
+
+| PR #1 component | Spec phase it covers | Gaps vs. spec | Plan |
+|---|---|---|---|
+| FastAPI app, JSON errors, request IDs, structlog | 02/05 | different layout (`backend/` vs `services/api/`) | port error/logging middleware in phase 05 |
+| Single shared API token | 03 | no users, tenants or isolation | **superseded** by ADR-012/013 |
+| Tables: agent_definitions, agent_runs, run_steps, memories | 04/05/09/12 | no `tenant_id`, no RLS | re-create under tenant scope when ported |
+| Runs API + Redis queue + crash-recovering worker | 05/06 | spec says Temporal (ADR-006); no cancel, approvals or budget | reuse as interim runner in 05; Temporal decision at 06 |
+| Anthropic provider (official SDK, mocked transport; never called live) | 08 | single provider; no OpenAI/local | port in 08 behind the adapter interface |
+| Memory with pgvector + hashing embedder | 09 | no provenance or fact/inference/hypothesis kind | port in 09 and add provenance |
+| Skill registry, `@skill`, timeouts, approval flag, allowlisted web fetch, Playwright skill | 10/11 | no per-tenant ToolGrant, cost or idempotency metadata | port in 10 |
+| Agent loop + 3 built-in specialists, DB-backed agents | 12 | no quotas, depth caps or versioned AgentSpec | port in 12 |
+| Next.js 15 dashboard (runs, agents, skills, health) | 19 (early) | no login, approvals inbox or global stop | becomes `apps/console` once Clerk is wired |
+
+**Decision (ADR-014):** keep this PR's spec-ordered foundation (auth, tenancy, RLS) as the base. Port PR #1's proven pieces into it phase by phase, each gaining `tenant_id`, RLS and tests. Do not retrofit tenancy onto PR #1 directly: every table and endpoint would change anyway, and its layout differs from vol. 06. PR #1 stays open as the source to port from; after merging this PR, the owner can close it as superseded.
 
 ## 2. Gap analysis vs. spec
 
