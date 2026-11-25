@@ -18,20 +18,27 @@ Guarantees:
 Run:  WORKER_DATABASE_URL=... python -m jackson_api.worker
 """
 
+import hashlib
+import json
 import logging
 import os
 import signal
 import socket
 import threading
+import time
 import traceback
 import uuid
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeout
 from dataclasses import dataclass, field, replace
 from datetime import timedelta
 
-from sqlalchemy import func, select
+from pydantic import ValidationError
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from . import tools
 from .contracts import TERMINAL_TASK_STATES, TaskState
 from .db import make_sessionmaker
 from .governance import (
@@ -44,10 +51,20 @@ from .governance import (
     settle,
 )
 from .memory import citation, recall, write_memory
-from .models import AuditEvent, Business, ModelUsage, RunEvent, Task, WorkflowRun
+from .models import (
+    AuditEvent,
+    Business,
+    ModelUsage,
+    RunEvent,
+    Task,
+    ToolCall,
+    ToolGrant,
+    WorkflowRun,
+)
 from .models_ai import ModelRequest, ModelResponse, ModelRouter
-from .policy import Action
+from .policy import Action, Category
 from .runs import add_task, transition
+from .tools.redact import redact
 from .worker_errors import NonRetryableError
 
 __all__ = ["ApprovalRequired", "NonRetryableError", "PolicyDenied", "TaskContext", "TaskResult",
@@ -90,6 +107,9 @@ class TaskContext:
     # remember records provenance (this run/task) automatically.
     recall: Callable[..., list[dict]] = lambda query, limit=5: []
     remember: Callable[..., dict] = None  # type: ignore
+    # Phase 10: the only way to use a tool (grant, schema, policy, budget, idempotency,
+    # timeout, redaction, logging). Returns {"output": ..., "untrusted": True, ...}.
+    use_tool: Callable[[str, dict], dict] = None  # type: ignore
     constraints: list = field(default_factory=list)
     success_criteria: list = field(default_factory=list)
 
@@ -104,6 +124,10 @@ def default_handlers() -> dict[str, Handler]:
 
 
 class ModelBudgetExhausted(NonRetryableError):
+    pass
+
+
+class ToolNotGranted(NonRetryableError):
     pass
 
 
@@ -249,6 +273,7 @@ class Worker:
                 call_model=lambda profile, req: self._call_model(task_id, profile, req),
                 recall=lambda query, limit=5: self._recall(task_id, query, limit),
                 remember=lambda **kw: self._remember(task_id, **kw),
+                use_tool=lambda name, args: self._use_tool(task_id, name, args),
                 business=({"name": biz.name, "kind": biz.kind,
                            "autonomy_level": biz.autonomy_level} if biz else None),
                 constraints=list(run.constraints or []),
@@ -361,6 +386,78 @@ class Worker:
             _event(db, task, "memory.written", memory_id=str(rec.id), status=rec.status)
             db.commit()
             return {"memory_id": str(rec.id), "status": rec.status}
+
+    def _use_tool(self, task_id: uuid.UUID, name: str, args: dict) -> dict:
+        spec = tools.get(name)
+        if spec is None:
+            raise NonRetryableError(f"unknown tool '{name}'")
+        try:
+            parsed = spec.input_model.model_validate(args)
+        except ValidationError as e:
+            raise NonRetryableError(f"invalid input for {name}: {e.errors()[:3]}") from None
+        digest = hashlib.sha256(json.dumps(parsed.model_dump(mode="json"), sort_keys=True)
+                                .encode()).hexdigest()[:24]
+        with self.maker() as db:
+            task, run = self._locked(db, task_id)
+            key = f"{task.run_id}:{task.sequence}:{name}:{digest}"
+            done = db.scalar(select(ToolCall).where(
+                ToolCall.tenant_id == task.tenant_id, ToolCall.idempotency_key == key,
+                ToolCall.status == "succeeded"))
+            if done is not None:  # retried task: never repeat the side effect
+                db.rollback()
+                return {"tool": name, "mode": done.mode, "untrusted": True, "cached": True,
+                        "output": done.output}
+            grant = db.scalar(select(ToolGrant).where(
+                ToolGrant.tenant_id == task.tenant_id, ToolGrant.tool_name == name,
+                ToolGrant.status == "active",
+                or_(ToolGrant.business_id == run.business_id, ToolGrant.business_id.is_(None)))
+                .order_by(ToolGrant.business_id.is_(None)))  # business-specific grant first
+            if grant is None:
+                _event(db, task, "tool.denied", tool=name, reason="no active grant")
+                db.commit()
+                raise ToolNotGranted(f"tool '{name}' is not granted for this business")
+            config = dict(grant.config or {})
+            try:
+                if spec.cost_cents > 0:
+                    reserve(db, task, spec.cost_cents, f"tool {name}", f"{key}:reserve")
+                if spec.category != Category.SPEND:
+                    enforce(db, task, run, Action(spec.category, f"tool {name}: {digest}",
+                                                  spec.cost_cents))
+            finally:
+                db.commit()
+            tenant_id, run_id = task.tenant_id, task.run_id
+        started = time.monotonic()
+        error, output = None, None
+        try:
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                fut = pool.submit(spec.run, parsed, tools.ToolEnv(config, key))
+                output = fut.result(timeout=spec.timeout_s)
+        except FutureTimeout:
+            error = NonRetryableError(f"tool {name} timed out after {spec.timeout_s}s")
+        except Exception as exc:  # noqa: BLE001 - recorded below, then re-raised
+            error = exc
+        ms = int((time.monotonic() - started) * 1000)
+        if output is not None:
+            text_out = json.dumps(output, default=str)
+            if len(text_out) > spec.max_output_chars:
+                output = {"truncated": True, "text": text_out[:spec.max_output_chars]}
+        safe_in, safe_out = redact(parsed.model_dump(mode="json")), redact(output)
+        with self.maker() as db:
+            db.add(ToolCall(
+                tenant_id=tenant_id, run_id=run_id, task_id=task_id, tool_name=name,
+                mode=spec.mode, input=safe_in, output=safe_out,
+                status="failed" if error else "succeeded",
+                error=redact(f"{type(error).__name__}: {error}")[:2000] if error else None,
+                duration_ms=ms,
+                idempotency_key=key if not error else f"{key}:failed:{uuid.uuid4().hex[:8]}"))
+            db.add(RunEvent(tenant_id=tenant_id, run_id=run_id, type="tool.called", data={
+                "task_id": str(task_id), "tool": name, "mode": spec.mode,
+                "status": "failed" if error else "succeeded", "duration_ms": ms}))
+            db.commit()
+        if error:
+            raise error
+        return {"tool": name, "mode": spec.mode, "untrusted": True, "cached": False,
+                "output": safe_out}
 
     def _record_waiting(self, task_id: uuid.UUID, exc: ApprovalRequired) -> None:
         with self.maker() as db:

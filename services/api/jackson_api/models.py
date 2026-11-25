@@ -368,3 +368,58 @@ class MemoryRecord(Base):
     retain_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = _updated()
+
+
+# --- Phase 10: tool registry grants and call log -----------------------------------------
+
+
+class ToolGrant(Base):
+    """Owner permission for a tool, tenant-wide (business_id NULL) or for one business.
+
+    Only the API (owner) writes grants; agents can read them but never create one.
+    """
+
+    __tablename__ = "tool_grants"
+    __table_args__ = (
+        CheckConstraint("status IN ('active','revoked')", name="ck_tool_grant_status"),
+        Index("ix_tool_grants_lookup", "tenant_id", "tool_name", "status"),
+    )
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
+    business_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("businesses.id"))
+    tool_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
+    config: Mapped[dict] = mapped_column(
+        JSON().with_variant(JSONB(), "postgresql"), nullable=False, default=dict
+    )  # e.g. {"allowed_domains": [...]} for web.fetch
+    granted_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = _created()
+    updated_at: Mapped[datetime] = _updated()
+
+
+class ToolCall(Base):
+    """Append-only log of every tool call. Inputs/outputs are stored redacted."""
+
+    __tablename__ = "tool_calls"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "idempotency_key"),
+        CheckConstraint("status IN ('succeeded','failed')", name="ck_tool_call_status"),
+    )
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workflow_runs.id"), nullable=False, index=True
+    )
+    task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tasks.id"), nullable=False)
+    tool_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    mode: Mapped[str] = mapped_column(String(16), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    input: Mapped[dict] = mapped_column(JSON().with_variant(JSONB(), "postgresql"),
+                                        nullable=False, default=dict)
+    output: Mapped[dict | None] = mapped_column(JSON().with_variant(JSONB(), "postgresql"))
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    error: Mapped[str | None] = mapped_column(Text)
+    duration_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = _created()
