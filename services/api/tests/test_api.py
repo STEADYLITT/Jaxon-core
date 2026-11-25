@@ -11,7 +11,7 @@ def test_health_ok_and_honest_about_integrations():
     assert r.status_code == 200
     body = r.json()
     assert body["status"] == "ok"
-    assert body["phase"] == "08-model-adapters"
+    assert body["phase"] == "09-memory-provenance"
     assert "none" in body["integrations"]
 
 

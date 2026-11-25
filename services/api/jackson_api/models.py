@@ -17,6 +17,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -25,6 +26,7 @@ from sqlalchemy import (
     UniqueConstraint,
     Uuid,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -311,3 +313,58 @@ class ModelUsage(Base):
     cost_usd_micros: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     request_id: Mapped[str | None] = mapped_column(String(200))
     created_at: Mapped[datetime] = _created()
+
+
+# --- Phase 09: memory with provenance --------------------------------------------------
+
+MEMORY_KINDS = ("preference", "business_fact", "decision", "project_state", "tool_result",
+                "lesson")
+EPISTEMIC = ("fact", "inference", "hypothesis")
+MEMORY_SCOPES = ("tenant", "owner_only")
+MEMORY_STATUSES = ("active", "pending_confirmation", "superseded", "rejected")
+
+
+class MemoryRecord(Base):
+    """Spec vol. 01 "Memory": provenance, timestamps, access scope, retention, epistemic status.
+
+    Corrections never edit in place: a new version supersedes the old one, so the history
+    survives. Deletion removes a record and all its versions for real.
+    """
+
+    __tablename__ = "memory_records"
+    __table_args__ = (
+        CheckConstraint(f"kind IN {MEMORY_KINDS}", name="ck_memory_kind"),
+        CheckConstraint(f"epistemic IN {EPISTEMIC}", name="ck_memory_epistemic"),
+        CheckConstraint(f"access_scope IN {MEMORY_SCOPES}", name="ck_memory_scope"),
+        CheckConstraint(f"status IN {MEMORY_STATUSES}", name="ck_memory_status"),
+        CheckConstraint("impact IN ('low','high')", name="ck_memory_impact"),
+        CheckConstraint("confidence >= 0 AND confidence <= 1", name="ck_memory_confidence"),
+        Index("ix_memory_fts", text("to_tsvector('english', content)"), postgresql_using="gin"),
+        Index("ix_memory_key", "tenant_id", "key"),
+    )
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    business_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("businesses.id"))
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    epistemic: Mapped[str] = mapped_column(String(16), nullable=False)
+    key: Mapped[str | None] = mapped_column(String(200))  # subject, for conflict detection
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    impact: Mapped[str] = mapped_column(String(8), nullable=False, default="low")
+    confidence: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+    source_type: Mapped[str] = mapped_column(String(32), nullable=False)  # owner|run|tool|import
+    source_ref: Mapped[str | None] = mapped_column(String(500))  # run/task id, URL, import id
+    source_detail: Mapped[dict] = mapped_column(
+        JSON().with_variant(JSONB(), "postgresql"), nullable=False, default=dict
+    )
+    access_scope: Mapped[str] = mapped_column(String(16), nullable=False, default="tenant")
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    supersedes_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("memory_records.id", ondelete="SET NULL")
+    )
+    created_by_user: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    created_by_agent: Mapped[str | None] = mapped_column(String(200))
+    retain_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = _created()
+    updated_at: Mapped[datetime] = _updated()
