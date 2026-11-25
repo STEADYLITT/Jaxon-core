@@ -282,3 +282,32 @@ class LedgerEntry(Base):
     description: Mapped[str] = mapped_column(Text, nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String(200), nullable=False)
     created_at: Mapped[datetime] = _created()
+
+
+# --- Phase 08: model usage metering ---------------------------------------------------
+
+
+class ModelUsage(Base):
+    """One row per model call. Append-only. Cost in micro-dollars (1e-6 USD)."""
+
+    __tablename__ = "model_usage"
+    __table_args__ = (
+        CheckConstraint("mode IN ('live','mock')", name="ck_model_usage_mode"),
+    )
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workflow_runs.id"), nullable=False, index=True
+    )
+    task_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("tasks.id"))
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    model: Mapped[str] = mapped_column(String(100), nullable=False)
+    mode: Mapped[str] = mapped_column(String(8), nullable=False)
+    profile: Mapped[str] = mapped_column(String(32), nullable=False)
+    input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cost_usd_micros: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    request_id: Mapped[str | None] = mapped_column(String(200))
+    created_at: Mapped[datetime] = _created()

@@ -2,7 +2,7 @@
 
 Date: 2026-11-25 · Repo: `STEADYLITT/Jaxon-core` · Inspected at commit `cb722b6` (before any changes in this PR)
 Scope: phase 01 (inventory + gap report) delivered in full; phase 02 (scaffold + CI) delivered as a minimal, safe skeleton.
-Update: phases 03–04 delivered — see [PHASE_03_04_REPORT.md](PHASE_03_04_REPORT.md); phase 05 — see [PHASE_05_REPORT.md](PHASE_05_REPORT.md); phase 06 — see [PHASE_06_REPORT.md](PHASE_06_REPORT.md); phase 07 — see [PHASE_07_REPORT.md](PHASE_07_REPORT.md). Status rows below are kept current.
+Update: phases 03–04 delivered — see [PHASE_03_04_REPORT.md](PHASE_03_04_REPORT.md); phase 05 — see [PHASE_05_REPORT.md](PHASE_05_REPORT.md); phase 06 — see [PHASE_06_REPORT.md](PHASE_06_REPORT.md); phase 07 — see [PHASE_07_REPORT.md](PHASE_07_REPORT.md); phase 08 — see [PHASE_08_REPORT.md](PHASE_08_REPORT.md). Status rows below are kept current.
 
 ---
 
@@ -65,7 +65,7 @@ Legend: ✅ done · 🟡 scaffolded (shape only, no behaviour) · ❌ missing
 | PostgreSQL + pgvector, Redis (02) | | 🟡 Postgres schema for 5 entities; pgvector extension and Redis unused yet | 04 |
 | Durable workflows (02) | retries, idempotency, DLQ, leases | ✅ Postgres queue with leases, retries, dead letters, quotas (ADR-016) | 06 |
 | Policy, approvals, budget ledger (04) | autonomy 0–3, approval-required actions, reservations | ✅ policy engine, approvals inbox, append-only ledger with locked reservations (ADR-017) | 07 |
-| Model adapters (01) | Claude, OpenAI, local | ❌ none connected | 08 |
+| Model adapters (01) | Claude, OpenAI, local | ✅ adapters + router + metering; labeled MOCK until keys exist; no live call verified (ADR-018) | 08 |
 | Memory with provenance (01) | fact/inference/hypothesis, export/delete | ❌ | 09 |
 | Tool registry + sandbox (02) | schema, perms, cost, timeout, idempotency, verification | ❌ | 10 |
 | Visual browser session (02) | streamed screenshots, take over, redaction | ❌ | 11 |
@@ -86,7 +86,7 @@ Legend: ✅ done · 🟡 scaffolded (shape only, no behaviour) · ❌ missing
 | Prompt injection cannot elevate grants | ✅ phase 07 for policy/approvals (`test_prompt_injection_cannot_elevate_grants`); tool-level grants in phase 10 |
 | Agent cannot spawn beyond quota | ❌ phase 12 |
 | Cancellation prevents new tasks | ✅ phase 05 (`test_cancellation_prevents_new_tasks`) |
-| Secrets absent from logs | 🟡 secrets absent from **repo** is tested now; log redaction in phase 10 |
+| Secrets absent from logs | 🟡 repo scan (02) + stored data after a model call (08, `test_secrets_never_stored`); tool-output redaction in phase 10 |
 | Browser session visible | ❌ phase 11 |
 | Memory cites source | ❌ phase 09 |
 | Sandbox Shopify draft verified | ❌ phase 15 |
@@ -125,6 +125,8 @@ Legend: ✅ done · 🟡 scaffolded (shape only, no behaviour) · ❌ missing
 
 **ADR-017 — Policy decides from database facts only; approvals and money are DB-enforced.** `policy.evaluate()` is pure, and its inputs (business autonomy level, remaining run budget, an approval matching the exact action fingerprint) are loaded from Postgres, never from model or tool text. Restricted categories always need approval. `live_trade` is always denied (ADR-011). Spend runs autonomously only at level 3 and within budget. Approvals can be decided only through the API by owner/admin; the worker role has INSERT but no UPDATE on approvals, and no UPDATE on businesses or the ledger. Budget reservations lock the run row, so concurrent reservations serialize. EXECUTE is accepted when it names a business, and every action inside still passes policy (this updates ADR-015).
 
+**ADR-018 — Model access goes through one metered gateway, Claude Opus 5.5 by default, and MOCK when nothing is configured.** Handlers reach models only via `ctx.call_model(profile, request)`, which checks the tenant's monthly model budget (`MODEL_MONTHLY_BUDGET_USD`, default 20; a soft cap that can overshoot by at most one call), routes by profile, calls, and writes an append-only `model_usage` row plus a `model.called` event. Default routes keep every profile on `claude-opus-5-5` and vary `output_config.effort` (planning high, standard medium, fast low). Cheaper models are an owner choice via env. Claude calls use server-side refusal fallback and check `stop_reason == "refusal"`. OpenAI and local OpenAI-compatible providers stay off until model name (and, for OpenAI, prices) are configured. No model name is guessed. Model spend is operating cost metered separately from the phase 07 business ledger, so it doesn't need per-call approval.
+
 **ADR-011 — Trading is simulation-only.** APEX-7 and any trading work are backtest/paper-trade only (vol. 00, vol. 03). No live-trade connector will be built without a new ADR and explicit owner approval.
 
 ## 4. Dependency inventory
@@ -140,6 +142,8 @@ Legend: ✅ done · 🟡 scaffolded (shape only, no behaviour) · ❌ missing
 | typescript | packages/contracts dev | 5.9.3 | typecheck |
 | vitest | packages/contracts dev | 3.2.7 | TS tests |
 | pnpm | root | 10.28.0 | workspace manager |
+| sqlalchemy, alembic, psycopg[binary], pyjwt[crypto] | services/api (phase 03–04) | tested 2.1.9 / 1.20.1 / 3.3.9 / 2.15.1 | DB, migrations, JWT |
+| anthropic, openai | services/api (phase 08) | tested 2.14.0 / 3.59.0 | official model SDKs (httpx2 transport) |
 | Node | runtime | >=22.12 | |
 | Python | runtime | >=3.12 (CI 3.12, local 3.13) | |
 

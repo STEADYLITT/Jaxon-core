@@ -227,3 +227,11 @@ def events(owner_db, run_id):
 def fast_worker(maker, handlers, **kw):
     kw.setdefault("retry_base_seconds", 0)
     return Worker(maker, handlers=handlers, **kw)
+
+
+@pytest.fixture(autouse=True)
+def _no_live_model_calls(monkeypatch):
+    """Tests must never reach a real model provider, whatever the developer's shell has."""
+    for var in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "OPENAI_MODEL",
+                "JACKSON_MODEL_PROVIDER", "LOCAL_MODEL_BASE_URL", "LOCAL_MODEL_NAME"):
+        monkeypatch.delenv(var, raising=False)

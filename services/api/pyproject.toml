@@ -11,6 +11,8 @@ dependencies = [
   "alembic>=1.13,<2",
   "psycopg[binary]>=3.2,<4",
   "pyjwt[crypto]>=2.8,<3",
+  "anthropic>=2.14,<3",
+  "openai>=3.59,<4",
 ]
 
 [project.optional-dependencies]
@@ -24,8 +26,11 @@ dev = [
 requires = ["setuptools>=69"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools]
-packages = ["jackson_api"]
+[tool.setuptools.packages.find]
+include = ["jackson_api*"]
+
+[tool.setuptools.package-data]
+jackson_api = ["persona/*.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
