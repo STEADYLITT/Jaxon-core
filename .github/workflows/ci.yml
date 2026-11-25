@@ -31,6 +31,8 @@ jobs:
           python-version: "3.12"
       - name: Install API
         run: pip install -e "services/api[dev]"
+      - name: Install Chromium for browser-session tests
+        run: python -m playwright install --with-deps chromium
       - name: Lint
         run: ruff check services/api tests
       - name: API tests (incl. tenant isolation against real Postgres)

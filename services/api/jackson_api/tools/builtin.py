@@ -136,3 +136,22 @@ register(ToolSpec(
     input_model=PythonIn, category=Category.SANDBOX_CHANGE, run=run_python, timeout_s=10,
     idempotent=False, mode="sandbox",
     verification="exit code + captured output; process-level isolation only"))
+
+
+# --- browser.session: grant entry for the visual browser (used via ctx.browser()) ---------
+
+class BrowserIn(BaseModel):
+    pass
+
+
+def _browser_via_ctx(args: BrowserIn, env: ToolEnv) -> dict:
+    raise NonRetryableError("browser sessions are opened with ctx.browser(), not use_tool()")
+
+
+register(ToolSpec(
+    name="browser.session",
+    description="Watched sandbox browser. Grant config: {\"allowed_domains\": [...]}. "
+                "Reading is 'read'; click/fill are 'sandbox_change' (autonomy level 2+).",
+    input_model=BrowserIn, category=Category.READ, run=_browser_via_ctx, timeout_s=600,
+    idempotent=False, mode="sandbox",
+    verification="screenshot artifact after every action; owner can pause/terminate"))

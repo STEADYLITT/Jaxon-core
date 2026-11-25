@@ -39,6 +39,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from . import tools
+from .artifacts import LocalArtifactStore
 from .contracts import TERMINAL_TASK_STATES, TaskState
 from .db import make_sessionmaker
 from .governance import (
@@ -110,6 +111,8 @@ class TaskContext:
     # Phase 10: the only way to use a tool (grant, schema, policy, budget, idempotency,
     # timeout, redaction, logging). Returns {"output": ..., "untrusted": True, ...}.
     use_tool: Callable[[str, dict], dict] = None  # type: ignore
+    # Phase 11: `with ctx.browser() as b:` opens a watched, allowlisted sandbox browser.
+    browser: Callable[[], object] = None  # type: ignore
     constraints: list = field(default_factory=list)
     success_criteria: list = field(default_factory=list)
 
@@ -148,6 +151,8 @@ class Worker:
         tenant_concurrency: int = 4,
         router: ModelRouter | None = None,
         model_monthly_budget_usd: float | None = None,
+        artifact_store: LocalArtifactStore | None = None,
+        browser_poll_s: float = 0.5,
     ):
         self.maker = maker
         self.handlers = handlers if handlers is not None else default_handlers()
@@ -160,6 +165,8 @@ class Worker:
         budget = model_monthly_budget_usd if model_monthly_budget_usd is not None else float(
             os.environ.get("MODEL_MONTHLY_BUDGET_USD", "20"))
         self.model_budget_micros = int(budget * 1_000_000)
+        self.artifacts = artifact_store or LocalArtifactStore()
+        self.browser_poll_s = browser_poll_s
         self._stop = threading.Event()
 
     # --- Queue mechanics --------------------------------------------------------
@@ -274,6 +281,7 @@ class Worker:
                 recall=lambda query, limit=5: self._recall(task_id, query, limit),
                 remember=lambda **kw: self._remember(task_id, **kw),
                 use_tool=lambda name, args: self._use_tool(task_id, name, args),
+                browser=lambda: self._browser(task_id),
                 business=({"name": biz.name, "kind": biz.kind,
                            "autonomy_level": biz.autonomy_level} if biz else None),
                 constraints=list(run.constraints or []),
@@ -387,6 +395,30 @@ class Worker:
             db.commit()
             return {"memory_id": str(rec.id), "status": rec.status}
 
+    @staticmethod
+    def _grant(db: Session, task: Task, run: WorkflowRun, name: str) -> ToolGrant | None:
+        return db.scalar(select(ToolGrant).where(
+            ToolGrant.tenant_id == task.tenant_id, ToolGrant.tool_name == name,
+            ToolGrant.status == "active",
+            or_(ToolGrant.business_id == run.business_id, ToolGrant.business_id.is_(None)))
+            .order_by(ToolGrant.business_id.is_(None)))  # business-specific grant first
+
+    def _browser(self, task_id: uuid.UUID):
+        from .browser import BrowserHandle  # lazy: Playwright loads only when used
+
+        with self.maker() as db:
+            task, run = self._locked(db, task_id)
+            grant = self._grant(db, task, run, "browser.session")
+            if grant is None:
+                _event(db, task, "tool.denied", tool="browser.session", reason="no active grant")
+                db.commit()
+                raise ToolNotGranted("tool 'browser.session' is not granted for this business")
+            domains = list((grant.config or {}).get("allowed_domains", []))
+            db.rollback()
+        if not domains:
+            raise NonRetryableError("browser grant has no allowed_domains")
+        return BrowserHandle(self, task_id, domains, poll_s=self.browser_poll_s)
+
     def _use_tool(self, task_id: uuid.UUID, name: str, args: dict) -> dict:
         spec = tools.get(name)
         if spec is None:
@@ -407,11 +439,7 @@ class Worker:
                 db.rollback()
                 return {"tool": name, "mode": done.mode, "untrusted": True, "cached": True,
                         "output": done.output}
-            grant = db.scalar(select(ToolGrant).where(
-                ToolGrant.tenant_id == task.tenant_id, ToolGrant.tool_name == name,
-                ToolGrant.status == "active",
-                or_(ToolGrant.business_id == run.business_id, ToolGrant.business_id.is_(None)))
-                .order_by(ToolGrant.business_id.is_(None)))  # business-specific grant first
+            grant = self._grant(db, task, run, name)
             if grant is None:
                 _event(db, task, "tool.denied", tool=name, reason="no active grant")
                 db.commit()
