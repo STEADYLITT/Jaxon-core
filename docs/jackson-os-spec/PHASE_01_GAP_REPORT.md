@@ -2,7 +2,7 @@
 
 Date: 2026-11-25 · Repo: `STEADYLITT/Jaxon-core` · Inspected at commit `cb722b6` (before any changes in this PR)
 Scope: phase 01 (inventory + gap report) delivered in full; phase 02 (scaffold + CI) delivered as a minimal, safe skeleton.
-Update: phases 03–04 delivered — see [PHASE_03_04_REPORT.md](PHASE_03_04_REPORT.md); phase 05 — see [PHASE_05_REPORT.md](PHASE_05_REPORT.md); phase 06 — see [PHASE_06_REPORT.md](PHASE_06_REPORT.md); phase 07 — see [PHASE_07_REPORT.md](PHASE_07_REPORT.md); phase 08 — see [PHASE_08_REPORT.md](PHASE_08_REPORT.md); phase 09 — see [PHASE_09_REPORT.md](PHASE_09_REPORT.md). Status rows below are kept current.
+Update: phases 03–04 delivered — see [PHASE_03_04_REPORT.md](PHASE_03_04_REPORT.md); phase 05 — see [PHASE_05_REPORT.md](PHASE_05_REPORT.md); phase 06 — see [PHASE_06_REPORT.md](PHASE_06_REPORT.md); phase 07 — see [PHASE_07_REPORT.md](PHASE_07_REPORT.md); phase 08 — see [PHASE_08_REPORT.md](PHASE_08_REPORT.md); phase 09 — see [PHASE_09_REPORT.md](PHASE_09_REPORT.md); phase 10 — see [PHASE_10_REPORT.md](PHASE_10_REPORT.md). Status rows below are kept current.
 
 ---
 
@@ -67,7 +67,7 @@ Legend: ✅ done · 🟡 scaffolded (shape only, no behaviour) · ❌ missing
 | Policy, approvals, budget ledger (04) | autonomy 0–3, approval-required actions, reservations | ✅ policy engine, approvals inbox, append-only ledger with locked reservations (ADR-017) | 07 |
 | Model adapters (01) | Claude, OpenAI, local | ✅ adapters + router + metering; labeled MOCK until keys exist; no live call verified (ADR-018) | 08 |
 | Memory with provenance (01) | fact/inference/hypothesis, export/delete | ✅ provenance, confirmation of conflicts, versions, export, delete, retention; full-text recall (ADR-019) | 09 |
-| Tool registry + sandbox (02) | schema, perms, cost, timeout, idempotency, verification | ❌ | 10 |
+| Tool registry + sandbox (02) | schema, perms, cost, timeout, idempotency, verification | ✅ typed registry, owner grants, one gateway, redaction, call log; process-level sandbox (ADR-020) | 10 |
 | Visual browser session (02) | streamed screenshots, take over, redaction | ❌ | 11 |
 | Agent factory (05) | AgentSpec lifecycle, quotas, depth caps | ❌ | 12 |
 | Opportunity / economics / Shopify / content / website / CRM (03) | | ❌ | 13–18 |
@@ -83,10 +83,10 @@ Legend: ✅ done · 🟡 scaffolded (shape only, no behaviour) · ❌ missing
 | Unapproved spend blocked | ✅ phase 07 (`test_governance.py`) |
 | Repeated request does not duplicate external action | ✅ command layer, phase 05 (`test_runs.py`); connectors must forward keys later |
 | Failed worker resumes safely | ✅ phase 06 (`test_failed_worker_resumes_safely`) |
-| Prompt injection cannot elevate grants | ✅ phase 07 for policy/approvals (`test_prompt_injection_cannot_elevate_grants`); tool-level grants in phase 10 |
+| Prompt injection cannot elevate grants | ✅ phase 07 policy + phase 10 tools (`test_injected_page_cannot_elevate_tool_grants`) |
 | Agent cannot spawn beyond quota | ❌ phase 12 |
 | Cancellation prevents new tasks | ✅ phase 05 (`test_cancellation_prevents_new_tasks`) |
-| Secrets absent from logs | 🟡 repo scan (02) + stored data after a model call (08, `test_secrets_never_stored`); tool-output redaction in phase 10 |
+| Secrets absent from logs | ✅ repo scan (02), model calls (08), tool inputs/outputs redacted (10) |
 | Browser session visible | ❌ phase 11 |
 | Memory cites source | ✅ phase 09 (`test_planner_cites_memory_sources`) |
 | Sandbox Shopify draft verified | ❌ phase 15 |
@@ -128,6 +128,8 @@ Legend: ✅ done · 🟡 scaffolded (shape only, no behaviour) · ❌ missing
 **ADR-018 — Model access goes through one metered gateway, Claude Opus 5.5 by default, and MOCK when nothing is configured.** Handlers reach models only via `ctx.call_model(profile, request)`, which checks the tenant's monthly model budget (`MODEL_MONTHLY_BUDGET_USD`, default 20; a soft cap that can overshoot by at most one call), routes by profile, calls, and writes an append-only `model_usage` row plus a `model.called` event. Default routes keep every profile on `claude-opus-5-5` and vary `output_config.effort` (planning high, standard medium, fast low). Cheaper models are an owner choice via env. Claude calls use server-side refusal fallback and check `stop_reason == "refusal"`. OpenAI and local OpenAI-compatible providers stay off until model name (and, for OpenAI, prices) are configured. No model name is guessed. Model spend is operating cost metered separately from the phase 07 business ledger, so it doesn't need per-call approval.
 
 **ADR-019 — Memory is canonical rows with provenance; agents append, people decide.** `memory_records` stores kind, epistemic status, key, impact, confidence, source (type/ref/detail), scope, status, a version chain and retention. Owner corrections create new versions; deletion removes all versions, and the audit log keeps ids only. A conflicting high-impact write waits for confirmation. Agents can INSERT and SELECT but never UPDATE or DELETE, so any conflict they cause waits for an owner, and they can't confirm their own facts. Agents recall `tenant`-scope memories only. Recall uses Postgres full-text ranking. pgvector embeddings are deferred until an embedding provider is chosen, and will supplement, not replace, these rows.
+
+**ADR-020 — One tool gateway; grants live only in the database.** Tools declare schema, policy category, cost, timeout, idempotency and verification method in a registry. Handlers use tools only via `ctx.use_tool()`, which applies these steps in order: grant check (owner-created `tool_grants`; business-specific grant first, then tenant-wide) → schema validation → budget reservation for paid tools → policy check of the category → deduplication by `run:sequence:tool:input-hash` → timeout → redaction → append-only `tool_calls` log, with output marked untrusted. The worker role can read grants but never write them. `code.run_python` is process-level isolation only and needs autonomy level 2. A container sandbox is a phase 20 prerequisite for untrusted code.
 
 **ADR-011 — Trading is simulation-only.** APEX-7 and any trading work are backtest/paper-trade only (vol. 00, vol. 03). No live-trade connector will be built without a new ADR and explicit owner approval.
 
