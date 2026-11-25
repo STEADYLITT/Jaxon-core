@@ -1,16 +1,21 @@
 """FastAPI entrypoint.
 
-Phase 02 scope: liveness and contract introspection only. No auth, no database,
-no external calls. The spec API (POST /commands, GET /runs/{id}, ...) lands in
-phase 05, after auth/tenant isolation (03) and database (04).
+Phases 03-04: hosted-provider auth, tenant isolation, Postgres + migrations.
+No external service calls. The command API (POST /commands, GET /runs/{id}, ...)
+lands in phase 05.
 """
 
 from fastapi import FastAPI
+from sqlalchemy import text
 
 from . import __version__
 from .contracts import AutonomyLevel, CommandType, EntityName, TaskState
+from .db import get_engine
+from .routes import router
+from .settings import load_settings
 
 app = FastAPI(title="Jackson OS API", version=__version__)
+app.include_router(router)
 
 
 @app.get("/health")
@@ -20,7 +25,7 @@ def health() -> dict:
         "status": "ok",
         "service": "jackson-api",
         "version": __version__,
-        "phase": "02-scaffold",
+        "phase": "04-auth-and-database",
         "integrations": "none (no external connectors are live)",
     }
 
@@ -32,4 +37,22 @@ def contracts() -> dict:
         "command_types": [c.value for c in CommandType],
         "autonomy_levels": {lvl.name: lvl.value for lvl in AutonomyLevel},
         "entities": [e.value for e in EntityName],
+    }
+
+
+@app.get("/ready")
+def ready() -> dict:
+    """Reports whether auth and the database are configured and reachable. No secrets."""
+    s = load_settings()
+    db_state = "not_configured"
+    if s.database_url:
+        try:
+            with get_engine(s.database_url).connect() as conn:
+                conn.execute(text("SELECT 1"))
+            db_state = "ok"
+        except Exception:
+            db_state = "unreachable"
+    return {
+        "auth": "configured" if s.auth_configured else "not_configured",
+        "database": db_state,
     }

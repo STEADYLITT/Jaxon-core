@@ -11,6 +11,19 @@ permissions:
 jobs:
   python:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        # Throwaway CI database; credentials below are CI-only, not secrets.
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      JACKSON_TEST_ADMIN_URL: postgresql+psycopg://postgres:postgres@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -20,8 +33,9 @@ jobs:
         run: pip install -e "services/api[dev]"
       - name: Lint
         run: ruff check services/api tests
-      - name: API tests
-        run: pytest services/api
+      - name: API tests (incl. tenant isolation against real Postgres)
+        working-directory: services/api
+        run: pytest
       - name: Repo guardrail tests
         run: pytest tests
 

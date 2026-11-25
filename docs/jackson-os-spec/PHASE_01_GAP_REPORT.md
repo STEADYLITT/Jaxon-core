@@ -2,6 +2,7 @@
 
 Date: 2026-11-25 · Repo: `STEADYLITT/Jaxon-core` · Inspected at commit `cb722b6` (before any changes in this PR)
 Scope: phase 01 (inventory + gap report) delivered in full; phase 02 (scaffold + CI) delivered as a minimal, safe skeleton.
+Update: phases 03–04 delivered — see [PHASE_03_04_REPORT.md](PHASE_03_04_REPORT.md). Status rows below are kept current.
 
 ---
 
@@ -38,12 +39,12 @@ Legend: ✅ done · 🟡 scaffolded (shape only, no behaviour) · ❌ missing
 |---|---|---|---|
 | Repo layout (06) | apps/console, services/api, services/workers, packages/{contracts,policy,connectors}, skills, agents, workflows, infra, tests, docs | ✅ all directories exist, placeholders say "not built" | 02 |
 | README, ADRs, env example, CI (06) | yes | ✅ README, ADRs (§3), `.env.example`, GitHub Actions | 02 |
-| Migration scripts (06) | yes | ❌ | 04 |
+| Migration scripts (06) | yes | ✅ Alembic `0001_initial` (phase 04) | 04 |
 | Data contracts — 16 entities, task states (02) | IDs, timestamps, tenant scope, status | 🟡 names, enums and `BaseEntity` shape; no DB tables | 04/05 |
 | Command types (04) | PLAN … STOP | 🟡 enum + `Command` type; no endpoint | 05 |
 | Command API (02) | POST /commands, GET /runs/{id}, POST /approvals/{id}/decision, POST /runs/{id}/cancel, GET /events | ❌ deliberately absent until auth exists (test enforces 404) | 05 |
-| Auth + tenant isolation (02/05) | | ❌ | 03 |
-| PostgreSQL + pgvector, Redis (02) | | 🟡 local docker-compose only | 04 |
+| Auth + tenant isolation (02/05) | | ✅ hosted-provider JWT + API scoping + Postgres RLS (phase 03) | 03 |
+| PostgreSQL + pgvector, Redis (02) | | 🟡 Postgres schema for 5 entities; pgvector extension and Redis unused yet | 04 |
 | Durable workflows — Temporal (02) | retries, idempotency, DLQ, leases | ❌ | 06 |
 | Policy, approvals, budget ledger (04) | autonomy 0–3, approval-required actions, reservations | 🟡 autonomy levels defined; no enforcement | 07 |
 | Model adapters (01) | Claude, OpenAI, local | ❌ none connected | 08 |
@@ -60,7 +61,7 @@ Legend: ✅ done · 🟡 scaffolded (shape only, no behaviour) · ❌ missing
 
 | Acceptance test | Status |
 |---|---|
-| Cross-tenant access denied | ❌ phase 03 |
+| Cross-tenant access denied | ✅ phase 03 — `services/api/tests/test_tenancy.py` |
 | Unapproved spend blocked | ❌ phase 07 |
 | Repeated request does not duplicate external action | ❌ phase 05/06 (`idempotencyKey` is already required on `Command`) |
 | Failed worker resumes safely | ❌ phase 06 |
@@ -96,6 +97,10 @@ Legend: ✅ done · 🟡 scaffolded (shape only, no behaviour) · ❌ missing
 
 **ADR-010 — Tenancy: one owner tenant first, `tenant_id` on every row from day one.** Steady's businesses (Steady Trades University, CSW Trades, Steady Ventures, APEX-7, Shopify store) are `Business` rows under the owner tenant. Steady Ventures **client** work gets its own tenants (vol. 03: isolated client workspaces).
 
+**ADR-012 — Hosted auth (Clerk recommended); the API verifies tokens provider-neutrally.** Decided with the owner 2026-11-25 (cost not a concern). Passwords, MFA, email verification and account recovery are handled by the provider, which is safer than building them. The API only verifies RS256 JWTs against the provider's JWKS (`iss`, `exp`/`nbf`, required `sub`, optional `aud`, optional `azp` allow-list), so Clerk can be swapped for Auth0/WorkOS by changing env vars. No auto-provisioning: a valid token for an unknown user gets 403; users are created by the owner (`jackson_api.seed`). **Unverified:** Clerk's current docs were unreachable from the build machine (network block), so Clerk-specific claim details (`azp` behaviour, JWKS URL) must be confirmed against clerk.com before the console goes live.
+
+**ADR-013 — Tenant isolation is enforced twice: in the API and in Postgres.** (1) Every tenant route checks membership and filters by `tenant_id`. (2) Postgres row-level security on tenant tables only shows rows matching `app.tenant_id`, set per transaction with `set_config(..., is_local => true)`; with no tenant set, nothing is visible. The API connects as `jackson_app` (not owner, not superuser, no BYPASSRLS — test-enforced). `audit_events` is append-only for that role. Users and memberships are global (one person can belong to several tenants, e.g. agency clients); this deviates slightly from "tenant scope on every entity" and is deliberate.
+
 **ADR-011 — Trading is simulation-only.** APEX-7 and any trading work are backtest/paper-trade only (vol. 00, vol. 03). No live-trade connector will be built without a new ADR and explicit owner approval.
 
 ## 4. Dependency inventory
@@ -125,7 +130,9 @@ Legend: ✅ done · 🟡 scaffolded (shape only, no behaviour) · ❌ missing
 | Variable name | For | Needed by phase | Status |
 |---|---|---|---|
 | `POSTGRES_PASSWORD` | local DB | 04 | owner sets locally |
-| `AUTH_SECRET` | session signing | 03 | not provided |
+| `AUTH_ISSUER`, `AUTH_JWKS_URL`, `AUTH_AUDIENCE`, `AUTH_AUTHORIZED_PARTIES` | API token verification (public values) | 03 | not provided |
+| `CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY` | console sign-in (ADR-012) | console build | not provided |
+| `DATABASE_URL`, `MIGRATION_DATABASE_URL` | app role / schema owner | 04 | owner sets locally |
 | `TEMPORAL_ADDRESS` | workflows | 06 | not provided |
 | `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | artifacts | 09–11 | not provided |
 | `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` | model adapters | 08 | not provided |
@@ -176,7 +183,7 @@ Plan: owner login (decision needed: hosted auth such as Clerk/Auth0 vs. self-man
 
 ## 8. Blockers and owner decisions
 
-1. **Auth provider choice** (phase 03): hosted (faster, monthly cost) vs. self-managed. Default if no answer: hosted, owner-only login.
+1. ~~**Auth provider choice**~~ — decided 2026-11-25: hosted, Clerk recommended (ADR-012).
 2. **Hosting choice** (spec: after load/security tests) — not needed until phase 20.
 3. **Growth OS export**: a Base44 data export (or API access) is needed to finalize §6 field mapping.
 4. **Credentials** (§5): none needed until phase 08; nothing blocks phases 03–07.
