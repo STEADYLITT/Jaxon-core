@@ -27,7 +27,7 @@ def test_default_mock_plan_runs_to_success_and_is_labeled_mock(
     assert run.status == "succeeded" and run.started_at and run.finished_at
     assert tasks[0].status == "succeeded"
     assert tasks[0].output["mode"] == "mock"
-    assert events(owner_db, run_id)[-3:] == ["task.started", "task.succeeded",
+    assert events(owner_db, run_id)[-4:] == ["task.started", "model.called", "task.succeeded",
                                             "run.state_changed"]
 
 

@@ -26,7 +26,7 @@ import threading
 import traceback
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import timedelta
 
 from sqlalchemy import func, select
@@ -43,7 +43,8 @@ from .governance import (
     reserve,
     settle,
 )
-from .models import AuditEvent, RunEvent, Task, WorkflowRun
+from .models import AuditEvent, Business, ModelUsage, RunEvent, Task, WorkflowRun
+from .models_ai import ModelRequest, ModelResponse, ModelRouter
 from .policy import Action
 from .runs import add_task, transition
 from .worker_errors import NonRetryableError
@@ -80,22 +81,25 @@ class TaskContext:
     authorize: Callable[[Action], None] = lambda action: None
     reserve_budget: Callable[[int, str], uuid.UUID] = lambda cents, desc: uuid.uuid4()
     settle_spend: Callable[[uuid.UUID, int, str], None] = lambda rid, cents, desc: None
+    # Phase 08: the only way handlers reach a model. It checks the tenant's monthly model
+    # budget, routes to a provider (MOCK if none is configured) and meters usage.
+    call_model: Callable[[str, "ModelRequest"], "ModelResponse"] = None  # type: ignore
+    business: dict | None = None  # name/kind/autonomy of the run's business, if any
+    constraints: list = field(default_factory=list)
+    success_criteria: list = field(default_factory=list)
 
 
 Handler = Callable[[TaskContext], TaskResult]
 
 
-def mock_plan_handler(ctx: TaskContext) -> TaskResult:
-    """Placeholder until model adapters exist (phase 08). Clearly labeled MOCK."""
-    return TaskResult(output={
-        "mode": "mock",
-        "note": "No model is connected yet; no plan was generated.",
-        "objective": ctx.objective,
-    })
-
-
 def default_handlers() -> dict[str, Handler]:
-    return {"plan": mock_plan_handler}
+    from .planner import plan_handler  # lazy: planner imports TaskResult from here
+
+    return {"plan": plan_handler}
+
+
+class ModelBudgetExhausted(NonRetryableError):
+    pass
 
 
 def _event(db: Session, task: Task, type_: str, **data) -> None:
@@ -113,6 +117,8 @@ class Worker:
         retry_base_seconds: float = 5,
         retry_max_seconds: float = 300,
         tenant_concurrency: int = 4,
+        router: ModelRouter | None = None,
+        model_monthly_budget_usd: float | None = None,
     ):
         self.maker = maker
         self.handlers = handlers if handlers is not None else default_handlers()
@@ -121,6 +127,10 @@ class Worker:
         self.retry_base = retry_base_seconds
         self.retry_max = retry_max_seconds
         self.tenant_concurrency = tenant_concurrency
+        self.router = router if router is not None else ModelRouter()
+        budget = model_monthly_budget_usd if model_monthly_budget_usd is not None else float(
+            os.environ.get("MODEL_MONTHLY_BUDGET_USD", "20"))
+        self.model_budget_micros = int(budget * 1_000_000)
         self._stop = threading.Event()
 
     # --- Queue mechanics --------------------------------------------------------
@@ -219,6 +229,7 @@ class Worker:
         with self.maker() as db:
             task = db.get(Task, task_id)
             run = db.get(WorkflowRun, task.run_id)
+            biz = db.get(Business, run.business_id) if run.business_id else None
             ctx = TaskContext(
                 tenant_id=task.tenant_id, run_id=task.run_id, task_id=task.id,
                 kind=task.kind, title=task.title, attempt=task.attempts,
@@ -230,6 +241,11 @@ class Worker:
                 authorize=lambda action: self._authorize(task_id, action),
                 reserve_budget=lambda cents, desc: self._reserve(task_id, cents, desc),
                 settle_spend=lambda rid, cents, desc: self._settle(task_id, rid, cents, desc),
+                call_model=lambda profile, req: self._call_model(task_id, profile, req),
+                business=({"name": biz.name, "kind": biz.kind,
+                           "autonomy_level": biz.autonomy_level} if biz else None),
+                constraints=list(run.constraints or []),
+                success_criteria=list(run.success_criteria or []),
             )
         handler = self.handlers.get(ctx.kind)
         try:
@@ -279,6 +295,40 @@ class Worker:
             settle(db, reservation_id, cents, description,
                    f"{task.run_id}:{task.sequence}:settle:{reservation_id}")
             db.commit()
+
+    def _model_spend_this_month(self, db: Session, tenant_id: uuid.UUID) -> int:
+        # SUM(bigint) comes back as NUMERIC (Decimal); keep integer micro-dollars.
+        return int(db.scalar(
+            select(func.coalesce(func.sum(ModelUsage.cost_usd_micros), 0)).where(
+                ModelUsage.tenant_id == tenant_id,
+                ModelUsage.created_at >= func.date_trunc("month", func.now()))) or 0)
+
+    def _call_model(self, task_id: uuid.UUID, profile: str, req: ModelRequest) -> ModelResponse:
+        with self.maker() as db:
+            task, _ = self._locked(db, task_id)
+            tenant_id, run_id = task.tenant_id, task.run_id
+            spent = self._model_spend_this_month(db, tenant_id)
+            db.rollback()
+        if spent >= self.model_budget_micros:
+            raise ModelBudgetExhausted(
+                f"monthly model budget used up ({spent / 1e6:.2f} of "
+                f"{self.model_budget_micros / 1e6:.2f} USD)")
+        route = self.router.select(profile)
+        resp = route.provider.complete(replace(req, effort=route.effort), route.model)
+        resp.notes = [route.reason, *resp.notes]
+        with self.maker() as db:
+            db.add(ModelUsage(tenant_id=tenant_id, run_id=run_id, task_id=task_id,
+                              provider=resp.provider, model=resp.model, mode=resp.mode,
+                              profile=profile, input_tokens=resp.input_tokens,
+                              output_tokens=resp.output_tokens,
+                              cost_usd_micros=resp.cost_usd_micros, request_id=resp.request_id))
+            db.add(RunEvent(tenant_id=tenant_id, run_id=run_id, type="model.called", data={
+                "task_id": str(task_id), "provider": resp.provider, "model": resp.model,
+                "mode": resp.mode, "profile": profile, "input_tokens": resp.input_tokens,
+                "output_tokens": resp.output_tokens, "cost_usd_micros": resp.cost_usd_micros,
+                "route": route.reason}))
+            db.commit()
+        return resp
 
     def _record_waiting(self, task_id: uuid.UUID, exc: ApprovalRequired) -> None:
         with self.maker() as db:
