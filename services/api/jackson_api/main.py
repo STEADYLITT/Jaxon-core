@@ -12,6 +12,7 @@ from . import __version__
 from .contracts import AutonomyLevel, CommandType, EntityName, TaskState
 from .db import get_engine
 from .routes import router
+from .routes_browser import router as browser_router
 from .routes_memory import router as memory_router
 from .routes_policy import router as policy_router
 from .routes_runs import router as runs_router
@@ -24,6 +25,7 @@ app.include_router(runs_router)
 app.include_router(policy_router)
 app.include_router(memory_router)
 app.include_router(tools_router)
+app.include_router(browser_router)
 
 
 @app.get("/health")
@@ -33,7 +35,7 @@ def health() -> dict:
         "status": "ok",
         "service": "jackson-api",
         "version": __version__,
-        "phase": "10-tools-sandbox",
+        "phase": "11-visual-browser",
         "integrations": "none (no external connectors are live)",
     }
 

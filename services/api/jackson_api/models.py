@@ -423,3 +423,60 @@ class ToolCall(Base):
     error: Mapped[str | None] = mapped_column(Text)
     duration_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = _created()
+
+
+# --- Phase 11: artifacts and visual browser sessions ---------------------------------------
+
+
+class Artifact(Base):
+    """A stored output (screenshot, file, text). Bytes live in the artifact store; this row
+    is the canonical record (content hash, type, size, provenance)."""
+
+    __tablename__ = "artifacts"
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("workflow_runs.id"), index=True)
+    task_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("tasks.id"))
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    storage_key: Mapped[str] = mapped_column(String(500), nullable=False)
+    meta: Mapped[dict] = mapped_column(JSON().with_variant(JSONB(), "postgresql"),
+                                       nullable=False, default=dict)
+    created_at: Mapped[datetime] = _created()
+
+
+class BrowserSession(Base):
+    """A sandbox browser the owner can watch and control.
+
+    `status` is reported by the worker; `control` is the owner's command
+    (none/pause/takeover/terminate). The worker DB role can't write `control`.
+    """
+
+    __tablename__ = "browser_sessions"
+    __table_args__ = (
+        CheckConstraint("status IN ('active','paused','taken_over','terminated','closed')",
+                        name="ck_browser_status"),
+        CheckConstraint("control IN ('none','pause','takeover','terminate')",
+                        name="ck_browser_control"),
+    )
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workflow_runs.id"), nullable=False)
+    task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tasks.id"), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
+    control: Mapped[str] = mapped_column(String(16), nullable=False, default="none")
+    allowed_domains: Mapped[list] = mapped_column(
+        JSON().with_variant(JSONB(), "postgresql"), nullable=False, default=list)
+    current_url: Mapped[str | None] = mapped_column(Text)
+    title: Mapped[str | None] = mapped_column(Text)
+    last_action: Mapped[str | None] = mapped_column(Text)
+    last_screenshot_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("artifacts.id"))
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = _created()
+    updated_at: Mapped[datetime] = _updated()
