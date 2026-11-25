@@ -2,7 +2,7 @@
 
 Date: 2026-11-25 · Repo: `STEADYLITT/Jaxon-core` · Inspected at commit `cb722b6` (before any changes in this PR)
 Scope: phase 01 (inventory + gap report) delivered in full; phase 02 (scaffold + CI) delivered as a minimal, safe skeleton.
-Update: phases 03–04 delivered — see [PHASE_03_04_REPORT.md](PHASE_03_04_REPORT.md). Status rows below are kept current.
+Update: phases 03–04 delivered — see [PHASE_03_04_REPORT.md](PHASE_03_04_REPORT.md); phase 05 — see [PHASE_05_REPORT.md](PHASE_05_REPORT.md). Status rows below are kept current.
 
 ---
 
@@ -59,8 +59,8 @@ Legend: ✅ done · 🟡 scaffolded (shape only, no behaviour) · ❌ missing
 | README, ADRs, env example, CI (06) | yes | ✅ README, ADRs (§3), `.env.example`, GitHub Actions | 02 |
 | Migration scripts (06) | yes | ✅ Alembic `0001_initial` (phase 04) | 04 |
 | Data contracts — 16 entities, task states (02) | IDs, timestamps, tenant scope, status | 🟡 names, enums and `BaseEntity` shape; no DB tables | 04/05 |
-| Command types (04) | PLAN … STOP | 🟡 enum + `Command` type; no endpoint | 05 |
-| Command API (02) | POST /commands, GET /runs/{id}, POST /approvals/{id}/decision, POST /runs/{id}/cancel, GET /events | ❌ deliberately absent until auth exists (test enforces 404) | 05 |
+| Command types (04) | PLAN … STOP | ✅ typed commands; EXECUTE refused until phase 07 (ADR-015) | 05 |
+| Command API (02) | POST /commands, GET /runs/{id}, POST /approvals/{id}/decision, POST /runs/{id}/cancel, GET /events | ✅ tenant-scoped commands, runs, cancel, SSE events (phase 05); approvals in 07 | 05 |
 | Auth + tenant isolation (02/05) | | ✅ hosted-provider JWT + API scoping + Postgres RLS (phase 03) | 03 |
 | PostgreSQL + pgvector, Redis (02) | | 🟡 Postgres schema for 5 entities; pgvector extension and Redis unused yet | 04 |
 | Durable workflows — Temporal (02) | retries, idempotency, DLQ, leases | ❌ | 06 |
@@ -81,11 +81,11 @@ Legend: ✅ done · 🟡 scaffolded (shape only, no behaviour) · ❌ missing
 |---|---|
 | Cross-tenant access denied | ✅ phase 03 — `services/api/tests/test_tenancy.py` |
 | Unapproved spend blocked | ❌ phase 07 |
-| Repeated request does not duplicate external action | ❌ phase 05/06 (`idempotencyKey` is already required on `Command`) |
+| Repeated request does not duplicate external action | ✅ command layer, phase 05 (`test_runs.py`); connectors must forward keys later |
 | Failed worker resumes safely | ❌ phase 06 |
 | Prompt injection cannot elevate grants | ❌ phase 07/10 |
 | Agent cannot spawn beyond quota | ❌ phase 12 |
-| Cancellation prevents new tasks | ❌ phase 06 |
+| Cancellation prevents new tasks | ✅ phase 05 (`test_cancellation_prevents_new_tasks`) |
 | Secrets absent from logs | 🟡 secrets absent from **repo** is tested now; log redaction in phase 10 |
 | Browser session visible | ❌ phase 11 |
 | Memory cites source | ❌ phase 09 |
@@ -118,6 +118,8 @@ Legend: ✅ done · 🟡 scaffolded (shape only, no behaviour) · ❌ missing
 **ADR-012 — Hosted auth (Clerk recommended); the API verifies tokens provider-neutrally.** Decided with the owner 2026-11-25 (cost not a concern). Passwords, MFA, email verification and account recovery are handled by the provider, which is safer than building them. The API only verifies RS256 JWTs against the provider's JWKS (`iss`, `exp`/`nbf`, required `sub`, optional `aud`, optional `azp` allow-list), so Clerk can be swapped for Auth0/WorkOS by changing env vars. No auto-provisioning: a valid token for an unknown user gets 403; users are created by the owner (`jackson_api.seed`). **Unverified:** Clerk's current docs were unreachable from the build machine (network block), so Clerk-specific claim details (`azp` behaviour, JWKS URL) must be confirmed against clerk.com before the console goes live.
 
 **ADR-013 — Tenant isolation is enforced twice: in the API and in Postgres.** (1) Every tenant route checks membership and filters by `tenant_id`. (2) Postgres row-level security on tenant tables only shows rows matching `app.tenant_id`, set per transaction with `set_config(..., is_local => true)`; with no tenant set, nothing is visible. The API connects as `jackson_app` (not owner, not superuser, no BYPASSRLS — test-enforced). `audit_events` is append-only for that role. Users and memberships are global (one person can belong to several tenants, e.g. agency clients); this deviates slightly from "tenant scope on every entity" and is deliberate.
+
+**ADR-015 — Commands are idempotent and tenant-scoped, and EXECUTE stays locked until policy exists.** Commands live at `/tenants/{id}/commands`, not the spec's bare `/commands`, so the tenant is always explicit and ADR-013 applies. Every command needs an `idempotency_key`. Same key with the same body returns the original run (200, `Idempotent-Replay: true`). Same key with a different body returns 409. A unique constraint backs this up under concurrency. EXECUTE returns 422 until phase 07, because with no ToolGrants nothing is "already within granted scope" (vol. 04). PAUSE/RESUME/STOP are idempotent by state. The spec's task states don't include "paused", so pausing is a `paused` flag that workers must respect. Run history (`run_events`) is append-only, and its ids double as SSE event ids.
 
 **ADR-011 — Trading is simulation-only.** APEX-7 and any trading work are backtest/paper-trade only (vol. 00, vol. 03). No live-trade connector will be built without a new ADR and explicit owner approval.
 

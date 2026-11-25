@@ -1,8 +1,8 @@
 """FastAPI entrypoint.
 
-Phases 03-04: hosted-provider auth, tenant isolation, Postgres + migrations.
-No external service calls. The command API (POST /commands, GET /runs/{id}, ...)
-lands in phase 05.
+Phases 03-05: hosted-provider auth, tenant isolation, Postgres + migrations,
+typed commands and the run API. No external service calls. Nothing executes
+runs yet: durable workers arrive in phase 06.
 """
 
 from fastapi import FastAPI
@@ -12,10 +12,12 @@ from . import __version__
 from .contracts import AutonomyLevel, CommandType, EntityName, TaskState
 from .db import get_engine
 from .routes import router
+from .routes_runs import router as runs_router
 from .settings import load_settings
 
 app = FastAPI(title="Jackson OS API", version=__version__)
 app.include_router(router)
+app.include_router(runs_router)
 
 
 @app.get("/health")
@@ -25,7 +27,7 @@ def health() -> dict:
         "status": "ok",
         "service": "jackson-api",
         "version": __version__,
-        "phase": "04-auth-and-database",
+        "phase": "05-commands-and-runs",
         "integrations": "none (no external connectors are live)",
     }
 

@@ -5,16 +5,17 @@ This repo holds the core brain & memory system for Jaxon Vale — AI partner.
 It is the codebase for **Jackson OS**, the long-term software version of Jackson (v1 lives in the Base44 app *Steady Growth OS*; its data will be imported later — see ADR-008).
 
 ## Status
-Phases 01–04 of 20: inventory, scaffold + CI, hosted-provider auth + tenant isolation, Postgres + migrations. **No external integrations are live; nothing is deployed.**
+Phases 01–05 of 20: inventory, scaffold + CI, hosted-provider auth + tenant isolation, Postgres + migrations, typed commands + run API (SSE). **No external integrations are live; nothing is deployed.**
 
 - Spec: [`docs/jackson-os-spec/`](docs/jackson-os-spec/START_HERE.md)
 - Gap report, ADRs, dependency & credential inventory: [`PHASE_01_GAP_REPORT.md`](docs/jackson-os-spec/PHASE_01_GAP_REPORT.md)
 - Auth + database (setup steps): [`PHASE_03_04_REPORT.md`](docs/jackson-os-spec/PHASE_03_04_REPORT.md)
+- Commands + runs API: [`PHASE_05_REPORT.md`](docs/jackson-os-spec/PHASE_05_REPORT.md)
 
 ## Layout
 ```
 apps/console          owner console (Next.js) — not built
-services/api          FastAPI API — auth, tenants, businesses, audit log, migrations
+services/api          FastAPI API — auth, tenants, businesses, audit log, commands/runs/SSE, migrations
 services/workers      agent workers — not built
 packages/contracts    shared TS types (mirrored in services/api, parity-tested)
 packages/policy       autonomy/approvals/budgets — not built

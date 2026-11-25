@@ -1,62 +1,19 @@
 """Phase 03-04 acceptance: cross-tenant access denied (spec vol. 06), against real Postgres."""
 
 import uuid
-from dataclasses import dataclass
 
 import pytest
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
+from conftest import auth
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.exc import DBAPIError
-from sqlalchemy.orm import Session
 
 from jackson_api.db import bind_tenant
 from jackson_api.main import app
-from jackson_api.models import AuditEvent, Base, Business, Membership, Tenant, User
+from jackson_api.models import AuditEvent, Base, Business
 from jackson_api.seed import OWNER_BUSINESSES, seed_owner
-
-
-@dataclass
-class World:
-    tenant_a: uuid.UUID
-    tenant_b: uuid.UUID
-    biz_a: uuid.UUID
-    biz_b: uuid.UUID
-    alice: str  # owner of A
-    bob: str  # owner of B
-    carol: str  # viewer of A
-
-
-@pytest.fixture()
-def world(database) -> World:
-    """Insert fixtures as the schema owner (bypasses RLS on purpose, setup only)."""
-    eng = create_engine(database["owner_url"])
-    tag = uuid.uuid4().hex[:6]
-    with Session(eng) as s:
-        ta, tb = Tenant(name=f"A-{tag}"), Tenant(name=f"B-{tag}")
-        users = {n: User(auth_subject=f"user_{n}_{tag}", email=f"{n}@example.test")
-                 for n in ("alice", "bob", "carol")}
-        s.add_all([ta, tb, *users.values()])
-        s.flush()
-        s.add_all([
-            Membership(tenant_id=ta.id, user_id=users["alice"].id, role="owner"),
-            Membership(tenant_id=tb.id, user_id=users["bob"].id, role="owner"),
-            Membership(tenant_id=ta.id, user_id=users["carol"].id, role="viewer"),
-        ])
-        ba = Business(tenant_id=ta.id, name="A biz", kind="ecommerce")
-        bb = Business(tenant_id=tb.id, name="B biz", kind="agency")
-        s.add_all([ba, bb])
-        s.commit()
-        w = World(ta.id, tb.id, ba.id, bb.id, *(users[n].auth_subject for n in
-                                                ("alice", "bob", "carol")))
-    eng.dispose()
-    return w
-
-
-def auth(make_token, sub):
-    return {"Authorization": f"Bearer {make_token(sub)}"}
-
 
 # --- Authentication -----------------------------------------------------------
 
@@ -137,14 +94,6 @@ def test_owner_create_writes_audit_event(client, make_token, world):
 
 
 # --- Tenant isolation enforced by Postgres itself (defense in depth) -----------
-
-@pytest.fixture()
-def app_session(database):
-    eng = create_engine(database["app_url"])
-    with Session(eng) as s:
-        yield s
-    eng.dispose()
-
 
 def test_rls_hides_everything_without_tenant_scope(app_session, world):
     assert app_session.scalar(select(func.count()).select_from(Business)) == 0

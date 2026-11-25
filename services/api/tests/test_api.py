@@ -11,7 +11,7 @@ def test_health_ok_and_honest_about_integrations():
     assert r.status_code == 200
     body = r.json()
     assert body["status"] == "ok"
-    assert body["phase"] == "04-auth-and-database"
+    assert body["phase"] == "05-commands-and-runs"
     assert "none" in body["integrations"]
 
 
@@ -37,6 +37,6 @@ def test_terminal_states():
     assert TaskState.WAITING_APPROVAL not in TERMINAL_TASK_STATES
 
 
-def test_spec_api_routes_not_yet_exposed():
-    # Guard against shipping unauthenticated command endpoints before phase 03 auth exists.
+def test_no_unscoped_command_route():
+    # Commands exist only under /tenants/{id}/ (ADR-013); there is no global, unscoped route.
     assert client.post("/commands", json={"type": CommandType.PLAN}).status_code == 404
