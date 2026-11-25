@@ -1,4 +1,5 @@
 # Python dependencies
-flask
-requests
-# add more later as Jaxon grows
+# Superseded by services/api/pyproject.toml (FastAPI per spec vol. 02; see ADR-003
+# in docs/jackson-os-spec/PHASE_01_GAP_REPORT.md). Flask was listed here but never used.
+# Kept so `pip install -r requirements.txt` still works.
+-e ./services/api[dev]

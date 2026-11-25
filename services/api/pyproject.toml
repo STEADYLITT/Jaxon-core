@@ -1,0 +1,36 @@
+[project]
+name = "jackson-api"
+version = "0.1.0"
+description = "Jackson OS command API (phase 02 scaffold: health + contracts only)"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115,<1",
+  "pydantic>=2.7,<3",
+  "uvicorn>=0.30,<1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8",
+  "httpx>=0.27",
+  "ruff>=0.6",
+]
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["jackson_api"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Starlette deprecates httpx in its TestClient; revisit when upgrading test tooling.
+filterwarnings = ["ignore:Using `httpx` with `starlette.testclient`"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
