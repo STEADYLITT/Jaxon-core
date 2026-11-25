@@ -2,7 +2,7 @@
 
 Date: 2026-11-25 · Repo: `STEADYLITT/Jaxon-core` · Inspected at commit `cb722b6` (before any changes in this PR)
 Scope: phase 01 (inventory + gap report) delivered in full; phase 02 (scaffold + CI) delivered as a minimal, safe skeleton.
-Update: phases 03–04 delivered — see [PHASE_03_04_REPORT.md](PHASE_03_04_REPORT.md); phase 05 — see [PHASE_05_REPORT.md](PHASE_05_REPORT.md). Status rows below are kept current.
+Update: phases 03–04 delivered — see [PHASE_03_04_REPORT.md](PHASE_03_04_REPORT.md); phase 05 — see [PHASE_05_REPORT.md](PHASE_05_REPORT.md); phase 06 — see [PHASE_06_REPORT.md](PHASE_06_REPORT.md). Status rows below are kept current.
 
 ---
 
@@ -40,7 +40,7 @@ The first inventory only inspected `main`. Branch `claude/modest-babbage-6qy5nq`
 | FastAPI app, JSON errors, request IDs, structlog | 02/05 | different layout (`backend/` vs `services/api/`) | port error/logging middleware in phase 05 |
 | Single shared API token | 03 | no users, tenants or isolation | **superseded** by ADR-012/013 |
 | Tables: agent_definitions, agent_runs, run_steps, memories | 04/05/09/12 | no `tenant_id`, no RLS | re-create under tenant scope when ported |
-| Runs API + Redis queue + crash-recovering worker | 05/06 | spec says Temporal (ADR-006); no cancel, approvals or budget | reuse as interim runner in 05; Temporal decision at 06 |
+| Runs API + Redis queue + crash-recovering worker | 05/06 | spec says Temporal (ADR-006); no cancel, approvals or budget | ideas reused in 06 (ADR-016: Postgres queue + leases) |
 | Anthropic provider (official SDK, mocked transport; never called live) | 08 | single provider; no OpenAI/local | port in 08 behind the adapter interface |
 | Memory with pgvector + hashing embedder | 09 | no provenance or fact/inference/hypothesis kind | port in 09 and add provenance |
 | Skill registry, `@skill`, timeouts, approval flag, allowlisted web fetch, Playwright skill | 10/11 | no per-tenant ToolGrant, cost or idempotency metadata | port in 10 |
@@ -63,7 +63,7 @@ Legend: ✅ done · 🟡 scaffolded (shape only, no behaviour) · ❌ missing
 | Command API (02) | POST /commands, GET /runs/{id}, POST /approvals/{id}/decision, POST /runs/{id}/cancel, GET /events | ✅ tenant-scoped commands, runs, cancel, SSE events (phase 05); approvals in 07 | 05 |
 | Auth + tenant isolation (02/05) | | ✅ hosted-provider JWT + API scoping + Postgres RLS (phase 03) | 03 |
 | PostgreSQL + pgvector, Redis (02) | | 🟡 Postgres schema for 5 entities; pgvector extension and Redis unused yet | 04 |
-| Durable workflows — Temporal (02) | retries, idempotency, DLQ, leases | ❌ | 06 |
+| Durable workflows (02) | retries, idempotency, DLQ, leases | ✅ Postgres queue with leases, retries, dead letters, quotas (ADR-016) | 06 |
 | Policy, approvals, budget ledger (04) | autonomy 0–3, approval-required actions, reservations | 🟡 autonomy levels defined; no enforcement | 07 |
 | Model adapters (01) | Claude, OpenAI, local | ❌ none connected | 08 |
 | Memory with provenance (01) | fact/inference/hypothesis, export/delete | ❌ | 09 |
@@ -82,7 +82,7 @@ Legend: ✅ done · 🟡 scaffolded (shape only, no behaviour) · ❌ missing
 | Cross-tenant access denied | ✅ phase 03 — `services/api/tests/test_tenancy.py` |
 | Unapproved spend blocked | ❌ phase 07 |
 | Repeated request does not duplicate external action | ✅ command layer, phase 05 (`test_runs.py`); connectors must forward keys later |
-| Failed worker resumes safely | ❌ phase 06 |
+| Failed worker resumes safely | ✅ phase 06 (`test_failed_worker_resumes_safely`) |
 | Prompt injection cannot elevate grants | ❌ phase 07/10 |
 | Agent cannot spawn beyond quota | ❌ phase 12 |
 | Cancellation prevents new tasks | ✅ phase 05 (`test_cancellation_prevents_new_tasks`) |
@@ -105,7 +105,7 @@ Legend: ✅ done · 🟡 scaffolded (shape only, no behaviour) · ❌ missing
 
 **ADR-005 — PostgreSQL (pgvector) is canonical; Redis is cache only.** Vector search supplements records, never replaces them (vol. 00). Local dev via `infra/docker-compose.yml`, bound to 127.0.0.1. Managed hosting decided later (vol. 02).
 
-**ADR-006 — Temporal for durable workflows, decided at phase 06 gate.** Default per spec. If self-hosting Temporal proves too heavy for a single-owner pilot, fallback is Temporal Cloud; a Postgres-backed queue is the last resort and would require a new ADR because it gives up durable timers/replay.
+**ADR-006 — (Superseded by ADR-016.) Temporal for durable workflows, decided at phase 06 gate.** Default per spec. If self-hosting Temporal proves too heavy for a single-owner pilot, fallback is Temporal Cloud; a Postgres-backed queue is the last resort and would require a new ADR because it gives up durable timers/replay.
 
 **ADR-007 — Connector modes: `mock` → `sandbox` → `live`.** Every connector result carries its mode. Mocks are the default and must say "mock" in output and UI. Moving to `live` requires owner-provided credentials and an explicit approval. No connector may be called "integrated" while in mock mode (vol. 00 definition of done).
 
@@ -120,6 +120,8 @@ Legend: ✅ done · 🟡 scaffolded (shape only, no behaviour) · ❌ missing
 **ADR-013 — Tenant isolation is enforced twice: in the API and in Postgres.** (1) Every tenant route checks membership and filters by `tenant_id`. (2) Postgres row-level security on tenant tables only shows rows matching `app.tenant_id`, set per transaction with `set_config(..., is_local => true)`; with no tenant set, nothing is visible. The API connects as `jackson_app` (not owner, not superuser, no BYPASSRLS — test-enforced). `audit_events` is append-only for that role. Users and memberships are global (one person can belong to several tenants, e.g. agency clients); this deviates slightly from "tenant scope on every entity" and is deliberate.
 
 **ADR-015 — Commands are idempotent and tenant-scoped, and EXECUTE stays locked until policy exists.** Commands live at `/tenants/{id}/commands`, not the spec's bare `/commands`, so the tenant is always explicit and ADR-013 applies. Every command needs an `idempotency_key`. Same key with the same body returns the original run (200, `Idempotent-Replay: true`). Same key with a different body returns 409. A unique constraint backs this up under concurrency. EXECUTE returns 422 until phase 07, because with no ToolGrants nothing is "already within granted scope" (vol. 04). PAUSE/RESUME/STOP are idempotent by state. The spec's task states don't include "paused", so pausing is a `paused` flag that workers must respect. Run history (`run_events`) is append-only, and its ids double as SSE event ids.
+
+**ADR-016 — Durable execution uses a Postgres-backed queue, not Temporal (supersedes ADR-006).** Tasks are claimed with `SELECT … FOR UPDATE SKIP LOCKED` and leases, with heartbeat, exponential-backoff retries, dead-lettering and per-tenant quotas. This keeps one source of truth, transactional consistency between queue state and run state, and no extra infrastructure. The worker runs as role `jackson_worker`, which has cross-tenant access to queue tables only, no deletes, append-only history, and no users/memberships. Revisit Temporal if we need multi-week timers, complex sagas, or more than roughly 50 claims per second.
 
 **ADR-011 — Trading is simulation-only.** APEX-7 and any trading work are backtest/paper-trade only (vol. 00, vol. 03). No live-trade connector will be built without a new ADR and explicit owner approval.
 
@@ -143,7 +145,7 @@ Legend: ✅ done · 🟡 scaffolded (shape only, no behaviour) · ❌ missing
 `flask`, `requests` (unused; see ADR-003). `requests` will return only if a connector needs it; `httpx` is preferred.
 
 ### Infrastructure (local only, not deployed)
-`pgvector/pgvector:pg16`, `redis:7-alpine` via docker-compose. Planned: Temporal (06), MinIO/S3 (artifacts), Playwright (11).
+`pgvector/pgvector:pg16`, `redis:7-alpine` via docker-compose. Planned: MinIO/S3 (artifacts), Playwright (11). Temporal not needed (ADR-016).
 
 ## 5. Credential inventory — names only, none provided
 
@@ -153,7 +155,7 @@ Legend: ✅ done · 🟡 scaffolded (shape only, no behaviour) · ❌ missing
 | `AUTH_ISSUER`, `AUTH_JWKS_URL`, `AUTH_AUDIENCE`, `AUTH_AUTHORIZED_PARTIES` | API token verification (public values) | 03 | not provided |
 | `CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY` | console sign-in (ADR-012) | console build | not provided |
 | `DATABASE_URL`, `MIGRATION_DATABASE_URL` | app role / schema owner | 04 | owner sets locally |
-| `TEMPORAL_ADDRESS` | workflows | 06 | not provided |
+| `WORKER_DATABASE_URL` | worker (role `jackson_worker`) | 06 | owner sets locally |
 | `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | artifacts | 09–11 | not provided |
 | `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` | model adapters | 08 | not provided |
 | `SHOPIFY_STORE_DOMAIN`, `SHOPIFY_ADMIN_API_TOKEN` | Shopify **development** store, draft products only | 15 | not provided |
