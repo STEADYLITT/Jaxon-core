@@ -74,9 +74,10 @@ export interface BaseEntity {
 /**
  * Typed command (vol. 04) exactly as POST /tenants/{tenantId}/commands accepts it.
  * Field names match the API wire format (snake_case).
- * - PLAN/SIMULATE/REPORT/OPTIMIZE/BUILD create a run (objective required).
+ * - Run commands need an objective.
  * - PAUSE/RESUME/STOP act on `target_run_id`.
- * - EXECUTE is refused (422) until the policy engine exists (phase 07).
+ * - PLAN/.../BUILD/EXECUTE create a run; EXECUTE must name business_id (its autonomy level
+ *   is the granted scope) and every action inside passes the policy engine (phase 07).
  */
 export interface Command {
   type: CommandType;

@@ -34,14 +34,24 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from .contracts import TERMINAL_TASK_STATES, TaskState
 from .db import make_sessionmaker
+from .governance import (
+    ApprovalRequired,
+    PolicyDenied,
+    audit,
+    enforce,
+    request_approval,
+    reserve,
+    settle,
+)
 from .models import AuditEvent, RunEvent, Task, WorkflowRun
+from .policy import Action
 from .runs import add_task, transition
+from .worker_errors import NonRetryableError
+
+__all__ = ["ApprovalRequired", "NonRetryableError", "PolicyDenied", "TaskContext", "TaskResult",
+           "Worker"]
 
 log = logging.getLogger("jackson.worker")
-
-
-class NonRetryableError(Exception):
-    """Raise from a handler when retrying cannot help (bad input, unknown kind)."""
 
 
 @dataclass
@@ -65,6 +75,11 @@ class TaskContext:
     budget_cents: int | None
     heartbeat: Callable[[], bool]  # extends the lease; False => stop work now
     should_stop: Callable[[], bool]  # True if the run was canceled/paused or lease lost
+    # Phase 07: every side effect must pass policy first. These raise ApprovalRequired
+    # (the task then waits for a human) or PolicyDenied (the task fails).
+    authorize: Callable[[Action], None] = lambda action: None
+    reserve_budget: Callable[[int, str], uuid.UUID] = lambda cents, desc: uuid.uuid4()
+    settle_spend: Callable[[uuid.UUID, int, str], None] = lambda rid, cents, desc: None
 
 
 Handler = Callable[[TaskContext], TaskResult]
@@ -212,17 +227,83 @@ class Worker:
                 business_id=run.business_id, budget_cents=run.budget_cents,
                 heartbeat=lambda: self._heartbeat(task_id),
                 should_stop=lambda: self._should_stop(task_id),
+                authorize=lambda action: self._authorize(task_id, action),
+                reserve_budget=lambda cents, desc: self._reserve(task_id, cents, desc),
+                settle_spend=lambda rid, cents, desc: self._settle(task_id, rid, cents, desc),
             )
         handler = self.handlers.get(ctx.kind)
         try:
             if handler is None:
                 raise NonRetryableError(f"no handler registered for task kind '{ctx.kind}'")
             result = handler(ctx)
+        except ApprovalRequired as exc:
+            self._record_waiting(task_id, exc)
         except Exception as exc:  # noqa: BLE001 - every failure is recorded, none escape
             self._record_failure(task_id, exc)
         else:
             self._record_success(task_id, result)
         return True
+
+    # --- Policy hooks (phase 07) ------------------------------------------------------
+
+    def _locked(self, db: Session, task_id: uuid.UUID) -> tuple[Task, WorkflowRun]:
+        task, run = self._owns(db, task_id)
+        if task is None:
+            raise NonRetryableError("lease lost; refusing to act")
+        if run.status == TaskState.CANCELED.value:
+            raise NonRetryableError("run was canceled; refusing to act")
+        return task, run
+
+    def _authorize(self, task_id: uuid.UUID, action: Action) -> None:
+        with self.maker() as db:
+            task, run = self._locked(db, task_id)
+            try:
+                enforce(db, task, run, action)
+            finally:
+                db.commit()  # keep the policy.checked event either way
+
+    def _reserve(self, task_id: uuid.UUID, cents: int, description: str) -> uuid.UUID:
+        with self.maker() as db:
+            task, _ = self._locked(db, task_id)
+            key = f"{task.run_id}:{task.sequence}:reserve:{cents}:{description}"[:200]
+            try:
+                entry = reserve(db, task, cents, description, key)
+            finally:
+                db.commit()
+            return entry.id
+
+    def _settle(self, task_id: uuid.UUID, reservation_id: uuid.UUID, cents: int,
+                description: str) -> None:
+        with self.maker() as db:
+            task, _ = self._locked(db, task_id)
+            settle(db, reservation_id, cents, description,
+                   f"{task.run_id}:{task.sequence}:settle:{reservation_id}")
+            db.commit()
+
+    def _record_waiting(self, task_id: uuid.UUID, exc: ApprovalRequired) -> None:
+        with self.maker() as db:
+            task, run = self._owns(db, task_id)
+            if task is None:
+                self._discard(task_id, "lease lost before approval request was saved")
+                return
+            if run.status == TaskState.CANCELED.value:
+                task.status = TaskState.CANCELED.value
+                task.lease_owner = None
+                db.commit()
+                return
+            ap = request_approval(db, task, exc.action, exc.reason)
+            task.status = TaskState.WAITING_APPROVAL.value
+            task.attempts = max(task.attempts - 1, 0)  # waiting is not a failed attempt
+            task.lease_owner = None
+            task.lease_expires_at = None
+            if run.status == TaskState.RUNNING.value:
+                transition(db, run, TaskState.WAITING_APPROVAL)
+            _event(db, task, "approval.requested", approval_id=str(ap.id),
+                   category=exc.action.category, amount_cents=exc.action.amount_cents,
+                   reason=exc.reason)
+            audit(db, task.tenant_id, None, "approval.requested", "Approval", ap.id,
+                  category=exc.action.category, reason=exc.reason)
+            db.commit()
 
     def _record_success(self, task_id: uuid.UUID, result: TaskResult) -> None:
         with self.maker() as db:

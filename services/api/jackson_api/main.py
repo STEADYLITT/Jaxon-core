@@ -12,12 +12,14 @@ from . import __version__
 from .contracts import AutonomyLevel, CommandType, EntityName, TaskState
 from .db import get_engine
 from .routes import router
+from .routes_policy import router as policy_router
 from .routes_runs import router as runs_router
 from .settings import load_settings
 
 app = FastAPI(title="Jackson OS API", version=__version__)
 app.include_router(router)
 app.include_router(runs_router)
+app.include_router(policy_router)
 
 
 @app.get("/health")
@@ -27,7 +29,7 @@ def health() -> dict:
         "status": "ok",
         "service": "jackson-api",
         "version": __version__,
-        "phase": "05-commands-and-runs",
+        "phase": "07-policy-approvals-budget",
         "integrations": "none (no external connectors are live)",
     }
 

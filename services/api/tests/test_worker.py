@@ -7,82 +7,15 @@ Spec vol. 06 acceptance covered here:
 """
 
 import threading
-import uuid
 
 import pytest
-from conftest import auth
-from sqlalchemy import create_engine, func, select, text, update
+from conftest import auth, events, fast_worker, new_run, run_state
+from sqlalchemy import func, select, text, update
 from sqlalchemy.exc import DBAPIError
-from sqlalchemy.orm import Session, sessionmaker
 
 from jackson_api.db import bind_tenant
-from jackson_api.models import RunEvent, Task, WorkflowRun
+from jackson_api.models import Task, WorkflowRun
 from jackson_api.worker import NonRetryableError, TaskResult, Worker
-
-WORKER_PASSWORD = "test-only-worker-password"
-
-
-@pytest.fixture(scope="session")
-def worker_url(database):
-    admin = create_engine(database["owner_url"], isolation_level="AUTOCOMMIT")
-    with admin.connect() as c:
-        c.execute(text(f"ALTER ROLE jackson_worker LOGIN PASSWORD '{WORKER_PASSWORD}'"))
-    admin.dispose()
-    from sqlalchemy.engine import make_url
-    return make_url(database["app_url"]).set(
-        username="jackson_worker", password=WORKER_PASSWORD).render_as_string(False)
-
-
-@pytest.fixture()
-def maker(worker_url):
-    eng = create_engine(worker_url)
-    yield sessionmaker(bind=eng, expire_on_commit=False)
-    eng.dispose()
-
-
-@pytest.fixture()
-def owner_db(database):
-    eng = create_engine(database["owner_url"])
-    with Session(eng) as s:
-        yield s
-    eng.dispose()
-
-
-@pytest.fixture()
-def drain(owner_db):
-    """Park every other test's leftover queued work so each test sees only its own."""
-    owner_db.execute(update(WorkflowRun).where(WorkflowRun.status.in_(["queued", "running"]))
-                     .values(paused=True))
-    owner_db.commit()
-
-
-def new_run(client, world, make_token, objective="Find a product", tenant=None, who=None):
-    who = who or world.alice
-    r = client.post(f"/tenants/{tenant or world.tenant_a}/commands",
-                    headers=auth(make_token, who),
-                    json={"type": "PLAN", "objective": objective,
-                          "idempotency_key": f"k-{uuid.uuid4().hex}"})
-    assert r.status_code == 201, r.text
-    return r.json()["id"]
-
-
-def run_state(owner_db, run_id):
-    owner_db.expire_all()
-    run = owner_db.get(WorkflowRun, uuid.UUID(run_id))
-    tasks = owner_db.scalars(select(Task).where(Task.run_id == run.id)
-                             .order_by(Task.sequence)).all()
-    return run, tasks
-
-
-def events(owner_db, run_id):
-    return [e.type for e in owner_db.scalars(
-        select(RunEvent).where(RunEvent.run_id == uuid.UUID(run_id)).order_by(RunEvent.id))]
-
-
-def fast_worker(maker, handlers, **kw):
-    kw.setdefault("retry_base_seconds", 0)
-    return Worker(maker, handlers=handlers, **kw)
-
 
 # --- Happy path ---------------------------------------------------------------------
 

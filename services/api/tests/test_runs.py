@@ -59,7 +59,7 @@ def test_get_and_list_runs(client, world, alice):
 
 @pytest.mark.parametrize("body,code", [
     ({"objective": "   "}, "objective_required"),
-    ({"type": "EXECUTE"}, "execute_not_authorized"),
+    ({"type": "EXECUTE"}, "execute_needs_business"),
     ({"type": "STOP"}, "target_run_required"),
 ])
 def test_invalid_commands_rejected(client, world, alice, body, code):
@@ -81,7 +81,7 @@ def test_business_from_other_tenant_rejected(client, world, alice):
     assert r.status_code == 422 and r.json()["detail"]["code"] == "unknown_business"
 
 
-def test_execute_creates_nothing(client, world, alice, app_session):
+def test_execute_without_business_creates_nothing(client, world, alice, app_session):
     post(client, world, alice, cmd(type="EXECUTE", idempotency_key="exec-key-12345"))
     bind_tenant(app_session, world.tenant_a)
     assert app_session.scalar(select(func.count()).select_from(WorkflowRun)

@@ -1,3 +1,3 @@
 # packages/policy — Autonomy levels, approvals, budgets
 
-**Status: not built (phase 07).** Autonomy levels 0–3 are already defined in `packages/contracts`. Enforcement (approval-required actions, budget reservations, no-escalation delegation) comes in phase 07.
+**Status: implemented in Python (phase 07)** at `services/api/jackson_api/policy.py` (pure rules) and `governance.py` (DB enforcement, ledger, approvals). See ADR-017. This package is reserved for a TypeScript mirror if the console ever needs to preview decisions client-side; the server stays the authority.
