@@ -71,16 +71,60 @@ export interface BaseEntity {
   updatedAt: string; // ISO-8601 UTC
 }
 
-/** Typed command shape (vol. 04). Validation/enforcement arrives in phase 05. */
+/**
+ * Typed command (vol. 04) exactly as POST /tenants/{tenantId}/commands accepts it.
+ * Field names match the API wire format (snake_case).
+ * - PLAN/SIMULATE/REPORT/OPTIMIZE/BUILD create a run (objective required).
+ * - PAUSE/RESUME/STOP act on `target_run_id`.
+ * - EXECUTE is refused (422) until the policy engine exists (phase 07).
+ */
 export interface Command {
   type: CommandType;
-  objective: string;
-  businessId?: string;
-  budgetCents?: number;
-  deadline?: string;
+  idempotency_key: string; // 8-200 chars; same key + same body => same run
+  objective?: string;
+  business_id?: string;
+  budget_cents?: number;
+  deadline?: string; // ISO-8601
   constraints?: string[];
-  successCriteria?: string[];
-  idempotencyKey: string;
+  success_criteria?: string[];
+  target_run_id?: string;
+}
+
+export interface TaskOut {
+  id: string;
+  sequence: number;
+  kind: string;
+  title: string;
+  status: TaskState;
+  created_at: string;
+}
+
+export interface WorkflowRun {
+  id: string;
+  tenant_id: string;
+  business_id: string | null;
+  command_type: CommandType;
+  objective: string;
+  budget_cents: number | null;
+  deadline: string | null;
+  constraints: string[];
+  success_criteria: string[];
+  idempotency_key: string;
+  status: TaskState;
+  paused: boolean;
+  started_at: string | null;
+  finished_at: string | null;
+  created_at: string;
+  updated_at: string;
+  tasks: TaskOut[];
+}
+
+/** Payload of each SSE message from GET /tenants/{tenantId}/events. */
+export interface RunEventMessage {
+  run_id: string;
+  type: string; // run.created | task.created | run.state_changed | run.paused | run.resumed
+  data: Record<string, unknown>;
+  created_at: string;
 }
 
 export function isTerminal(state: TaskState): boolean {

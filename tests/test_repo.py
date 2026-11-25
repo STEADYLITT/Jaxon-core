@@ -84,3 +84,18 @@ def test_no_secrets_in_tracked_files():
         hits += [f for pat in SECRET_PATTERNS if pat.search(text)]
     assert not hits, f"possible secrets in: {hits}"
     assert ".env" not in files
+
+
+def _ts_interface_fields(src: str, name: str) -> set[str]:
+    m = re.search(rf"export interface {name} \{{(.*?)\n\}}", src, re.DOTALL)
+    assert m, name
+    return set(re.findall(r"^\s+(\w+)\??:", m.group(1), re.MULTILINE))
+
+
+def test_ts_run_types_match_api_wire_format():
+    from jackson_api.routes_runs import CommandIn, RunOut, TaskOut
+
+    src = (ROOT / "packages/contracts/src/index.ts").read_text()
+    assert _ts_interface_fields(src, "WorkflowRun") == set(RunOut.model_fields)
+    assert _ts_interface_fields(src, "TaskOut") == set(TaskOut.model_fields)
+    assert _ts_interface_fields(src, "Command") == set(CommandIn.model_fields)

@@ -13,6 +13,7 @@ import os
 import time
 import uuid
 from collections.abc import Iterator
+from dataclasses import dataclass
 from pathlib import Path
 
 import jwt
@@ -23,10 +24,12 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
+from sqlalchemy.orm import Session
 
 from jackson_api import deps
 from jackson_api.auth import AuthConfig, TokenVerifier
 from jackson_api.main import app
+from jackson_api.models import Business, Membership, Tenant, User
 
 API_DIR = Path(__file__).resolve().parents[1]
 TEST_ISSUER = "https://test-issuer.invalid"  # .invalid TLD: guaranteed never to resolve
@@ -107,3 +110,52 @@ def client(database, verifier, monkeypatch) -> Iterator[TestClient]:
     app.dependency_overrides[deps.get_verifier] = lambda: verifier
     yield TestClient(app)
     app.dependency_overrides.clear()
+
+
+@dataclass
+class World:
+    tenant_a: uuid.UUID
+    tenant_b: uuid.UUID
+    biz_a: uuid.UUID
+    biz_b: uuid.UUID
+    alice: str  # owner of A
+    bob: str  # owner of B
+    carol: str  # viewer of A
+
+
+@pytest.fixture()
+def world(database) -> World:
+    """Insert fixtures as the schema owner (bypasses RLS on purpose, setup only)."""
+    eng = create_engine(database["owner_url"])
+    tag = uuid.uuid4().hex[:6]
+    with Session(eng) as s:
+        ta, tb = Tenant(name=f"A-{tag}"), Tenant(name=f"B-{tag}")
+        users = {n: User(auth_subject=f"user_{n}_{tag}", email=f"{n}@example.test")
+                 for n in ("alice", "bob", "carol")}
+        s.add_all([ta, tb, *users.values()])
+        s.flush()
+        s.add_all([
+            Membership(tenant_id=ta.id, user_id=users["alice"].id, role="owner"),
+            Membership(tenant_id=tb.id, user_id=users["bob"].id, role="owner"),
+            Membership(tenant_id=ta.id, user_id=users["carol"].id, role="viewer"),
+        ])
+        ba = Business(tenant_id=ta.id, name="A biz", kind="ecommerce")
+        bb = Business(tenant_id=tb.id, name="B biz", kind="agency")
+        s.add_all([ba, bb])
+        s.commit()
+        w = World(ta.id, tb.id, ba.id, bb.id, *(users[n].auth_subject for n in
+                                                ("alice", "bob", "carol")))
+    eng.dispose()
+    return w
+
+
+def auth(make_token, sub):
+    return {"Authorization": f"Bearer {make_token(sub)}"}
+
+
+@pytest.fixture()
+def app_session(database):
+    eng = create_engine(database["app_url"])
+    with Session(eng) as s:
+        yield s
+    eng.dispose()

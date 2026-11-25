@@ -1,8 +1,8 @@
 """Canonical tables for phases 03-04 (ADR-005, ADR-010, ADR-012, ADR-013).
 
-Only the entities these phases need exist here. The remaining spec entities
-(Opportunity, AgentSpec, WorkflowRun, Task, Approval, Budget, LedgerEntry,
-MemoryRecord, ...) are added by the phase that gives them behaviour.
+Only entities with behaviour exist here. The remaining spec entities
+(Opportunity, AgentSpec, Approval, Budget, LedgerEntry, MemoryRecord, ...)
+are added by the phase that gives them behaviour.
 
 Every tenant-scoped table carries tenant_id and is protected by Postgres
 row-level security (see migrations/versions/0001_initial.py).
@@ -13,9 +13,12 @@ from datetime import datetime
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Integer,
     String,
     Text,
     UniqueConstraint,
@@ -122,4 +125,86 @@ class AuditEvent(Base):
         JSON().with_variant(JSONB(), "postgresql"), nullable=False, default=dict
     )
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="recorded")
+    created_at: Mapped[datetime] = _created()
+
+
+# --- Phase 05: commands, runs, tasks, run events --------------------------------
+
+TASK_STATE_CHECK = (
+    "status IN ('queued','running','waiting_approval','succeeded','failed','canceled')"
+)
+
+
+class WorkflowRun(Base):
+    """One typed command (vol. 04) and its lifecycle. Executed by workers from phase 06."""
+
+    __tablename__ = "workflow_runs"
+    __table_args__ = (
+        # Idempotency (vol. 06): one run per (tenant, idempotency key).
+        UniqueConstraint("tenant_id", "idempotency_key"),
+        CheckConstraint(TASK_STATE_CHECK, name="ck_workflow_run_status"),
+        CheckConstraint("budget_cents IS NULL OR budget_cents >= 0", name="ck_run_budget"),
+    )
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    business_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("businesses.id"))
+    requested_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    command_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    objective: Mapped[str] = mapped_column(Text, nullable=False)
+    budget_cents: Mapped[int | None] = mapped_column(BigInteger)
+    deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    constraints: Mapped[list] = mapped_column(
+        JSON().with_variant(JSONB(), "postgresql"), nullable=False, default=list
+    )
+    success_criteria: Mapped[list] = mapped_column(
+        JSON().with_variant(JSONB(), "postgresql"), nullable=False, default=list
+    )
+    idempotency_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="queued")
+    paused: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = _created()
+    updated_at: Mapped[datetime] = _updated()
+
+
+class Task(Base):
+    __tablename__ = "tasks"
+    __table_args__ = (
+        UniqueConstraint("run_id", "sequence"),
+        CheckConstraint(TASK_STATE_CHECK, name="ck_task_status"),
+    )
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workflow_runs.id"), nullable=False, index=True
+    )
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    title: Mapped[str] = mapped_column(String(300), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="queued")
+    created_at: Mapped[datetime] = _created()
+    updated_at: Mapped[datetime] = _updated()
+
+
+class RunEvent(Base):
+    """Append-only run history; the monotonically increasing id is the SSE event id."""
+
+    __tablename__ = "run_events"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("workflow_runs.id"), nullable=False, index=True
+    )
+    type: Mapped[str] = mapped_column(String(64), nullable=False)
+    data: Mapped[dict] = mapped_column(
+        JSON().with_variant(JSONB(), "postgresql"), nullable=False, default=dict
+    )
     created_at: Mapped[datetime] = _created()
