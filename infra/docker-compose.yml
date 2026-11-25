@@ -1,0 +1,27 @@
+# Local development infrastructure only. Not a deployment.
+# Usage: cp .env.example .env  (set POSTGRES_PASSWORD), then
+#        docker compose -f infra/docker-compose.yml --env-file .env up -d
+# Temporal is added in phase 06; object storage (MinIO) when artifacts land.
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-jackson}
+      POSTGRES_USER: ${POSTGRES_USER:-jackson}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-jackson}"]
+      interval: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:6379:6379"
+
+volumes:
+  pgdata:
