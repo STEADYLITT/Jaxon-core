@@ -20,6 +20,7 @@ PUBLIC = {
     "/contracts": "public enum values for clients",
     "/console": "static page, no data; it calls the authenticated API",
     "/console/{name}": "static assets",
+    "/console/config.json": "public Clerk publishable key (designed to be public)",
     "/u/{token}": "unsubscribe page; the HMAC-signed token is the credential",
 }
 

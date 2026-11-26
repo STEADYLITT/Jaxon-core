@@ -12,17 +12,21 @@
   <h1>Jackson OS</h1>
   <button id="stop" class="danger" hidden>Global stop</button>
   <button id="resume" hidden>Resume work</button>
+  <div id="userbtn"></div>
 </header>
 <main>
   <section id="signin" aria-labelledby="signin-h">
     <h2 id="signin-h">Sign in</h2>
-    <p>Paste a session token and your tenant ID. (Interim sign-in until the hosted console is
-      connected. The token stays in this browser tab only.)</p>
-    <label for="token">Session token</label>
-    <input id="token" type="password" autocomplete="off">
-    <label for="tenant">Tenant ID</label>
-    <input id="tenant" autocomplete="off">
-    <button id="go">Open dashboard</button>
+    <div id="clerk"></div>
+    <div id="manual">
+      <p>Paste a session token and your tenant ID. (Used when Clerk sign-in isn't configured.
+        The token stays in this browser tab only.)</p>
+      <label for="token">Session token</label>
+      <input id="token" type="password" autocomplete="off">
+      <label for="tenant">Tenant ID</label>
+      <input id="tenant" autocomplete="off">
+      <button id="go">Open dashboard</button>
+    </div>
     <p id="err" role="alert"></p>
   </section>
   <div id="dash" hidden>

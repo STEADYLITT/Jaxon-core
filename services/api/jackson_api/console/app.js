@@ -5,7 +5,13 @@
 const $ = (id) => document.getElementById(id);
 const money = (c) => (c < 0 ? "-$" : "$") + (Math.abs(c) / 100).toLocaleString(undefined,
   { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-let state = { token: "", tenant: "" };
+let state = { token: "", tenant: "", clerk: null };
+
+async function bearer() {
+  // Clerk session tokens are short-lived; ask Clerk for a fresh one on every call.
+  if (state.clerk && state.clerk.session) return state.clerk.session.getToken();
+  return state.token;
+}
 
 function li(list, text, cls) {
   const el = document.createElement("li");
@@ -20,7 +26,7 @@ function clear(el) { while (el.firstChild) el.removeChild(el.firstChild); }
 async function api(path, opts = {}) {
   const r = await fetch(`/tenants/${encodeURIComponent(state.tenant)}${path}`, {
     ...opts,
-    headers: { Authorization: `Bearer ${state.token}`, "Content-Type": "application/json" },
+    headers: { Authorization: `Bearer ${await bearer()}`, "Content-Type": "application/json" },
   });
   if (!r.ok) throw new Error(`${r.status}: ${(await r.text()).slice(0, 200)}`);
   return r.json();
@@ -123,20 +129,47 @@ async function load() {
   }
 }
 
-document.addEventListener("DOMContentLoaded", () => {
-  try {
-    state.token = sessionStorage.getItem("jackson.token") || "";
-    state.tenant = sessionStorage.getItem("jackson.tenant") || "";
-  } catch (_) { /* storage blocked: ask again */ }
-  $("go").addEventListener("click", () => {
-    state.token = $("token").value.trim();
-    state.tenant = $("tenant").value.trim();
-    try {
-      sessionStorage.setItem("jackson.token", state.token);
-      sessionStorage.setItem("jackson.tenant", state.tenant);
-    } catch (_) { /* fine: this tab only */ }
-    load();
+function loadScript(src, attrs = {}) {
+  return new Promise((resolve, reject) => {
+    const el = document.createElement("script");
+    el.src = src; el.async = true; el.crossOrigin = "anonymous";
+    Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v));
+    el.onload = resolve;
+    el.onerror = () => reject(new Error(`couldn't load ${src}`));
+    document.head.appendChild(el);
   });
+}
+
+async function startWithClerk(key) {
+  // Per Clerk's JavaScript quickstart: the Frontend API host is encoded in the key.
+  const host = atob(key.split("_")[2]).slice(0, -1);
+  await loadScript(`https://${host}/npm/@clerk/ui@1/dist/ui.browser.js`);
+  await loadScript(`https://${host}/npm/@clerk/clerk-js@6/dist/clerk.browser.js`,
+    { "data-clerk-publishable-key": key });
+  await window.Clerk.load({ ui: { ClerkUI: window.__internal_ClerkUICtor } });
+  state.clerk = window.Clerk;
+  $("manual").hidden = true;
+  if (!state.clerk.isSignedIn) {
+    state.clerk.mountSignIn($("clerk"));
+    state.clerk.addListener(({ session }) => { if (session) window.location.reload(); });
+    return;
+  }
+  state.clerk.mountUserButton($("userbtn"));
+  const r = await fetch("/me", { headers: { Authorization: `Bearer ${await bearer()}` } });
+  if (r.status === 403) {
+    $("err").textContent = "You're signed in, but this Jackson OS isn't set up for you yet. " +
+      `Put this value in OWNER_AUTH_SUBJECT on the host and redeploy: ${state.clerk.user.id}`;
+    return;
+  }
+  if (!r.ok) { $("err").textContent = `Sign-in check failed (${r.status}).`; return; }
+  const me = await r.json();
+  const m = me.memberships.find((x) => x.role === "owner") || me.memberships[0];
+  if (!m) { $("err").textContent = "Your account isn't a member of any workspace."; return; }
+  state.tenant = m.tenant_id;
+  load();
+}
+
+document.addEventListener("DOMContentLoaded", async () => {
   $("stop").addEventListener("click", async () => {
     const reason = window.prompt("GLOBAL STOP: all running work is cancelled and nothing new " +
       "starts until you resume. Why are you stopping?");
@@ -150,5 +183,27 @@ document.addEventListener("DOMContentLoaded", () => {
     await api("/resume", { method: "POST" });
     load();
   });
+  $("go").addEventListener("click", () => {
+    state.token = $("token").value.trim();
+    state.tenant = $("tenant").value.trim();
+    try {
+      sessionStorage.setItem("jackson.token", state.token);
+      sessionStorage.setItem("jackson.tenant", state.tenant);
+    } catch (_) { /* fine: this tab only */ }
+    load();
+  });
+  try {
+    const cfg = await (await fetch("/console/config.json")).json();
+    if (cfg.clerk_publishable_key) {
+      startWithClerk(cfg.clerk_publishable_key).catch((e) => {
+        $("err").textContent = `Sign-in couldn't start (${e.message}).`;
+      });
+      return;
+    }
+  } catch (_) { /* fall back to a pasted token */ }
+  try {
+    state.token = sessionStorage.getItem("jackson.token") || "";
+    state.tenant = sessionStorage.getItem("jackson.tenant") || "";
+  } catch (_) { /* storage blocked: ask again */ }
   if (state.token && state.tenant) load();
 });
