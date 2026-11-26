@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 
 from .contracts import TERMINAL_TASK_STATES, CommandType, TaskState
 from .db import bind_tenant
-from .models import AuditEvent, Business, RunEvent, Task, WorkflowRun
+from .models import AuditEvent, Business, RunEvent, Task, Tenant, WorkflowRun
 
 RUN_CREATING = frozenset({
     CommandType.PLAN, CommandType.SIMULATE, CommandType.REPORT,
@@ -108,6 +108,10 @@ def create_run(
                            "EXECUTE must name a business_id (its autonomy level sets the scope)")
     if ctype not in RUN_CREATING:
         raise CommandError(422, "not_a_run_command", f"{ctype} controls an existing run")
+    if db.scalar(select(Tenant.stopped_at).where(Tenant.id == tenant_id)) is not None:
+        # Global stop (phase 19). A DB trigger refuses the insert too; this gives a clear
+        # message instead of an error.
+        raise CommandError(423, "tenant_stopped", "global stop is on; resume before new work")
     if not (payload.get("objective") or "").strip():
         raise CommandError(422, "objective_required", "objective is required")
 

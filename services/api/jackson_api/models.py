@@ -58,6 +58,10 @@ class Tenant(Base):
     id: Mapped[uuid.UUID] = _pk()
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    # Global stop (spec vol. 04, phase 19). While set, no new runs and no task may start.
+    stopped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    stopped_by: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    stop_reason: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = _updated()
 
@@ -868,3 +872,29 @@ class OutreachMessage(Base):
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = _updated()
+
+
+class RevenueEntry(Base):
+    """Revenue, kept apart by kind so the dashboard never mixes estimates with actuals
+    (spec vol. 04). Append-only: corrections are new entries."""
+
+    __tablename__ = "revenue_entries"
+    __table_args__ = (
+        CheckConstraint("kind IN ('estimate','actual','refund')", name="ck_revenue_kind"),
+        CheckConstraint("amount_cents >= 0", name="ck_revenue_amount"),
+        CheckConstraint("source IN ('manual','shopify','whop','stripe','import')",
+                        name="ck_revenue_source"),
+    )
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    business_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("businesses.id"))
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    amount_cents: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD")
+    period: Mapped[str] = mapped_column(String(7), nullable=False)  # YYYY-MM
+    source: Mapped[str] = mapped_column(String(16), nullable=False, default="manual")
+    reference: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    recorded_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = _created()

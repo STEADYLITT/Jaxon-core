@@ -5,7 +5,7 @@ This repo holds the core brain & memory system for Jaxon Vale — AI partner.
 It is the codebase for **Jackson OS**, the long-term software version of Jackson (v1 lives in the Base44 app *Steady Growth OS*; its data will be imported later — see ADR-008).
 
 ## Status
-Phases 01–18 of 20: inventory, scaffold + CI, hosted-provider auth + tenant isolation, Postgres + migrations, typed commands + run API (SSE), durable worker on a Postgres queue, policy + approvals + budget ledger, model adapters (Claude default; MOCK until a key is set), memory with provenance, tool registry + gateway, watched browser sessions, agent registry + factory, opportunity research, product economics, Shopify drafts (mock until a dev-store token is set), content + virtual influencer workflow (posting mock until a social key is set), website factory (hosting mock until a hosting account exists), CRM + compliant outreach (sending mock until an email/SMS provider key is set). **No external integrations are live; nothing is deployed.**
+Phases 01–19 of 20: inventory, scaffold + CI, hosted-provider auth + tenant isolation, Postgres + migrations, typed commands + run API (SSE), durable worker on a Postgres queue, policy + approvals + budget ledger, model adapters (Claude default; MOCK until a key is set), memory with provenance, tool registry + gateway, watched browser sessions, agent registry + factory, opportunity research, product economics, Shopify drafts (mock until a dev-store token is set), content + virtual influencer workflow (posting mock until a social key is set), website factory (hosting mock until a hosting account exists), CRM + compliant outreach (sending mock until an email/SMS provider key is set), owner dashboard + global stop + daily reports (interim console at `/console`). **No external integrations are live; nothing is deployed.**
 
 - Spec: [`docs/jackson-os-spec/`](docs/jackson-os-spec/START_HERE.md)
 - Gap report, ADRs, dependency & credential inventory: [`PHASE_01_GAP_REPORT.md`](docs/jackson-os-spec/PHASE_01_GAP_REPORT.md)
@@ -24,6 +24,7 @@ Phases 01–18 of 20: inventory, scaffold + CI, hosted-provider auth + tenant is
 - Content + virtual influencer: [`PHASE_16_REPORT.md`](docs/jackson-os-spec/PHASE_16_REPORT.md)
 - Website factory: [`PHASE_17_REPORT.md`](docs/jackson-os-spec/PHASE_17_REPORT.md)
 - CRM + compliant outreach: [`PHASE_18_REPORT.md`](docs/jackson-os-spec/PHASE_18_REPORT.md)
+- Owner dashboard: [`PHASE_19_REPORT.md`](docs/jackson-os-spec/PHASE_19_REPORT.md)
 
 ## Layout
 ```
