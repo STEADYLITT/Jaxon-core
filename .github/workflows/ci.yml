@@ -10,7 +10,9 @@ permissions:
 
 jobs:
   python:
-    runs-on: ubuntu-latest
+    # Pinned: backup/restore tests need PostgreSQL 16 client tools to match the server;
+    # newer runner images no longer ship postgresql-client-16.
+    runs-on: ubuntu-24.04
     services:
       postgres:
         # Throwaway CI database; credentials below are CI-only, not secrets.
@@ -33,6 +35,8 @@ jobs:
         run: pip install -e "services/api[dev]"
       - name: Install Chromium for browser-session tests
         run: python -m playwright install --with-deps chromium
+      - name: Install PostgreSQL 16 client tools for backup/restore tests
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
       - name: Lint
         run: ruff check services/api tests
       - name: API tests (incl. tenant isolation against real Postgres)

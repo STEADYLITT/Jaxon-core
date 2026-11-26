@@ -24,9 +24,14 @@ from .routes_runs import router as runs_router
 from .routes_shop import router as shop_router
 from .routes_sites import router as sites_router
 from .routes_tools import router as tools_router
+from .security import SecurityMiddleware, assert_production_ready, is_production
 from .settings import load_settings
 
-app = FastAPI(title="Jackson OS API", version=__version__)
+assert_production_ready()  # fail closed: an unsafe production config never starts
+app = FastAPI(title="Jackson OS API", version=__version__,
+              **({"docs_url": None, "redoc_url": None, "openapi_url": None}
+                 if is_production() else {}))
+app.add_middleware(SecurityMiddleware)
 app.include_router(router)
 app.include_router(runs_router)
 app.include_router(policy_router)
@@ -49,7 +54,7 @@ def health() -> dict:
         "status": "ok",
         "service": "jackson-api",
         "version": __version__,
-        "phase": "19-dashboard",
+        "phase": "20-security-pilot",
         "integrations": "none (no external connectors are live)",
     }
 

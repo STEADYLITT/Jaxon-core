@@ -119,7 +119,12 @@ def run_python(args: PythonIn, env: ToolEnv) -> dict:
     """PROCESS-LEVEL isolation only: isolated interpreter, empty environment (no secrets),
     throwaway working dir, CPU/memory/file limits and a wall-clock timeout. This is not a
     security boundary for hostile code (network and filesystem reads are not blocked);
-    production needs a container sandbox (phase 20)."""
+    production needs a container sandbox (phase 20): so in production this tool refuses to
+    run (ADR-030) until one is connected."""
+    if os.environ.get("APP_ENV", "").lower() == "production":
+        raise NonRetryableError("code.run_python is disabled in production: process-level "
+                                "isolation is not a security boundary (needs a container "
+                                "sandbox)")
     with tempfile.TemporaryDirectory(prefix="jackson-sbx-") as tmp:
         try:
             p = subprocess.run([sys.executable, "-I", "-S", "-c", args.code], cwd=tmp,

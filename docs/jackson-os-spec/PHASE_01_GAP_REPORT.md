@@ -75,7 +75,7 @@ Legend: ✅ done · 🟡 scaffolded (shape only, no behaviour) · ❌ missing
 | Shopify draft connector (03) | draft → verify; approval to publish | ✅ mock + real Admin API 2026-10 backend, QA report (ADR-025); live run needs dev-store token | 15 |
 | Content / website / CRM (03) | | Content + virtual influencer ✅ (ADR-026, social posting mock until an Upload-Post key); website factory ✅ (ADR-027, hosting mock until a hosting account); CRM + compliant outreach ✅ (ADR-028, email/SMS mock until a provider key) | 16–18 |
 | Owner dashboard + global stop (04) | | ✅ dashboard API + interim console at `/console`, metrics, alerts, daily reports, DB-enforced global stop (ADR-029); hosted Clerk console later | 19 |
-| Security, backup/restore, E2E pilot | | ❌ | 20 |
+| Security, backup/restore, E2E pilot | | ✅ security middleware + fail-closed production preflight, route-auth sweep, backup/restore with verification, end-to-end pilot test + runbooks (ADR-030); real pilot needs owner accounts | 20 |
 | Growth OS import | (owner requirement) | ❌ design only (ADR-008, §6) | after 09/12 |
 
 ### Acceptance tests (vol. 06) — status
@@ -199,6 +199,30 @@ A trigger refuses to claim a message for sending (`sending`) unless the campaign
   Live products and sites stay up, because taking them down is its own approved production change. A trigger refuses new `workflow_runs` and any task moving to `running` while the tenant is stopped, whoever writes. Resume clears the flag; canceled runs stay canceled.
 - **Daily reports:** the `daily_report` task stores a JSON + Markdown artifact (outcomes, blockers, next actions, numbers).
 - **Interim console:** a static page at `/console` (strict CSP, script-src 'self', all data written with textContent). It uses the same authenticated API, with a pasted token, until the Clerk-hosted console in `apps/console` is built.
+
+**ADR-030 — Security baseline, verified recovery, and the pilot gate.**
+- **Every response** carries nosniff, `X-Frame-Options: DENY`, `no-referrer`, a restrictive Permissions-Policy and COOP. Tenant data gets `Cache-Control: no-store`, and production adds HSTS.
+- **Limits:** request bodies over `MAX_REQUEST_BYTES` (default 5 MiB) get 413. The public unsubscribe page is rate-limited per IP (in-process sliding window).
+- **Route-auth sweep:** a test walks every API route, including those in included routers, and requires 401 without a token. The only exceptions are a reviewed list: `/health`, `/ready`, `/contracts`, `/console` + assets, and `/u/{token}`.
+- **Fail-closed production start:** with `APP_ENV=production` the API refuses to start unless `python -m jackson_api.preflight` passes. The preflight prints check names only, never values. It requires:
+  - least-privilege API and worker DB roles
+  - https auth issuer and JWKS, and authorized parties
+  - a 32+ character unsubscribe secret
+  - an https public URL
+  - durable artifact storage
+  - a numeric model budget
+  - no process-level code sandbox
+
+  Production also hides `/docs` and OpenAPI. `code.run_python` refuses to run in production until a container sandbox exists.
+- **Recovery:**
+  - `infra/backup/backup.sh` writes a pg_dump custom archive (data, grants, RLS policies, triggers), an artifacts tarball, row counts and SHA-256 sums.
+  - `infra/backup/restore.sh` refuses corrupted backups and non-empty targets, then runs `jackson_api.verify_restore`. That checks the schema is at head, RLS is enabled and forced with policies on every tenant table, the guard triggers are present and enabled, append-only grants are intact, and row counts match.
+  - `memberships` is the one reviewed RLS exemption: it's read before a tenant is bound, and always filtered by the signed-in user.
+  - CI runs the full round trip.
+- **Pilot gate:** the first vertical slice runs end to end through the API and worker on every CI run (`test_pilot.py`). A real pilot follows `docs/runbooks/pilot.md` once the owner provides accounts.
+- **Known limits:**
+  - The rate limiter is per process.
+  - Dependency vulnerability scanning and a container sandbox for untrusted code remain open items.
 
 **ADR-011 — Trading is simulation-only.** APEX-7 and any trading work are backtest/paper-trade only (vol. 00, vol. 03). No live-trade connector will be built without a new ADR and explicit owner approval.
 

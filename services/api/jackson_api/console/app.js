@@ -85,7 +85,8 @@ function render(d) {
   const runs = $("runs"); clear(runs);
   if (!d.runs.length) li(runs, "No runs yet.");
   d.runs.forEach((r) => li(runs, `${r.created_at.slice(0, 16).replace("T", " ")} · ${r.status}` +
-    ` · ${r.objective} · ${money(r.cost_cents)}`));
+    ` · ${r.objective} · ${money(r.cost_cents)}` +
+    (r.model_cost_usd > 0 ? ` (AI $${r.model_cost_usd.toFixed(4)})` : "")));
 
   const op = $("opps"); clear(op);
   Object.entries(d.opportunities.by_status).forEach(([s, n]) => li(op, `${s}: ${n}`));
