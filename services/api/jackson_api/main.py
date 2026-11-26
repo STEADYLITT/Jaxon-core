@@ -15,6 +15,7 @@ from .routes import router
 from .routes_agents import router as agents_router
 from .routes_browser import router as browser_router
 from .routes_content import router as content_router
+from .routes_crm import router as crm_router
 from .routes_memory import router as memory_router
 from .routes_opportunities import router as opportunities_router
 from .routes_policy import router as policy_router
@@ -35,6 +36,7 @@ app.include_router(agents_router)
 app.include_router(opportunities_router)
 app.include_router(shop_router)
 app.include_router(content_router)
+app.include_router(crm_router)
 app.include_router(sites_router)
 
 
@@ -45,7 +47,7 @@ def health() -> dict:
         "status": "ok",
         "service": "jackson-api",
         "version": __version__,
-        "phase": "17-website-factory",
+        "phase": "18-crm-outreach",
         "integrations": "none (no external connectors are live)",
     }
 

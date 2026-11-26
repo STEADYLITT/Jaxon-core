@@ -741,3 +741,130 @@ class SiteVersion(Base):
                                          nullable=False)
     passed: Mapped[bool] = mapped_column(Boolean, nullable=False)
     created_at: Mapped[datetime] = _created()
+
+
+LEAD_SOURCES = ("inbound", "referral", "existing_customer", "event", "public_business_listing")
+LAWFUL_BASES = ("consent", "legitimate_interest", "existing_relationship")
+LEAD_STAGES = ("new", "contacted", "replied", "meeting", "proposal", "won", "lost")
+OUTREACH_CHANNELS = ("email", "sms", "call")
+
+
+class Contact(Base):
+    """A lead or customer. Every contact records where it came from and the lawful basis
+    for contacting it (spec vol. 03: lawful leads, permitted sources)."""
+
+    __tablename__ = "contacts"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "dedupe_key"),
+        CheckConstraint(f"source_type IN {LEAD_SOURCES}", name="ck_contact_source"),
+        CheckConstraint(f"lawful_basis IN {LAWFUL_BASES}", name="ck_contact_basis"),
+        CheckConstraint(f"stage IN {LEAD_STAGES}", name="ck_contact_stage"),
+        CheckConstraint("length(source_ref) > 0", name="ck_contact_source_ref"),
+    )
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    business_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("businesses.id"))
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    company: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    email: Mapped[str | None] = mapped_column(String(320))
+    phone: Mapped[str | None] = mapped_column(String(32))
+    region: Mapped[str] = mapped_column(String(16), nullable=False, default="")
+    timezone: Mapped[str] = mapped_column(String(64), nullable=False, default="UTC")
+    industry: Mapped[str] = mapped_column(String(100), nullable=False, default="")
+    source_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    source_ref: Mapped[str] = mapped_column(String(500), nullable=False)
+    lawful_basis: Mapped[str] = mapped_column(String(32), nullable=False)
+    sms_consent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    call_consent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    stage: Mapped[str] = mapped_column(String(16), nullable=False, default="new")
+    score: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    score_detail: Mapped[dict] = mapped_column(JSON().with_variant(JSONB(), "postgresql"),
+                                               nullable=False, default=dict)
+    dedupe_key: Mapped[str] = mapped_column(String(400), nullable=False)
+    notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[datetime] = _created()
+    updated_at: Mapped[datetime] = _updated()
+
+
+class Suppression(Base):
+    """A permanent opt-out. Stored as a hash so it survives deleting the contact without
+    keeping their address. Nobody (API or worker) can delete one."""
+
+    __tablename__ = "suppressions"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "channel", "value_hash"),
+        CheckConstraint("channel IN ('email','sms','call','all')", name="ck_suppression_channel"),
+    )
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    channel: Mapped[str] = mapped_column(String(8), nullable=False)
+    value_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    reason: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_at: Mapped[datetime] = _created()
+
+
+class OutreachCampaign(Base):
+    __tablename__ = "outreach_campaigns"
+    __table_args__ = (
+        CheckConstraint(f"channel IN {OUTREACH_CHANNELS}", name="ck_campaign_channel"),
+        CheckConstraint("status IN ('draft','prepared','approved','sending','completed',"
+                        "'cancelled')", name="ck_campaign_status"),
+        CheckConstraint("status NOT IN ('approved','sending','completed') "
+                        "OR approved_by IS NOT NULL", name="ck_campaign_needs_approval"),
+        CheckConstraint("daily_limit BETWEEN 1 AND 500", name="ck_campaign_daily_limit"),
+    )
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    business_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("businesses.id"))
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    channel: Mapped[str] = mapped_column(String(8), nullable=False)
+    sender_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    sender_email: Mapped[str] = mapped_column(String(320), nullable=False, default="")
+    postal_address: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    subject_template: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    body_template: Mapped[str] = mapped_column(Text, nullable=False)
+    audience: Mapped[dict] = mapped_column(JSON().with_variant(JSONB(), "postgresql"),
+                                           nullable=False, default=dict)
+    daily_limit: Mapped[int] = mapped_column(Integer, nullable=False, default=50)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="draft")
+    approved_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = _created()
+    updated_at: Mapped[datetime] = _updated()
+
+
+class OutreachMessage(Base):
+    """One message to one contact. A DB trigger refuses to mark it sent if the address is
+    suppressed, the campaign isn't approved, or an SMS/call has no recorded consent."""
+
+    __tablename__ = "outreach_messages"
+    __table_args__ = (
+        UniqueConstraint("campaign_id", "contact_id"),
+        CheckConstraint("status IN ('blocked','queued','sending','sent','failed','skipped')",
+                        name="ck_message_status"),
+    )
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    campaign_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("outreach_campaigns.id"),
+                                                   nullable=False)
+    contact_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("contacts.id", ondelete="SET NULL"))
+    channel: Mapped[str] = mapped_column(String(8), nullable=False)
+    to_address: Mapped[str] = mapped_column(String(320), nullable=False)
+    subject: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    review: Mapped[dict] = mapped_column(JSON().with_variant(JSONB(), "postgresql"),
+                                         nullable=False, default=dict)
+    external_id: Mapped[str | None] = mapped_column(String(255))
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = _created()
+    updated_at: Mapped[datetime] = _updated()

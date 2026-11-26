@@ -73,7 +73,7 @@ Legend: ✅ done · 🟡 scaffolded (shape only, no behaviour) · ❌ missing
 | Opportunity engine (03) | | ✅ sourced signals, dedupe, transparent scores + uncertainty, briefs (ADR-023) | 13 |
 | Product economics (03) | landed cost, margin, breakeven | ✅ exact calculator, assumptions listed, opportunity re-scoring, agent tool (ADR-024) | 14 |
 | Shopify draft connector (03) | draft → verify; approval to publish | ✅ mock + real Admin API 2026-10 backend, QA report (ADR-025); live run needs dev-store token | 15 |
-| Content / website / CRM (03) | | Content + virtual influencer ✅ (ADR-026, social posting mock until an Upload-Post key); website factory ✅ (ADR-027, hosting mock until a hosting account); CRM 18 | 16–18 |
+| Content / website / CRM (03) | | Content + virtual influencer ✅ (ADR-026, social posting mock until an Upload-Post key); website factory ✅ (ADR-027, hosting mock until a hosting account); CRM + compliant outreach ✅ (ADR-028, email/SMS mock until a provider key) | 16–18 |
 | Owner dashboard + global stop (04) | | ❌ | 19 |
 | Security, backup/restore, E2E pilot | | ❌ | 20 |
 | Growth OS import | (owner requirement) | ❌ design only (ADR-008, §6) | after 09/12 |
@@ -152,6 +152,32 @@ Legend: ✅ done · 🟡 scaffolded (shape only, no behaviour) · ❌ missing
 
 A DB trigger only lets a version of the same site that passed go live or be kept for rollback. Launching verifies the domain with a DNS TXT record (`_jackson-verify.<domain>`): DNS-over-HTTPS when `SITE_DOMAIN_VERIFY=dns`, otherwise a labeled mock. It then asks for owner approval (`production_change`, always) and deploys through the hosting connector, which is a labeled MOCK until a hosting account exists. The previous live version is kept, and rollback swaps back to it. Known limit: the worker inserts versions together with their `passed` flag, so the database can't prove the tests really ran. The owner's launch approval is the human check.
 
+**ADR-028 — Outreach is consent-aware, approved per campaign and guarded in the database.** Every contact records:
+- a permitted source (inbound, referral, existing customer, event or public business listing; no bought lists)
+- a source reference
+- a lawful basis
+
+Contacts are deduped by normalized email, then phone, then name and company. They're scored by a transparent formula: source, reachability, and fit with the ideal customer.
+
+A campaign is prepared first: every message is rendered and reviewed. For email the review requires (US CAN-SPAM baseline):
+- sender identity
+- a physical postal address
+- a signed unsubscribe link
+- no fake "RE:"/"FWD:" subject
+- no invented claims
+
+SMS and calls also need the contact's recorded prior consent with evidence, and SMS needs STOP instructions (TCPA baseline). Sending is limited to 8am–9pm in the recipient's time zone. Opted-out addresses are blocked.
+
+The owner's approval of the prepared campaign is recorded as the `outbound_campaign` approval for that send task. The worker re-checks opt-outs, the daily limit and cancellation for each message at send time.
+
+Opt-outs:
+- They are stored as SHA-256 hashes, so deleting a contact (which suppresses them first) leaves no address behind.
+- They can't be deleted by the API or the worker.
+- The public unsubscribe page is HMAC-signed, and its GET changes nothing.
+
+A trigger refuses to claim a message for sending (`sending`) unless the campaign is approved, the address isn't suppressed and SMS/call consent exists. `sent` can only follow `sending`, so a message the provider already accepted is always recorded truthfully, even if the campaign was cancelled during the send. A message left in `sending` after a crash is reported as unconfirmed and never re-sent blindly. The worker can't approve campaigns or insert already-sent messages. The email/SMS connector is a labeled MOCK until a provider key exists. These rules are guard rails, not legal advice.
+
+
 **ADR-011 — Trading is simulation-only.** APEX-7 and any trading work are backtest/paper-trade only (vol. 00, vol. 03). No live-trade connector will be built without a new ADR and explicit owner approval.
 
 ## 4. Dependency inventory
@@ -192,6 +218,8 @@ A DB trigger only lets a version of the same site that passed go live or be kept
 | `SHOPIFY_STORE_DOMAIN`, `SHOPIFY_ADMIN_API_TOKEN` | Shopify **development** store, draft products only | 15 | not provided |
 | `WHOP_API_KEY` | Steady Trades University checkout data (read-only first) | 14/19 | not provided |
 | `APIFY_API_TOKEN` | lead-gen / research | 13/18 | not provided |
+| `UNSUBSCRIBE_SECRET` (32+ random characters), `PUBLIC_BASE_URL` | signed opt-out links | 18 | owner sets; required before outreach |
+| `EMAIL_PROVIDER_API_KEY` / `SMS_PROVIDER_API_KEY` (provider chosen later, e.g. Postmark/Twilio) | sending outreach | 18 | not provided — sending is mock |
 | `UPLOAD_POST_API_KEY` | social scheduling (drafts until approved) | 16 | not provided |
 | `ELEVENLABS_API_KEY` | voice | 16 | not provided |
 | `FAL_API_KEY` | ad/media generation | 16 | not provided |
