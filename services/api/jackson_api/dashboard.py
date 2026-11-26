@@ -59,7 +59,7 @@ def portfolio(db: Session, tenant_id) -> dict:
             "business_id": str(bid) if bid else None,
             "business": businesses.get(bid, "(no business)") if bid else "(no business)",
             "actual_revenue_cents": 0, "refunds_cents": 0, "estimated_revenue_cents": 0,
-            "spend_cents": 0, "held_cents": 0, "model_cost_cents": 0})
+            "spend_cents": 0, "held_cents": 0, "model_cost_cents": 0, "model_cost_usd": 0.0})
 
     for bid, kind, amount in db.execute(
             select(RevenueEntry.business_id, RevenueEntry.kind,
@@ -88,6 +88,8 @@ def portfolio(db: Session, tenant_id) -> dict:
             .where(ModelUsage.tenant_id == tenant_id)
             .group_by(WorkflowRun.business_id)):
         row(bid)["model_cost_cents"] += round(int(micros or 0) / 10_000)
+        row(bid)["model_cost_usd"] = round(row(bid).get("model_cost_usd", 0)
+                                           + int(micros or 0) / 1e6, 6)
     for bid in businesses:
         row(bid)
     out = []
@@ -99,6 +101,7 @@ def portfolio(db: Session, tenant_id) -> dict:
     total = {k: sum(r[k] for r in out) for k in (
         "actual_revenue_cents", "refunds_cents", "estimated_revenue_cents", "spend_cents",
         "held_cents", "model_cost_cents", "actual_profit_cents")}
+    total["model_cost_usd"] = round(sum(r["model_cost_usd"] for r in out), 6)
     return {"businesses": out, "total": total,
             "note": "actual profit = actual revenue - refunds - spend - model cost. "
                     "Estimates are shown separately and never added in."}
@@ -224,6 +227,7 @@ def build(db: Session, tenant_id) -> dict:
                       .order_by(WorkflowRun.created_at.desc()).limit(20)).all()
     run_ids = [r.id for r in runs]
     cost = {rid: 0 for rid in run_ids}
+    micros = {rid: 0 for rid in run_ids}  # exact model cost (sub-cent calls add up)
     if run_ids:
         for rid, c in db.execute(select(LedgerEntry.run_id, func.sum(LedgerEntry.amount_cents))
                                  .where(LedgerEntry.run_id.in_(run_ids),
@@ -233,6 +237,7 @@ def build(db: Session, tenant_id) -> dict:
         for rid, m in db.execute(select(ModelUsage.run_id, func.sum(ModelUsage.cost_usd_micros))
                                  .where(ModelUsage.run_id.in_(run_ids))
                                  .group_by(ModelUsage.run_id)):
+            micros[rid] = int(m or 0)
             cost[rid] += round(int(m or 0) / 10_000)
     agent_rows = db.scalars(select(AgentSpec).where(AgentSpec.tenant_id == tenant_id)
                             .order_by(AgentSpec.name, AgentSpec.version.desc())).all()
@@ -271,6 +276,7 @@ def build(db: Session, tenant_id) -> dict:
                     "tasks": agent_tasks.get(a.id, {})} for a in agent_rows],
         "runs": [{"id": str(r.id), "objective": r.objective, "type": r.command_type,
                   "status": r.status, "paused": r.paused, "cost_cents": cost[r.id],
+                  "model_cost_usd": round(micros[r.id] / 1e6, 6),
                   "created_at": _iso(r.created_at), "started_at": _iso(r.started_at),
                   "finished_at": _iso(r.finished_at)} for r in runs],
         "approvals": {"pending": len(pending), "items": [

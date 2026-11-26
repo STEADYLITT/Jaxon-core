@@ -33,6 +33,8 @@ jobs:
         run: pip install -e "services/api[dev]"
       - name: Install Chromium for browser-session tests
         run: python -m playwright install --with-deps chromium
+      - name: Install PostgreSQL 16 client tools for backup/restore tests
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
       - name: Lint
         run: ruff check services/api tests
       - name: API tests (incl. tenant isolation against real Postgres)
