@@ -74,7 +74,7 @@ Legend: ✅ done · 🟡 scaffolded (shape only, no behaviour) · ❌ missing
 | Product economics (03) | landed cost, margin, breakeven | ✅ exact calculator, assumptions listed, opportunity re-scoring, agent tool (ADR-024) | 14 |
 | Shopify draft connector (03) | draft → verify; approval to publish | ✅ mock + real Admin API 2026-10 backend, QA report (ADR-025); live run needs dev-store token | 15 |
 | Content / website / CRM (03) | | Content + virtual influencer ✅ (ADR-026, social posting mock until an Upload-Post key); website factory ✅ (ADR-027, hosting mock until a hosting account); CRM + compliant outreach ✅ (ADR-028, email/SMS mock until a provider key) | 16–18 |
-| Owner dashboard + global stop (04) | | ❌ | 19 |
+| Owner dashboard + global stop (04) | | ✅ dashboard API + interim console at `/console`, metrics, alerts, daily reports, DB-enforced global stop (ADR-029); hosted Clerk console later | 19 |
 | Security, backup/restore, E2E pilot | | ❌ | 20 |
 | Growth OS import | (owner requirement) | ❌ design only (ADR-008, §6) | after 09/12 |
 
@@ -177,6 +177,28 @@ Opt-outs:
 
 A trigger refuses to claim a message for sending (`sending`) unless the campaign is approved, the address isn't suppressed and SMS/call consent exists. `sent` can only follow `sending`, so a message the provider already accepted is always recorded truthfully, even if the campaign was cancelled during the send. A message left in `sending` after a crash is reported as unconfirmed and never re-sent blindly. The worker can't approve campaigns or insert already-sent messages. The email/SMS connector is a labeled MOCK until a provider key exists. These rules are guard rails, not legal advice.
 
+
+**ADR-029 — The dashboard reads canonical rows, keeps estimates apart, and the global stop is enforced in the database.**
+- **P&L:** computed per business from append-only sources:
+  - `revenue_entries`, which separates actual, refund and estimate entries. Actual entries need a reference.
+  - `ledger_entries`: committed spend, plus money still held in reservations
+  - `model_usage`
+  
+  Actual profit = actual revenue − refunds − spend − model cost. Estimated revenue is shown in its own column and never added in.
+- **Metrics:** run counts, verified success and failure rates, cost per run, latency, approval wait, gross margin and refund rate. Anything not measured (conversion, CAC) is reported as `null` with the reason, never as 0.
+- **Alerts:** global stop, repeated failures, approvals waiting more than 24h, model budget above 80%, unconfirmed outreach sends, and a live integration unused for 7 days.
+- **Connector status:** each connector says live or mock and what it needs; a mock is never shown as integrated.
+- **Global stop (owner only):**
+  - sets `tenants.stopped_at`
+  - cancels every unfinished run
+  - moves scheduled content back to approved
+  - cancels approved/sending campaigns
+  - tells watched browser sessions to terminate
+  - returns a reconcile list: runs that were mid-task, unconfirmed and recent sends, recent posts, live products and sites, money held
+
+  Live products and sites stay up, because taking them down is its own approved production change. A trigger refuses new `workflow_runs` and any task moving to `running` while the tenant is stopped, whoever writes. Resume clears the flag; canceled runs stay canceled.
+- **Daily reports:** the `daily_report` task stores a JSON + Markdown artifact (outcomes, blockers, next actions, numbers).
+- **Interim console:** a static page at `/console` (strict CSP, script-src 'self', all data written with textContent). It uses the same authenticated API, with a pasted token, until the Clerk-hosted console in `apps/console` is built.
 
 **ADR-011 — Trading is simulation-only.** APEX-7 and any trading work are backtest/paper-trade only (vol. 00, vol. 03). No live-trade connector will be built without a new ADR and explicit owner approval.
 

@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jackson OS — Owner console</title>
+<link rel="stylesheet" href="/console/app.css">
+<script src="/console/app.js" defer></script>
+</head>
+<body>
+<header>
+  <h1>Jackson OS</h1>
+  <button id="stop" class="danger" hidden>Global stop</button>
+  <button id="resume" hidden>Resume work</button>
+</header>
+<main>
+  <section id="signin" aria-labelledby="signin-h">
+    <h2 id="signin-h">Sign in</h2>
+    <p>Paste a session token and your tenant ID. (Interim sign-in until the hosted console is
+      connected. The token stays in this browser tab only.)</p>
+    <label for="token">Session token</label>
+    <input id="token" type="password" autocomplete="off">
+    <label for="tenant">Tenant ID</label>
+    <input id="tenant" autocomplete="off">
+    <button id="go">Open dashboard</button>
+    <p id="err" role="alert"></p>
+  </section>
+  <div id="dash" hidden>
+    <p id="banner" role="status"></p>
+    <section aria-labelledby="alerts-h"><h2 id="alerts-h">Alerts</h2><ul id="alerts"></ul></section>
+    <section aria-labelledby="pnl-h"><h2 id="pnl-h">Portfolio</h2>
+      <table id="pnl"><thead><tr><th scope="col">Business</th><th scope="col">Actual revenue</th>
+        <th scope="col">Refunds</th><th scope="col">Spend</th><th scope="col">Model cost</th>
+        <th scope="col">Actual profit</th><th scope="col">Held</th>
+        <th scope="col">Estimated revenue (not actual)</th></tr></thead><tbody></tbody></table>
+    </section>
+    <section aria-labelledby="ap-h"><h2 id="ap-h">Approvals inbox</h2><ul id="approvals"></ul></section>
+    <section aria-labelledby="m-h"><h2 id="m-h">Metrics (30 days)</h2><dl id="metrics"></dl></section>
+    <section aria-labelledby="runs-h"><h2 id="runs-h">Workflow timeline</h2><ul id="runs"></ul></section>
+    <section aria-labelledby="opp-h"><h2 id="opp-h">Opportunity board</h2><ul id="opps"></ul></section>
+    <section aria-labelledby="ag-h"><h2 id="ag-h">Agents</h2><ul id="agents"></ul></section>
+    <section aria-labelledby="lv-h"><h2 id="lv-h">Live visual work</h2><ul id="live"></ul></section>
+    <section aria-labelledby="art-h"><h2 id="art-h">Artifacts</h2><ul id="artifacts"></ul></section>
+    <section aria-labelledby="c-h"><h2 id="c-h">Connectors</h2><ul id="connectors"></ul></section>
+    <section aria-labelledby="au-h"><h2 id="au-h">Audit log</h2><ul id="audit"></ul></section>
+  </div>
+</main>
+</body>
+</html>

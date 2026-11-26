@@ -60,6 +60,7 @@ from .models import (
     ModelUsage,
     RunEvent,
     Task,
+    Tenant,
     ToolCall,
     ToolGrant,
     WorkflowRun,
@@ -139,6 +140,7 @@ def default_handlers() -> dict[str, Handler]:
     from .content import publish_handler as content_publish
     from .crm import prepare_handler as outreach_prepare
     from .crm import send_handler as outreach_send
+    from .dashboard import report_handler
     from .planner import plan_handler  # lazy: planner imports TaskResult from here
     from .research import research_handler
     from .sites import build_handler as site_build
@@ -150,7 +152,8 @@ def default_handlers() -> dict[str, Handler]:
             "store_build": store_build_handler, "shopify_publish": publish_handler,
             "content_generate": content_generate, "content_publish": content_publish,
             "site_build": site_build, "site_launch": site_launch,
-            "outreach_prepare": outreach_prepare, "outreach_send": outreach_send}
+            "outreach_prepare": outreach_prepare, "outreach_send": outreach_send,
+            "daily_report": report_handler}
 
 
 class ModelBudgetExhausted(NonRetryableError):
@@ -219,7 +222,9 @@ class Worker:
             candidates = db.scalars(
                 select(Task)
                 .join(WorkflowRun, WorkflowRun.id == Task.run_id)
+                .join(Tenant, Tenant.id == Task.tenant_id)
                 .where(
+                    Tenant.stopped_at.is_(None),  # global stop (also enforced by trigger)
                     Task.status == TaskState.QUEUED.value,
                     (Task.next_attempt_at.is_(None)) | (Task.next_attempt_at <= func.now()),
                     WorkflowRun.paused.is_(False),

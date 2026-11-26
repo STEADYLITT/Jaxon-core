@@ -31,7 +31,7 @@ build-backend = "setuptools.build_meta"
 include = ["jackson_api*"]
 
 [tool.setuptools.package-data]
-jackson_api = ["persona/*.md"]
+jackson_api = ["persona/*.md", "console/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
