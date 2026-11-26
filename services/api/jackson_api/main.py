@@ -15,6 +15,7 @@ from .routes import router
 from .routes_agents import router as agents_router
 from .routes_browser import router as browser_router
 from .routes_memory import router as memory_router
+from .routes_opportunities import router as opportunities_router
 from .routes_policy import router as policy_router
 from .routes_runs import router as runs_router
 from .routes_tools import router as tools_router
@@ -28,6 +29,7 @@ app.include_router(memory_router)
 app.include_router(tools_router)
 app.include_router(browser_router)
 app.include_router(agents_router)
+app.include_router(opportunities_router)
 
 
 @app.get("/health")
@@ -37,7 +39,7 @@ def health() -> dict:
         "status": "ok",
         "service": "jackson-api",
         "version": __version__,
-        "phase": "12-agent-factory",
+        "phase": "13-opportunity-research",
         "integrations": "none (no external connectors are live)",
     }
 
