@@ -177,3 +177,20 @@ def _register_economics() -> None:
 
 
 _register_economics()
+
+
+# --- shopify.drafts: grant entry for the Shopify connector (used via ctx.shopify()) --------
+
+def _shopify_via_ctx(args: BrowserIn, env: ToolEnv) -> dict:
+    raise NonRetryableError("Shopify is used through ctx.shopify(), not use_tool()")
+
+
+register(ToolSpec(
+    name="shopify.drafts",
+    description="Create and verify DRAFT products on a Shopify store. Grant config: "
+                "{\"mode\": \"mock\"} (default) or {\"mode\": \"shopify\", "
+                "\"store_domain\": \"x.myshopify.com\", \"dev_store\": true}. "
+                "Publishing always needs owner approval.",
+    input_model=BrowserIn, category=Category.SANDBOX_CHANGE, run=_shopify_via_ctx,
+    idempotent=True, mode="mock",
+    verification="read back after create: product must still be DRAFT with the same handle"))
