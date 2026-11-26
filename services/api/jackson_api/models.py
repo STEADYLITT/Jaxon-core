@@ -618,3 +618,76 @@ class ShopProduct(Base):
                                           nullable=False, default=dict)
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = _updated()
+
+
+# --- Phase 16: personas and content ----------------------------------------------------------
+
+CHANNELS = ("instagram", "tiktok", "youtube_shorts", "x", "facebook", "email", "blog")
+CONTENT_STATUSES = ("draft", "in_review", "approved", "rejected", "scheduled", "published",
+                    "failed")
+
+
+class Persona(Base):
+    """A brand voice or an ORIGINAL FICTIONAL virtual influencer (spec vol. 03)."""
+
+    __tablename__ = "personas"
+    __table_args__ = (
+        CheckConstraint("kind IN ('virtual_influencer','brand_voice')", name="ck_persona_kind"),
+        CheckConstraint("kind <> 'virtual_influencer' OR fictional", name="ck_persona_fictional"),
+        CheckConstraint("length(disclosure) > 0", name="ck_persona_disclosure"),
+    )
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    business_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("businesses.id"))
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    fictional: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    bio: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    brand_bible: Mapped[dict] = mapped_column(JSON().with_variant(JSONB(), "postgresql"),
+                                              nullable=False, default=dict)
+    disclosure: Mapped[str] = mapped_column(String(300), nullable=False)
+    do_not_impersonate: Mapped[list] = mapped_column(
+        JSON().with_variant(JSONB(), "postgresql"), nullable=False, default=list)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
+    created_at: Mapped[datetime] = _created()
+    updated_at: Mapped[datetime] = _updated()
+
+
+class ContentItem(Base):
+    """A piece of content. It can't be scheduled or published unless a person approved it
+    (CHECK constraint), and the worker role can't write `approved_by`."""
+
+    __tablename__ = "content_items"
+    __table_args__ = (
+        CheckConstraint(f"status IN {CONTENT_STATUSES}", name="ck_content_status"),
+        CheckConstraint(f"channel IN {CHANNELS}", name="ck_content_channel"),
+        CheckConstraint("status NOT IN ('approved','scheduled','published') "
+                        "OR approved_by IS NOT NULL", name="ck_content_needs_approval"),
+    )
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    business_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("businesses.id"))
+    persona_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("personas.id"))
+    run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("workflow_runs.id"))
+    channel: Mapped[str] = mapped_column(String(32), nullable=False)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    title: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    hashtags: Mapped[list] = mapped_column(JSON().with_variant(JSONB(), "postgresql"),
+                                           nullable=False, default=list)
+    sponsored: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    assets: Mapped[list] = mapped_column(JSON().with_variant(JSONB(), "postgresql"),
+                                         nullable=False, default=list)  # [{ref, rights, proof}]
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="draft")
+    review: Mapped[dict] = mapped_column(JSON().with_variant(JSONB(), "postgresql"),
+                                         nullable=False, default=dict)
+    approved_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    scheduled_for: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    external_post_id: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = _created()
+    updated_at: Mapped[datetime] = _updated()

@@ -14,6 +14,7 @@ from .db import get_engine
 from .routes import router
 from .routes_agents import router as agents_router
 from .routes_browser import router as browser_router
+from .routes_content import router as content_router
 from .routes_memory import router as memory_router
 from .routes_opportunities import router as opportunities_router
 from .routes_policy import router as policy_router
@@ -32,6 +33,7 @@ app.include_router(browser_router)
 app.include_router(agents_router)
 app.include_router(opportunities_router)
 app.include_router(shop_router)
+app.include_router(content_router)
 
 
 @app.get("/health")
@@ -41,7 +43,7 @@ def health() -> dict:
         "status": "ok",
         "service": "jackson-api",
         "version": __version__,
-        "phase": "15-shopify-drafts",
+        "phase": "16-content-influencer",
         "integrations": "none (no external connectors are live)",
     }
 

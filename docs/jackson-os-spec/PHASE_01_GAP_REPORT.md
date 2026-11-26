@@ -73,7 +73,7 @@ Legend: ✅ done · 🟡 scaffolded (shape only, no behaviour) · ❌ missing
 | Opportunity engine (03) | | ✅ sourced signals, dedupe, transparent scores + uncertainty, briefs (ADR-023) | 13 |
 | Product economics (03) | landed cost, margin, breakeven | ✅ exact calculator, assumptions listed, opportunity re-scoring, agent tool (ADR-024) | 14 |
 | Shopify draft connector (03) | draft → verify; approval to publish | ✅ mock + real Admin API 2026-10 backend, QA report (ADR-025); live run needs dev-store token | 15 |
-| Content / website / CRM (03) | | ❌ | 16–18 |
+| Content / website / CRM (03) | | Content + virtual influencer ✅ (ADR-026, social posting mock until an Upload-Post key); website 17, CRM 18 | 16–18 |
 | Owner dashboard + global stop (04) | | ❌ | 19 |
 | Security, backup/restore, E2E pilot | | ❌ | 20 |
 | Growth OS import | (owner requirement) | ❌ design only (ADR-008, §6) | after 09/12 |
@@ -94,7 +94,7 @@ Legend: ✅ done · 🟡 scaffolded (shape only, no behaviour) · ❌ missing
 | Memory cites source | ✅ phase 09 (`test_planner_cites_memory_sources`) |
 | Sandbox Shopify draft verified | ✅ phase 15 on the mock store (`test_sandbox_shopify_draft_verified`); real dev store pending credentials |
 | Website preview passes tests | ❌ phase 17 |
-| Content remains draft until approved | ❌ phase 16 |
+| Content remains draft until approved | ✅ phase 16 (enforced in the database) |
 
 ## 3. Architecture decisions (ADRs)
 
@@ -143,6 +143,8 @@ Legend: ✅ done · 🟡 scaffolded (shape only, no behaviour) · ❌ missing
 **ADR-024 — Unit economics are pure, exact and assumption-explicit.** The calculator uses Decimal arithmetic and rounds to cents only for display. Every omitted input takes a documented default that's echoed back under `assumptions`, and outputs are labeled estimates. Per-order contribution counts landed cost, returns (refunds, handling, recovered stock), payment and platform fees, outbound shipping and CAC. Breakeven CAC/ROAS, orders-for-target and sensitivity are derived from the same core function. Saving economics on an opportunity replaces the gross price-vs-cost margin proxy with the contribution margin and re-scores it. The worker may attach economics (column grant) but still can't change status.
 
 **ADR-025 — Shopify work is draft-first and verified by read-back; publishing is always approved.** The connector has a labeled mock backend (default) and a real Admin GraphQL backend pinned to API version 2026-10, checked against shopify.dev. The real backend is enabled only when the grant says `mode: shopify`, `dev_store: true` and a `*.myshopify.com` domain, and `SHOPIFY_ADMIN_API_TOKEN` is set in the environment. Creation looks up the handle first (idempotent), creates the product with status DRAFT, then reads it back. A draft counts as verified only if the store reports DRAFT with the same handle. `shop_products` is the canonical record; the worker can insert only DRAFT rows and can't change title or price. Publishing is `production_change`, which is in ALWAYS_APPROVE. Customer-facing copy must pass the shared claims checker.
+
+**ADR-026 — Content stays a draft until a person approves it, enforced in the database.** Personas are either a brand voice or an original, fictional virtual influencer (a CHECK rejects a non-fictional virtual influencer) and always carry an AI disclosure. Every draft gets an automatic review: no invented claims (shared claims checker), AI disclosure present, no impersonation of names on the persona's do-not-impersonate list, recorded consent for any real likeness, `#ad`/"Paid partnership" on sponsored posts, platform length and hashtag limits, and cleared rights for every asset. Only content that passes can be approved, and any edit clears the approval. A CHECK requires `approved_by` for approved/scheduled/published rows; the worker role can't write `approved_by`, and can only insert draft/in_review rows. Scheduling is the owner's posting approval: it creates a pre-approved `public_post` approval bound to the publish task, and the task waits until the scheduled time. At publish time the worker re-checks that the content is still approved (rejecting a scheduled post cancels it) and policy checks the approval. The social connector is a labeled MOCK until a posting provider key exists. Known limit: the worker can still change the status of already-approved content (for example mark it published) without posting. Real posts only go through the connector after the policy check.
 
 **ADR-011 — Trading is simulation-only.** APEX-7 and any trading work are backtest/paper-trade only (vol. 00, vol. 03). No live-trade connector will be built without a new ADR and explicit owner approval.
 
