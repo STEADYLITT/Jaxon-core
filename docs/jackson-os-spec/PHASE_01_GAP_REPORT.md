@@ -224,6 +224,22 @@ A trigger refuses to claim a message for sending (`sending`) unless the campaign
   - The rate limiter is per process.
   - Dependency vulnerability scanning and a container sandbox for untrusted code remain open items.
 
+**ADR-031 — Go online on Railway: one app service (API + worker) + Railway Postgres.**
+- **Why Railway:** it builds from the repo's `Dockerfile` with config-as-code (`railway.json`), offers managed Postgres 16 with a superuser (so our least-privilege roles and RLS work unchanged), gives volumes and reference variables, and costs $5/month Hobby including $5 of usage. Expected total is about $10–15/month for one owner.
+- **One container:** the API and the worker run in one container because they must share the artifact folder, and a Railway volume attaches to one service.
+- **`infra/deploy/start.sh` on every boot:**
+  - `jackson_api.deploy_init`: migrates as the schema owner, sets login passwords for `jackson_app`/`jackson_worker`, and sets up the owner when `OWNER_EMAIL` + `OWNER_AUTH_SUBJECT` exist
+  - `jackson_api.deploy_env`: derives the app/worker URLs, the public URL, Clerk issuer/JWKS/authorized party (from the publishable key's encoded Frontend API host), and the artifact dir
+  - prints the preflight
+  - runs both processes; if either exits, the container exits and is restarted
+- **Secrets:** role passwords and the unsubscribe secret are generated once into `/data/.jackson-secrets.json` (0600), never printed, and explicit variables override them. The owner types no passwords.
+- **Console:** signs in with Clerk (clerk-js 6 + Clerk UI 1 from the Clerk Frontend API host, per Clerk's JavaScript quickstart) and finds the owner's workspace via `/me`. Its CSP allows only that host plus Clerk's challenge frame. With no Clerk key it falls back to a pasted token.
+- **CI `deploy-image` job:** builds the image, boots it against real Postgres, checks `/health`, `/ready`, `/console`, hidden docs, a 10/10 preflight and owner setup, then restarts it and checks that no secret appears in the logs.
+- **Known limits:**
+  - nothing is deployed by us
+  - scheduled backups on the host are still to set up (runbook exists)
+  - Clerk production instances need the owner's own domain
+
 **ADR-011 — Trading is simulation-only.** APEX-7 and any trading work are backtest/paper-trade only (vol. 00, vol. 03). No live-trade connector will be built without a new ADR and explicit owner approval.
 
 ## 4. Dependency inventory

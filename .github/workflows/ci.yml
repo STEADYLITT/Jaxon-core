@@ -64,3 +64,48 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate docker-compose file
         run: POSTGRES_PASSWORD=ci docker compose -f infra/docker-compose.yml config -q
+
+  deploy-image:
+    # Builds the production image and boots it against a real Postgres the way the host
+    # will: first boot (migrate, role passwords, owner), health/readiness, then a restart.
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t jackson-os .
+      - name: Boot it (CI-only values; the Clerk key is a dummy that only encodes a host)
+        run: |
+          docker volume create jackdata
+          docker run -d --name jackson --network host -v jackdata:/data \
+            -e MIGRATION_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres \
+            -e CLERK_PUBLISHABLE_KEY=pk_test_c21va2UtdGVzdC5jbGVyay5hY2NvdW50cy5kZXYk \
+            -e PUBLIC_BASE_URL=https://jackson.example.com -e PORT=8000 \
+            -e OWNER_EMAIL=owner@example.com -e OWNER_AUTH_SUBJECT=user_ci_smoke \
+            jackson-os
+      - name: Health, readiness, console
+        run: |
+          for i in $(seq 1 60); do curl -fs localhost:8000/health && break; sleep 2; done
+          docker logs jackson
+          curl -fs localhost:8000/ready | tee /dev/stderr | grep -q '"database":"ok"'
+          curl -fs localhost:8000/ready | grep -q '"auth":"configured"'
+          curl -fs localhost:8000/console | grep -q "Jackson OS"
+          test "$(curl -s -o /dev/null -w '%{http_code}' localhost:8000/docs)" = "404"
+          docker logs jackson 2>&1 | grep -q "10/10 checks passed"
+          docker logs jackson 2>&1 | grep -q "owner: ready"
+      - name: Restart is safe (idempotent setup, same secrets)
+        run: |
+          docker restart jackson
+          sleep 5
+          for i in $(seq 1 60); do curl -fs localhost:8000/ready | grep -q '"database":"ok"' && break; sleep 2; done
+          curl -fs localhost:8000/ready | grep -q '"database":"ok"'
+          ! docker logs jackson 2>&1 | grep -iE "password|secret=" 

@@ -125,23 +125,48 @@ def list_reports(tenant_id: uuid.UUID, member: TenantMember, db: DB) -> list[dic
              if a.run_id else None, "created_at": a.created_at} for a in rows]
 
 
-# --- Interim owner console ----------------------------------------------------------------------
+# --- Owner console -----------------------------------------------------------------------------
 
-_CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; "
-        "img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
+def _csp() -> str:
+    """Strict by default. With Clerk configured, also allow Clerk's own script/API host and
+    the bot-protection challenge Clerk uses (values derived from the public key)."""
+    import os
+
+    from .deploy_env import clerk_frontend_api
+
+    fapi = clerk_frontend_api(os.environ.get("CLERK_PUBLISHABLE_KEY"))
+    if not fapi:
+        return ("default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; "
+                "img-src 'self' data:; base-uri 'none'; form-action 'none'; "
+                "frame-ancestors 'none'")
+    cf = "https://challenges.cloudflare.com"
+    return (f"default-src 'none'; script-src 'self' https://{fapi} {cf}; "
+            f"style-src 'self' 'unsafe-inline'; connect-src 'self' https://{fapi}; "
+            f"img-src 'self' data: https://img.clerk.com; frame-src {cf}; "
+            "worker-src 'self' blob:; base-uri 'none'; form-action 'self'; "
+            "frame-ancestors 'none'")
 
 
 def _static(name: str, media: str) -> Response:
     return Response((CONSOLE / name).read_text(), media_type=media, headers={
-        "Content-Security-Policy": _CSP, "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": _csp(), "X-Content-Type-Options": "nosniff",
         "Referrer-Policy": "no-referrer", "Cache-Control": "no-store"})
 
 
 @router.get("/console", include_in_schema=False)
 def console_page() -> Response:
-    """Static page with no data in it. It asks for a sign-in token (until the Clerk console
-    exists) and reads everything through the same authenticated API."""
+    """Static page with no data in it. Signs in with Clerk when CLERK_PUBLISHABLE_KEY is
+    set (otherwise asks for a pasted token) and reads everything through the same
+    authenticated API."""
     return _static("index.html", "text/html; charset=utf-8")
+
+
+@router.get("/console/config.json", include_in_schema=False)
+def console_config() -> dict:
+    """Public values only: the Clerk publishable key is designed to be shown to browsers."""
+    import os
+
+    return {"clerk_publishable_key": os.environ.get("CLERK_PUBLISHABLE_KEY") or None}
 
 
 @router.get("/console/{name}", include_in_schema=False)
