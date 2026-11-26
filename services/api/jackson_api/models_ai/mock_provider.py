@@ -28,7 +28,27 @@ class MockProvider:
                 "evidence_needed": [],
                 "memory_used": [],
             })
+        elif req.json_schema is not None:
+            text = json.dumps(_fill(req.json_schema))
         else:
             text = "[MOCK] No AI model is connected."
         return ModelResponse(text=text, provider=self.name, model="mock", mode="mock",
                              stop_reason="end_turn", notes=["mock provider: no model called"])
+
+
+def _fill(schema: dict):
+    """Smallest value that satisfies a JSON schema, with [MOCK] markers in strings."""
+    t = schema.get("type")
+    if "enum" in schema:
+        return schema["enum"][0]
+    if t == "object":
+        return {k: _fill(v) for k, v in schema.get("properties", {}).items()}
+    if t == "array":
+        return []
+    if t == "string":
+        return "[MOCK] no model connected"
+    if t in ("integer", "number"):
+        return 0
+    if t == "boolean":
+        return False
+    return None

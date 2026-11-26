@@ -2,7 +2,7 @@
 
 Date: 2026-11-25 · Repo: `STEADYLITT/Jaxon-core` · Inspected at commit `cb722b6` (before any changes in this PR)
 Scope: phase 01 (inventory + gap report) delivered in full; phase 02 (scaffold + CI) delivered as a minimal, safe skeleton.
-Update: phases 03–04 delivered — see [PHASE_03_04_REPORT.md](PHASE_03_04_REPORT.md); phase 05 — see [PHASE_05_REPORT.md](PHASE_05_REPORT.md); phase 06 — see [PHASE_06_REPORT.md](PHASE_06_REPORT.md); phase 07 — see [PHASE_07_REPORT.md](PHASE_07_REPORT.md); phase 08 — see [PHASE_08_REPORT.md](PHASE_08_REPORT.md); phase 09 — see [PHASE_09_REPORT.md](PHASE_09_REPORT.md); phase 10 — see [PHASE_10_REPORT.md](PHASE_10_REPORT.md); phase 11 — see [PHASE_11_REPORT.md](PHASE_11_REPORT.md). Status rows below are kept current.
+Update: phases 03–04 delivered — see [PHASE_03_04_REPORT.md](PHASE_03_04_REPORT.md); phase 05 — see [PHASE_05_REPORT.md](PHASE_05_REPORT.md); phase 06 — see [PHASE_06_REPORT.md](PHASE_06_REPORT.md); phase 07 — see [PHASE_07_REPORT.md](PHASE_07_REPORT.md); phase 08 — see [PHASE_08_REPORT.md](PHASE_08_REPORT.md); phase 09 — see [PHASE_09_REPORT.md](PHASE_09_REPORT.md); phase 10 — see [PHASE_10_REPORT.md](PHASE_10_REPORT.md); phase 11 — see [PHASE_11_REPORT.md](PHASE_11_REPORT.md); phase 12 — see [PHASE_12_REPORT.md](PHASE_12_REPORT.md). Status rows below are kept current.
 
 ---
 
@@ -69,7 +69,7 @@ Legend: ✅ done · 🟡 scaffolded (shape only, no behaviour) · ❌ missing
 | Memory with provenance (01) | fact/inference/hypothesis, export/delete | ✅ provenance, confirmation of conflicts, versions, export, delete, retention; full-text recall (ADR-019) | 09 |
 | Tool registry + sandbox (02) | schema, perms, cost, timeout, idempotency, verification | ✅ typed registry, owner grants, one gateway, redaction, call log; process-level sandbox (ADR-020) | 10 |
 | Visual browser session (02) | streamed screenshots, take over, redaction | ✅ watched sessions, masked screenshots, per-request allowlist, owner controls (ADR-021); live remote control in 19 | 11 |
-| Agent factory (05) | AgentSpec lifecycle, quotas, depth caps | ❌ | 12 |
+| Agent factory (05) | AgentSpec lifecycle, quotas, depth caps | ✅ versioned specs, validate → evaluate → owner activates, rollback, verifier, delegation quotas (ADR-022) | 12 |
 | Opportunity / economics / Shopify / content / website / CRM (03) | | ❌ | 13–18 |
 | Owner dashboard + global stop (04) | | ❌ | 19 |
 | Security, backup/restore, E2E pilot | | ❌ | 20 |
@@ -84,7 +84,7 @@ Legend: ✅ done · 🟡 scaffolded (shape only, no behaviour) · ❌ missing
 | Repeated request does not duplicate external action | ✅ command layer, phase 05 (`test_runs.py`); connectors must forward keys later |
 | Failed worker resumes safely | ✅ phase 06 (`test_failed_worker_resumes_safely`) |
 | Prompt injection cannot elevate grants | ✅ phase 07 policy + phase 10 tools (`test_injected_page_cannot_elevate_tool_grants`) |
-| Agent cannot spawn beyond quota | ❌ phase 12 |
+| Agent cannot spawn beyond quota | ✅ phase 12 (`test_agent_cannot_spawn_beyond_*_quota`) |
 | Cancellation prevents new tasks | ✅ phase 05 (`test_cancellation_prevents_new_tasks`) |
 | Secrets absent from logs | ✅ repo scan (02), model calls (08), tool inputs/outputs redacted (10) |
 | Browser session visible | ✅ phase 11 (`test_browser_session_is_visible`) |
@@ -132,6 +132,8 @@ Legend: ✅ done · 🟡 scaffolded (shape only, no behaviour) · ❌ missing
 **ADR-020 — One tool gateway; grants live only in the database.** Tools declare schema, policy category, cost, timeout, idempotency and verification method in a registry. Handlers use tools only via `ctx.use_tool()`, which applies these steps in order: grant check (owner-created `tool_grants`; business-specific grant first, then tenant-wide) → schema validation → budget reservation for paid tools → policy check of the category → deduplication by `run:sequence:tool:input-hash` → timeout → redaction → append-only `tool_calls` log, with output marked untrusted. The worker role can read grants but never write them. `code.run_python` is process-level isolation only and needs autonomy level 2. A container sandbox is a phase 20 prerequisite for untrusted code.
 
 **ADR-021 — Browser sessions are watched, allowlisted and owner-controlled; artifacts are canonical rows plus content-addressed bytes.** Agents open sessions via `ctx.browser()` (Playwright Chromium). Before every action: check the owner's `control` (pause/takeover wait with lease heartbeats; terminate stops), then policy (`read` for viewing, `sandbox_change` for click/fill). Every network request is intercepted and limited to the grant's `allowed_domains`. After every action, a screenshot with sensitive fields masked is stored as an `Artifact` and announced as `browser.screenshot`. The worker role has column-level UPDATE on session status fields only, never `control`. Artifacts use a local content-addressed store under `ARTIFACT_DIR` for now; an S3-compatible store replaces it at deploy.
+
+**ADR-022 — Agents are versioned configs that the owner activates; delegation only narrows.** `agent_specs` are immutable-by-agents versions: the worker role may only INSERT drafts (a RESTRICTIVE RLS policy) and can't UPDATE. Activation is owner-only and requires valid config, a passing sandbox evaluation of that exact version, every allowed tool already granted, and the active-spec quota. Spawning (`ctx.spawn_agent`) caps depth (2) and agent tasks per run (8). The child's tool scope is its spec's tools ∩ the parent's scope, and the gateway enforces scope before grants. Each agent output passes the spec's deterministic `output_checks` or the task fails, naming the escalation rule. Per-spec concurrency and a per-task model budget are enforced in the worker. Growth OS agents import as drafts with provenance `base44:growth-os`.
 
 **ADR-011 — Trading is simulation-only.** APEX-7 and any trading work are backtest/paper-trade only (vol. 00, vol. 03). No live-trade connector will be built without a new ADR and explicit owner approval.
 

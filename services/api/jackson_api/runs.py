@@ -73,7 +73,7 @@ def transition(db: Session, run: WorkflowRun, new: TaskState) -> None:
     _event(db, run, "run.state_changed", **{"from": old, "to": new.value})
 
 
-def add_task(db: Session, run: WorkflowRun, kind: str, title: str) -> Task:
+def add_task(db: Session, run: WorkflowRun, kind: str, title: str, **extra) -> Task:
     """Append a task. Refused once the run is finished.
 
     Spec vol. 06 acceptance: cancellation prevents new tasks.
@@ -81,7 +81,8 @@ def add_task(db: Session, run: WorkflowRun, kind: str, title: str) -> Task:
     if TaskState(run.status) in TERMINAL_TASK_STATES:
         raise CommandError(409, "run_finished", f"run is {run.status}; no new tasks allowed")
     seq = (db.scalar(select(func.max(Task.sequence)).where(Task.run_id == run.id)) or 0) + 1
-    task = Task(tenant_id=run.tenant_id, run_id=run.id, sequence=seq, kind=kind, title=title)
+    task = Task(tenant_id=run.tenant_id, run_id=run.id, sequence=seq, kind=kind, title=title,
+                **extra)
     db.add(task)
     db.flush()
     _event(db, run, "task.created", task_id=str(task.id), sequence=seq, kind=kind)
@@ -94,7 +95,8 @@ def request_hash(payload: dict) -> str:
 
 
 def create_run(
-    db: Session, tenant_id: uuid.UUID, user_id: uuid.UUID, payload: dict
+    db: Session, tenant_id: uuid.UUID, user_id: uuid.UUID, payload: dict,
+    first_task: dict | None = None,
 ) -> tuple[WorkflowRun, bool]:
     """Returns (run, created). created=False means an idempotent replay."""
     ctype = CommandType(payload["type"])
@@ -143,7 +145,8 @@ def create_run(
         return _replay(existing, digest), False
 
     _event(db, run, "run.created", command_type=ctype.value)
-    add_task(db, run, kind="plan", title=f"Plan: {run.objective[:280]}")
+    first = first_task or {"kind": "plan", "title": f"Plan: {run.objective[:280]}"}
+    add_task(db, run, **first)
     db.add(AuditEvent(
         tenant_id=tenant_id, actor_user_id=user_id, action="command.accepted",
         entity_type="WorkflowRun", entity_id=run.id,
