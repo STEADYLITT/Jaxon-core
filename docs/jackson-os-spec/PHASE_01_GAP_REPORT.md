@@ -2,7 +2,7 @@
 
 Date: 2026-11-25 · Repo: `STEADYLITT/Jaxon-core` · Inspected at commit `cb722b6` (before any changes in this PR)
 Scope: phase 01 (inventory + gap report) delivered in full; phase 02 (scaffold + CI) delivered as a minimal, safe skeleton.
-Update: phases 03–04 delivered — see [PHASE_03_04_REPORT.md](PHASE_03_04_REPORT.md); phase 05 — see [PHASE_05_REPORT.md](PHASE_05_REPORT.md); phase 06 — see [PHASE_06_REPORT.md](PHASE_06_REPORT.md); phase 07 — see [PHASE_07_REPORT.md](PHASE_07_REPORT.md); phase 08 — see [PHASE_08_REPORT.md](PHASE_08_REPORT.md); phase 09 — see [PHASE_09_REPORT.md](PHASE_09_REPORT.md); phase 10 — see [PHASE_10_REPORT.md](PHASE_10_REPORT.md); phase 11 — see [PHASE_11_REPORT.md](PHASE_11_REPORT.md); phase 12 — see [PHASE_12_REPORT.md](PHASE_12_REPORT.md); phase 13 — see [PHASE_13_REPORT.md](PHASE_13_REPORT.md). Status rows below are kept current.
+Update: phases 03–04 delivered — see [PHASE_03_04_REPORT.md](PHASE_03_04_REPORT.md); phase 05 — see [PHASE_05_REPORT.md](PHASE_05_REPORT.md); phase 06 — see [PHASE_06_REPORT.md](PHASE_06_REPORT.md); phase 07 — see [PHASE_07_REPORT.md](PHASE_07_REPORT.md); phase 08 — see [PHASE_08_REPORT.md](PHASE_08_REPORT.md); phase 09 — see [PHASE_09_REPORT.md](PHASE_09_REPORT.md); phase 10 — see [PHASE_10_REPORT.md](PHASE_10_REPORT.md); phase 11 — see [PHASE_11_REPORT.md](PHASE_11_REPORT.md); phase 12 — see [PHASE_12_REPORT.md](PHASE_12_REPORT.md); phase 13 — see [PHASE_13_REPORT.md](PHASE_13_REPORT.md); phase 14 — see [PHASE_14_REPORT.md](PHASE_14_REPORT.md). Status rows below are kept current.
 
 ---
 
@@ -71,7 +71,8 @@ Legend: ✅ done · 🟡 scaffolded (shape only, no behaviour) · ❌ missing
 | Visual browser session (02) | streamed screenshots, take over, redaction | ✅ watched sessions, masked screenshots, per-request allowlist, owner controls (ADR-021); live remote control in 19 | 11 |
 | Agent factory (05) | AgentSpec lifecycle, quotas, depth caps | ✅ versioned specs, validate → evaluate → owner activates, rollback, verifier, delegation quotas (ADR-022) | 12 |
 | Opportunity engine (03) | | ✅ sourced signals, dedupe, transparent scores + uncertainty, briefs (ADR-023) | 13 |
-| Economics / Shopify / content / website / CRM (03) | | ❌ | 14–18 |
+| Product economics (03) | landed cost, margin, breakeven | ✅ exact calculator, assumptions listed, opportunity re-scoring, agent tool (ADR-024) | 14 |
+| Shopify / content / website / CRM (03) | | ❌ | 15–18 |
 | Owner dashboard + global stop (04) | | ❌ | 19 |
 | Security, backup/restore, E2E pilot | | ❌ | 20 |
 | Growth OS import | (owner requirement) | ❌ design only (ADR-008, §6) | after 09/12 |
@@ -137,6 +138,8 @@ Legend: ✅ done · 🟡 scaffolded (shape only, no behaviour) · ❌ missing
 **ADR-022 — Agents are versioned configs that the owner activates; delegation only narrows.** `agent_specs` are immutable-by-agents versions: the worker role may only INSERT drafts (a RESTRICTIVE RLS policy) and can't UPDATE. Activation is owner-only and requires valid config, a passing sandbox evaluation of that exact version, every allowed tool already granted, and the active-spec quota. Spawning (`ctx.spawn_agent`) caps depth (2) and agent tasks per run (8). The child's tool scope is its spec's tools ∩ the parent's scope, and the gateway enforces scope before grants. Each agent output passes the spec's deterministic `output_checks` or the task fails, naming the escalation rule. Per-spec concurrency and a per-task model budget are enforced in the worker. Growth OS agents import as drafts with provenance `base44:growth-os`.
 
 **ADR-023 — Opportunity scores are transparent and evidence-bound.** Signals are typed, normalized, timestamped and must cite a source URL. During research, a signal whose source wasn't actually fetched through the tool gateway is dropped. Scoring is a pure, documented weighted mean over the factors that have data, never imputing missing ones. Uncertainty = 1 − evidence × coverage. IP risk caps the score at 20. Opportunities dedupe by normalized title and merge signals by (type, source). The worker can refresh evidence columns (column-level grant) and inserts only `new` rows. Status is the owner's decision.
+
+**ADR-024 — Unit economics are pure, exact and assumption-explicit.** The calculator uses Decimal arithmetic and rounds to cents only for display. Every omitted input takes a documented default that's echoed back under `assumptions`, and outputs are labeled estimates. Per-order contribution counts landed cost, returns (refunds, handling, recovered stock), payment and platform fees, outbound shipping and CAC. Breakeven CAC/ROAS, orders-for-target and sensitivity are derived from the same core function. Saving economics on an opportunity replaces the gross price-vs-cost margin proxy with the contribution margin and re-scores it. The worker may attach economics (column grant) but still can't change status.
 
 **ADR-011 — Trading is simulation-only.** APEX-7 and any trading work are backtest/paper-trade only (vol. 00, vol. 03). No live-trade connector will be built without a new ADR and explicit owner approval.
 
