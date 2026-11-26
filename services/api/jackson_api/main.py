@@ -39,7 +39,7 @@ def health() -> dict:
         "status": "ok",
         "service": "jackson-api",
         "version": __version__,
-        "phase": "13-opportunity-research",
+        "phase": "14-product-economics",
         "integrations": "none (no external connectors are live)",
     }
 

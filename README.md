@@ -5,7 +5,7 @@ This repo holds the core brain & memory system for Jaxon Vale — AI partner.
 It is the codebase for **Jackson OS**, the long-term software version of Jackson (v1 lives in the Base44 app *Steady Growth OS*; its data will be imported later — see ADR-008).
 
 ## Status
-Phases 01–13 of 20: inventory, scaffold + CI, hosted-provider auth + tenant isolation, Postgres + migrations, typed commands + run API (SSE), durable worker on a Postgres queue, policy + approvals + budget ledger, model adapters (Claude default; MOCK until a key is set), memory with provenance, tool registry + gateway, watched browser sessions, agent registry + factory, opportunity research. **No external integrations are live; nothing is deployed.**
+Phases 01–14 of 20: inventory, scaffold + CI, hosted-provider auth + tenant isolation, Postgres + migrations, typed commands + run API (SSE), durable worker on a Postgres queue, policy + approvals + budget ledger, model adapters (Claude default; MOCK until a key is set), memory with provenance, tool registry + gateway, watched browser sessions, agent registry + factory, opportunity research, product economics. **No external integrations are live; nothing is deployed.**
 
 - Spec: [`docs/jackson-os-spec/`](docs/jackson-os-spec/START_HERE.md)
 - Gap report, ADRs, dependency & credential inventory: [`PHASE_01_GAP_REPORT.md`](docs/jackson-os-spec/PHASE_01_GAP_REPORT.md)
@@ -19,6 +19,7 @@ Phases 01–13 of 20: inventory, scaffold + CI, hosted-provider auth + tenant is
 - Browser sessions: [`PHASE_11_REPORT.md`](docs/jackson-os-spec/PHASE_11_REPORT.md)
 - Agents: [`PHASE_12_REPORT.md`](docs/jackson-os-spec/PHASE_12_REPORT.md)
 - Opportunities: [`PHASE_13_REPORT.md`](docs/jackson-os-spec/PHASE_13_REPORT.md)
+- Economics: [`PHASE_14_REPORT.md`](docs/jackson-os-spec/PHASE_14_REPORT.md)
 
 ## Layout
 ```

@@ -155,3 +155,25 @@ register(ToolSpec(
     input_model=BrowserIn, category=Category.READ, run=_browser_via_ctx, timeout_s=600,
     idempotent=False, mode="sandbox",
     verification="screenshot artifact after every action; owner can pause/terminate"))
+
+
+# --- finance.unit_economics: deterministic margin math for agents (phase 14) ----------------
+
+def _unit_economics(args, env: ToolEnv) -> dict:
+    from ..economics import calculate
+
+    return calculate(args)
+
+
+def _register_economics() -> None:
+    from ..economics import EconomicsIn
+
+    register(ToolSpec(
+        name="finance.unit_economics",
+        description="Per-order landed cost, contribution before/after ads, breakeven CAC and "
+                    "ROAS, orders needed for a profit target, sensitivity. Estimates only.",
+        input_model=EconomicsIn, category=Category.READ, run=_unit_economics, timeout_s=2,
+        verification="deterministic Decimal math; assumptions listed in the output"))
+
+
+_register_economics()

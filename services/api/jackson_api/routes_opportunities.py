@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from .deps import DB, TenantMember, TenantWriter
+from .economics import EconomicsIn, attach, calculate
 from .governance import audit
 from .models import Business, Opportunity
 from .opportunities import upsert
@@ -137,3 +138,23 @@ def research(tenant_id: uuid.UUID, body: ResearchIn, writer: TenantWriter, db: D
     run_id = run.id
     db.commit()
     return {"run_id": str(run_id), "created": created}
+
+
+@router.post("/tenants/{tenant_id}/economics/calculate")
+def calc(tenant_id: uuid.UUID, body: EconomicsIn, member: TenantMember) -> dict:
+    """Pure calculator: nothing is saved."""
+    return calculate(body)
+
+
+@router.post("/tenants/{tenant_id}/opportunities/{opp_id}/economics",
+             response_model=OpportunityOut)
+def save_economics(tenant_id: uuid.UUID, opp_id: uuid.UUID, body: EconomicsIn,
+                   writer: TenantWriter, db: DB):
+    opp = get_one(tenant_id, opp_id, writer, db)
+    result = attach(db, opp, body, by=f"user:{writer.user_id}")
+    audit(db, tenant_id, writer.user_id, "opportunity.economics", "Opportunity", opp.id,
+          inputs=body.model_dump(), margin_pct=result["contribution_margin_pct"])
+    db.refresh(opp)
+    out = OpportunityOut.model_validate(opp)
+    db.commit()
+    return out
