@@ -139,12 +139,15 @@ def default_handlers() -> dict[str, Handler]:
     from .content import publish_handler as content_publish
     from .planner import plan_handler  # lazy: planner imports TaskResult from here
     from .research import research_handler
+    from .sites import build_handler as site_build
+    from .sites import launch_handler as site_launch
     from .store_builder import publish_handler, store_build_handler
 
     return {"plan": plan_handler, "agent": agent_handler, "agent_eval": eval_handler,
             "agent_factory": factory_handler, "opportunity_research": research_handler,
             "store_build": store_build_handler, "shopify_publish": publish_handler,
-            "content_generate": content_generate, "content_publish": content_publish}
+            "content_generate": content_generate, "content_publish": content_publish,
+            "site_build": site_build, "site_launch": site_launch}
 
 
 class ModelBudgetExhausted(NonRetryableError):
