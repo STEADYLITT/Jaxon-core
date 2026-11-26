@@ -73,7 +73,7 @@ Legend: ✅ done · 🟡 scaffolded (shape only, no behaviour) · ❌ missing
 | Opportunity engine (03) | | ✅ sourced signals, dedupe, transparent scores + uncertainty, briefs (ADR-023) | 13 |
 | Product economics (03) | landed cost, margin, breakeven | ✅ exact calculator, assumptions listed, opportunity re-scoring, agent tool (ADR-024) | 14 |
 | Shopify draft connector (03) | draft → verify; approval to publish | ✅ mock + real Admin API 2026-10 backend, QA report (ADR-025); live run needs dev-store token | 15 |
-| Content / website / CRM (03) | | Content + virtual influencer ✅ (ADR-026, social posting mock until an Upload-Post key); website 17, CRM 18 | 16–18 |
+| Content / website / CRM (03) | | Content + virtual influencer ✅ (ADR-026, social posting mock until an Upload-Post key); website factory ✅ (ADR-027, hosting mock until a hosting account); CRM 18 | 16–18 |
 | Owner dashboard + global stop (04) | | ❌ | 19 |
 | Security, backup/restore, E2E pilot | | ❌ | 20 |
 | Growth OS import | (owner requirement) | ❌ design only (ADR-008, §6) | after 09/12 |
@@ -93,7 +93,7 @@ Legend: ✅ done · 🟡 scaffolded (shape only, no behaviour) · ❌ missing
 | Browser session visible | ✅ phase 11 (`test_browser_session_is_visible`) |
 | Memory cites source | ✅ phase 09 (`test_planner_cites_memory_sources`) |
 | Sandbox Shopify draft verified | ✅ phase 15 on the mock store (`test_sandbox_shopify_draft_verified`); real dev store pending credentials |
-| Website preview passes tests | ❌ phase 17 |
+| Website preview passes tests | ✅ phase 17 (`test_website_preview_passes_tests`: HTML/accessibility checks + real Chromium at desktop and phone size) |
 | Content remains draft until approved | ✅ phase 16 (enforced in the database) |
 
 ## 3. Architecture decisions (ADRs)
@@ -146,6 +146,12 @@ Legend: ✅ done · 🟡 scaffolded (shape only, no behaviour) · ❌ missing
 
 **ADR-026 — Content stays a draft until a person approves it, enforced in the database.** Personas are either a brand voice or an original, fictional virtual influencer (a CHECK rejects a non-fictional virtual influencer) and always carry an AI disclosure. Every draft gets an automatic review: no invented claims (shared claims checker), AI disclosure present, no impersonation of names on the persona's do-not-impersonate list, recorded consent for any real likeness, `#ad`/"Paid partnership" on sponsored posts, platform length and hashtag limits, and cleared rights for every asset. Only content that passes can be approved, and any edit clears the approval. A CHECK requires `approved_by` for approved/scheduled/published rows; the worker role can't write `approved_by`, and can only insert draft/in_review rows. Scheduling is the owner's posting approval: it creates a pre-approved `public_post` approval bound to the publish task, and the task waits until the scheduled time. At publish time the worker re-checks that the content is still approved (rejecting a scheduled post cancels it) and policy checks the approval. The social connector is a labeled MOCK until a posting provider key exists. Known limit: the worker can still change the status of already-approved content (for example mark it published) without posting. Real posts only go through the connector after the policy check.
 
+**ADR-027 — Website factory: template builds, tested versions only, launch needs approval.** Sites are built from the owner's requirements into static HTML from a fixed template. There's no model-written copy, no scripts, and all owner text is HTML-escaped. Every build becomes an immutable `site_versions` row: a trigger blocks UPDATE even for the schema owner, and the worker can only insert. Each version carries its test results:
+- static checks: doctype, lang, title, meta description, viewport, one h1, heading order, image alt text, form labels, no scripts or embeds, no broken internal links, a privacy notice linked from every page, WCAG AA contrast (4.5:1) for text, links and buttons, and the shared claims checker on the copy
+- a Playwright preview in real Chromium at 1280px and 375px: no console errors, no outside requests, a visible h1, no sideways scrolling on a phone, every nav link opens its page, and a phone screenshot stored as an artifact
+
+A DB trigger only lets a version of the same site that passed go live or be kept for rollback. Launching verifies the domain with a DNS TXT record (`_jackson-verify.<domain>`): DNS-over-HTTPS when `SITE_DOMAIN_VERIFY=dns`, otherwise a labeled mock. It then asks for owner approval (`production_change`, always) and deploys through the hosting connector, which is a labeled MOCK until a hosting account exists. The previous live version is kept, and rollback swaps back to it. Known limit: the worker inserts versions together with their `passed` flag, so the database can't prove the tests really ran. The owner's launch approval is the human check.
+
 **ADR-011 — Trading is simulation-only.** APEX-7 and any trading work are backtest/paper-trade only (vol. 00, vol. 03). No live-trade connector will be built without a new ADR and explicit owner approval.
 
 ## 4. Dependency inventory
@@ -189,6 +195,8 @@ Legend: ✅ done · 🟡 scaffolded (shape only, no behaviour) · ❌ missing
 | `UPLOAD_POST_API_KEY` | social scheduling (drafts until approved) | 16 | not provided |
 | `ELEVENLABS_API_KEY` | voice | 16 | not provided |
 | `FAL_API_KEY` | ad/media generation | 16 | not provided |
+| `SITE_HOSTING_TOKEN` (provider picked when the account exists, e.g. Vercel or Cloudflare Pages) | website launches | 17 | not provided — hosting is mock |
+| `SITE_DOMAIN_VERIFY` (`dns` or `mock`, not a secret) | real DNS TXT check for site domains | 17 | default mock |
 | `BASE44_APP_ID`, `BASE44_API_KEY` | Growth OS import | post-09 | not provided |
 
 All connectors run as labeled mocks until these exist and are approved (ADR-007). Exact scopes will be listed per connector after checking current provider docs, at the time each is built.

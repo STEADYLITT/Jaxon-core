@@ -20,6 +20,7 @@ from .routes_opportunities import router as opportunities_router
 from .routes_policy import router as policy_router
 from .routes_runs import router as runs_router
 from .routes_shop import router as shop_router
+from .routes_sites import router as sites_router
 from .routes_tools import router as tools_router
 from .settings import load_settings
 
@@ -34,6 +35,7 @@ app.include_router(agents_router)
 app.include_router(opportunities_router)
 app.include_router(shop_router)
 app.include_router(content_router)
+app.include_router(sites_router)
 
 
 @app.get("/health")
@@ -43,7 +45,7 @@ def health() -> dict:
         "status": "ok",
         "service": "jackson-api",
         "version": __version__,
-        "phase": "16-content-influencer",
+        "phase": "17-website-factory",
         "integrations": "none (no external connectors are live)",
     }
 

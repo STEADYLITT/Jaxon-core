@@ -691,3 +691,53 @@ class ContentItem(Base):
     external_post_id: Mapped[str | None] = mapped_column(String(255))
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = _updated()
+
+
+SITE_STATUSES = ("draft", "ready", "live")
+
+
+class SiteProject(Base):
+    """A website for a business (spec vol. 03 website factory). `live_version_id` can only
+    point at a version of this site that passed its tests (DB trigger)."""
+
+    __tablename__ = "sites"
+    __table_args__ = (CheckConstraint(f"status IN {SITE_STATUSES}", name="ck_site_status"),)
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    business_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("businesses.id"))
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    requirements: Mapped[dict] = mapped_column(JSON().with_variant(JSONB(), "postgresql"),
+                                               nullable=False, default=dict)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="draft")
+    domain: Mapped[str | None] = mapped_column(String(253))
+    domain_token: Mapped[str | None] = mapped_column(String(64))
+    live_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("site_versions.id", use_alter=True, name="fk_sites_live_version"))
+    previous_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("site_versions.id", use_alter=True, name="fk_sites_previous_version"))
+    live_url: Mapped[str | None] = mapped_column(String(500))
+    launched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = _created()
+    updated_at: Mapped[datetime] = _updated()
+
+
+class SiteVersion(Base):
+    """One immutable build of a site: its files and its test results."""
+
+    __tablename__ = "site_versions"
+    __table_args__ = (UniqueConstraint("site_id", "number"),)
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    site_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sites.id"), nullable=False)
+    number: Mapped[int] = mapped_column(Integer, nullable=False)
+    run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("workflow_runs.id"))
+    files: Mapped[dict] = mapped_column(JSON().with_variant(JSONB(), "postgresql"),
+                                        nullable=False)  # {"index.html": "<!doctype ..."}
+    checks: Mapped[dict] = mapped_column(JSON().with_variant(JSONB(), "postgresql"),
+                                         nullable=False)
+    passed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    created_at: Mapped[datetime] = _created()
