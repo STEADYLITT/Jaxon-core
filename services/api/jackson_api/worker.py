@@ -39,6 +39,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from . import tools
+from .agents import MAX_AGENTS_PER_RUN, MAX_DEPTH, QuotaExceeded, spec_dict
 from .artifacts import LocalArtifactStore
 from .contracts import TERMINAL_TASK_STATES, TaskState
 from .db import make_sessionmaker
@@ -53,6 +54,7 @@ from .governance import (
 )
 from .memory import citation, recall, write_memory
 from .models import (
+    AgentSpec,
     AuditEvent,
     Business,
     ModelUsage,
@@ -113,6 +115,14 @@ class TaskContext:
     use_tool: Callable[[str, dict], dict] = None  # type: ignore
     # Phase 11: `with ctx.browser() as b:` opens a watched, allowlisted sandbox browser.
     browser: Callable[[], object] = None  # type: ignore
+    # Phase 12: agents. `input` carries a spawned task's payload; `agent_spec` is the spec
+    # this task runs (dict) or None; spawn_agent delegates within quotas and narrower scope.
+    input: dict = field(default_factory=dict)
+    depth: int = 0
+    agent_spec: dict | None = None
+    spawn_agent: Callable[..., str] = None  # type: ignore
+    # Worker-role DB session for built-in handlers that record their own rows (factory).
+    db_session: Callable[[], Session] = None  # type: ignore
     constraints: list = field(default_factory=list)
     success_criteria: list = field(default_factory=list)
 
@@ -121,9 +131,11 @@ Handler = Callable[[TaskContext], TaskResult]
 
 
 def default_handlers() -> dict[str, Handler]:
+    from .agent_handlers import agent_handler, eval_handler, factory_handler
     from .planner import plan_handler  # lazy: planner imports TaskResult from here
 
-    return {"plan": plan_handler}
+    return {"plan": plan_handler, "agent": agent_handler, "agent_eval": eval_handler,
+            "agent_factory": factory_handler}
 
 
 class ModelBudgetExhausted(NonRetryableError):
@@ -205,6 +217,8 @@ class Worker:
             for task in candidates:
                 if not self._tenant_has_capacity(db, task.tenant_id):
                     continue
+                if task.agent_spec_id is not None and not self._spec_has_capacity(db, task):
+                    continue
                 run = db.scalar(select(WorkflowRun).where(WorkflowRun.id == task.run_id)
                                 .with_for_update())
                 if run.paused or TaskState(run.status) in TERMINAL_TASK_STATES:
@@ -222,6 +236,13 @@ class Worker:
                 return task.id
             db.commit()
         return None
+
+    def _spec_has_capacity(self, db: Session, task: Task) -> bool:
+        limit = db.scalar(select(AgentSpec.max_concurrency).where(
+            AgentSpec.id == task.agent_spec_id)) or 1
+        running = db.scalar(select(func.count()).select_from(Task).where(
+            Task.agent_spec_id == task.agent_spec_id, Task.status == TaskState.RUNNING.value))
+        return running < limit
 
     def _tenant_has_capacity(self, db: Session, tenant_id: uuid.UUID) -> bool:
         running = db.scalar(select(func.count()).select_from(Task).where(
@@ -266,6 +287,7 @@ class Worker:
             task = db.get(Task, task_id)
             run = db.get(WorkflowRun, task.run_id)
             biz = db.get(Business, run.business_id) if run.business_id else None
+            spec = db.get(AgentSpec, task.agent_spec_id) if task.agent_spec_id else None
             ctx = TaskContext(
                 tenant_id=task.tenant_id, run_id=task.run_id, task_id=task.id,
                 kind=task.kind, title=task.title, attempt=task.attempts,
@@ -286,6 +308,15 @@ class Worker:
                            "autonomy_level": biz.autonomy_level} if biz else None),
                 constraints=list(run.constraints or []),
                 success_criteria=list(run.success_criteria or []),
+                input=dict(task.input or {}),
+                depth=task.depth,
+                agent_spec=(spec_dict(spec) | {"status": spec.status,
+                                               "success_tests": spec.success_tests,
+                                               "max_runtime_s": spec.max_runtime_s}
+                            if spec else None),
+                spawn_agent=lambda name, objective, context=None: self._spawn_agent(
+                    task_id, name, objective, context),
+                db_session=self.maker,
             )
         handler = self.handlers.get(ctx.kind)
         try:
@@ -348,7 +379,17 @@ class Worker:
             task, _ = self._locked(db, task_id)
             tenant_id, run_id = task.tenant_id, task.run_id
             spent = self._model_spend_this_month(db, tenant_id)
+            agent_cap = None
+            if task.agent_spec_id is not None:
+                agent_cap = (db.scalar(select(AgentSpec.budget_cents_per_run).where(
+                    AgentSpec.id == task.agent_spec_id)) or 0) * 10_000  # cents -> micros
+                agent_spent = int(db.scalar(select(func.coalesce(
+                    func.sum(ModelUsage.cost_usd_micros), 0)).where(
+                    ModelUsage.task_id == task_id)) or 0)
             db.rollback()
+        if agent_cap is not None and agent_spent >= agent_cap and agent_cap > 0:
+            raise ModelBudgetExhausted(
+                f"agent budget for this task used up ({agent_spent / 1e6:.4f} USD)")
         if spent >= self.model_budget_micros:
             raise ModelBudgetExhausted(
                 f"monthly model budget used up ({spent / 1e6:.2f} of "
@@ -369,6 +410,37 @@ class Worker:
                 "route": route.reason}))
             db.commit()
         return resp
+
+    def _spawn_agent(self, task_id: uuid.UUID, name: str, objective: str,
+                     context: dict | None) -> str:
+        with self.maker() as db:
+            parent, run = self._locked(db, task_id)
+            run = db.scalar(select(WorkflowRun).where(WorkflowRun.id == run.id)
+                            .with_for_update())  # serialize spawns within a run
+            depth = parent.depth + 1
+            if depth > MAX_DEPTH:
+                raise QuotaExceeded(f"delegation depth {depth} exceeds the limit of {MAX_DEPTH}")
+            n_agents = db.scalar(select(func.count()).select_from(Task).where(
+                Task.run_id == run.id, Task.agent_spec_id.is_not(None))) or 0
+            if n_agents >= MAX_AGENTS_PER_RUN:
+                raise QuotaExceeded(f"run already has {n_agents} agent tasks "
+                                    f"(limit {MAX_AGENTS_PER_RUN})")
+            spec = db.scalar(select(AgentSpec).where(
+                AgentSpec.tenant_id == parent.tenant_id, AgentSpec.name == name,
+                AgentSpec.status == "active"))
+            if spec is None:
+                raise NonRetryableError(f"no active agent named '{name}'")
+            scope = list(spec.allowed_tools)
+            if parent.tool_scope is not None:  # never broader than the parent
+                scope = [t for t in scope if t in parent.tool_scope]
+            child = add_task(db, run, kind="agent", title=f"{name}: {objective[:250]}",
+                             parent_task_id=parent.id, depth=depth, agent_spec_id=spec.id,
+                             tool_scope=scope, input={"objective": objective,
+                                                      "context": context or {}})
+            _event(db, parent, "agent.spawned", child_task_id=str(child.id), agent=name,
+                   version=spec.version, depth=depth, tool_scope=scope)
+            db.commit()
+            return str(child.id)
 
     def _recall(self, task_id: uuid.UUID, query: str, limit: int) -> list[dict]:
         with self.maker() as db:
@@ -439,6 +511,10 @@ class Worker:
                 db.rollback()
                 return {"tool": name, "mode": done.mode, "untrusted": True, "cached": True,
                         "output": done.output}
+            if task.tool_scope is not None and name not in task.tool_scope:
+                _event(db, task, "tool.denied", tool=name, reason="outside this agent's scope")
+                db.commit()
+                raise ToolNotGranted(f"tool '{name}' is outside this agent's tool scope")
             grant = self._grant(db, task, run, name)
             if grant is None:
                 _event(db, task, "tool.denied", tool=name, reason="no active grant")

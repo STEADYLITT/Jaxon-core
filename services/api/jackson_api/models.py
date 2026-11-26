@@ -205,6 +205,13 @@ class Task(Base):
     error: Mapped[str | None] = mapped_column(Text)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # --- Agent delegation (phase 12, ADR-022) ---
+    parent_task_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("tasks.id"))
+    depth: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    agent_spec_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agent_specs.id"))
+    # None = no extra restriction (still limited by grants); a list = only these tools.
+    tool_scope: Mapped[list | None] = mapped_column(JSON().with_variant(JSONB(), "postgresql"))
+    input: Mapped[dict | None] = mapped_column(JSON().with_variant(JSONB(), "postgresql"))
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = _updated()
 
@@ -478,5 +485,54 @@ class BrowserSession(Base):
     last_action: Mapped[str | None] = mapped_column(Text)
     last_screenshot_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("artifacts.id"))
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = _created()
+    updated_at: Mapped[datetime] = _updated()
+
+
+# --- Phase 12: agent registry and factory ---------------------------------------------------
+
+AGENT_STATUSES = ("draft", "active", "retired")
+
+
+class AgentSpec(Base):
+    """Spec vol. 05 AgentSpec: a versioned configuration, not an identity.
+
+    Agents (the worker role) may only INSERT drafts (an RLS check enforces status='draft').
+    Validation, evaluation, activation, retirement and rollback happen through the API.
+    """
+
+    __tablename__ = "agent_specs"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "name", "version"),
+        CheckConstraint("status IN ('draft','active','retired')", name="ck_agent_status"),
+        CheckConstraint("budget_cents_per_run >= 0", name="ck_agent_budget"),
+    )
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    business_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("businesses.id"))
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    role: Mapped[str] = mapped_column(String(200), nullable=False)
+    objective: Mapped[str] = mapped_column(Text, nullable=False)
+    instructions: Mapped[str] = mapped_column(Text, nullable=False)  # the versioned prompt
+    model_profile: Mapped[str] = mapped_column(String(32), nullable=False, default="standard")
+    allowed_tools: Mapped[list] = mapped_column(
+        JSON().with_variant(JSONB(), "postgresql"), nullable=False, default=list)
+    budget_cents_per_run: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
+    max_concurrency: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    max_runtime_s: Mapped[int] = mapped_column(Integer, nullable=False, default=300)
+    success_tests: Mapped[list] = mapped_column(
+        JSON().with_variant(JSONB(), "postgresql"), nullable=False, default=list)
+    output_checks: Mapped[dict] = mapped_column(
+        JSON().with_variant(JSONB(), "postgresql"), nullable=False, default=dict)
+    escalation: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="draft")
+    created_by: Mapped[str] = mapped_column(String(16), nullable=False)  # owner|factory|import
+    source_ref: Mapped[str | None] = mapped_column(String(300))
+    owner_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    previous_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("agent_specs.id"))
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = _updated()
