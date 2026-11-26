@@ -123,6 +123,9 @@ class TaskContext:
     spawn_agent: Callable[..., str] = None  # type: ignore
     # Worker-role DB session for built-in handlers that record their own rows (factory).
     db_session: Callable[[], Session] = None  # type: ignore
+    # Phase 15: `ctx.shopify()` -> draft-only store connector (mock until credentials).
+    shopify: Callable[[], object] = None  # type: ignore
+    artifacts: object = None
     constraints: list = field(default_factory=list)
     success_criteria: list = field(default_factory=list)
 
@@ -134,9 +137,11 @@ def default_handlers() -> dict[str, Handler]:
     from .agent_handlers import agent_handler, eval_handler, factory_handler
     from .planner import plan_handler  # lazy: planner imports TaskResult from here
     from .research import research_handler
+    from .store_builder import publish_handler, store_build_handler
 
     return {"plan": plan_handler, "agent": agent_handler, "agent_eval": eval_handler,
-            "agent_factory": factory_handler, "opportunity_research": research_handler}
+            "agent_factory": factory_handler, "opportunity_research": research_handler,
+            "store_build": store_build_handler, "shopify_publish": publish_handler}
 
 
 class ModelBudgetExhausted(NonRetryableError):
@@ -318,6 +323,8 @@ class Worker:
                 spawn_agent=lambda name, objective, context=None: self._spawn_agent(
                     task_id, name, objective, context),
                 db_session=self.maker,
+                shopify=lambda: self._shopify(task_id),
+                artifacts=self.artifacts,
             )
         handler = self.handlers.get(ctx.kind)
         try:
@@ -475,6 +482,22 @@ class Worker:
             ToolGrant.status == "active",
             or_(ToolGrant.business_id == run.business_id, ToolGrant.business_id.is_(None)))
             .order_by(ToolGrant.business_id.is_(None)))  # business-specific grant first
+
+    def _shopify(self, task_id: uuid.UUID):
+        from .shop import ShopHandle
+
+        with self.maker() as db:
+            task, run = self._locked(db, task_id)
+            if task.tool_scope is not None and "shopify.drafts" not in task.tool_scope:
+                raise ToolNotGranted("tool 'shopify.drafts' is outside this agent's tool scope")
+            grant = self._grant(db, task, run, "shopify.drafts")
+            if grant is None:
+                _event(db, task, "tool.denied", tool="shopify.drafts", reason="no active grant")
+                db.commit()
+                raise ToolNotGranted("tool 'shopify.drafts' is not granted for this business")
+            config = dict(grant.config or {})
+            db.rollback()
+        return ShopHandle(self, task_id, config)
 
     def _browser(self, task_id: uuid.UUID):
         from .browser import BrowserHandle  # lazy: Playwright loads only when used

@@ -581,3 +581,40 @@ class Opportunity(Base):
     source_ref: Mapped[str | None] = mapped_column(String(300))
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = _updated()
+
+
+# --- Phase 15: Shopify draft products -------------------------------------------------------
+
+
+class ShopProduct(Base):
+    """Canonical record of every product Jackson created on a store (mock or real)."""
+
+    __tablename__ = "shop_products"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "backend", "handle"),
+        CheckConstraint("backend IN ('mock','shopify')", name="ck_shop_backend"),
+        CheckConstraint("status IN ('DRAFT','ACTIVE','ARCHIVED','UNLISTED')",
+                        name="ck_shop_status"),
+    )
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    business_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("businesses.id"))
+    run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("workflow_runs.id"))
+    task_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("tasks.id"))
+    opportunity_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("opportunities.id"))
+    backend: Mapped[str] = mapped_column(String(16), nullable=False)
+    store: Mapped[str | None] = mapped_column(String(255))
+    external_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    handle: Mapped[str] = mapped_column(String(255), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    price_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="DRAFT")
+    verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    admin_url: Mapped[str | None] = mapped_column(Text)
+    payload: Mapped[dict] = mapped_column(JSON().with_variant(JSONB(), "postgresql"),
+                                          nullable=False, default=dict)
+    created_at: Mapped[datetime] = _created()
+    updated_at: Mapped[datetime] = _updated()

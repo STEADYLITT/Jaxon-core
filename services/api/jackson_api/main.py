@@ -18,6 +18,7 @@ from .routes_memory import router as memory_router
 from .routes_opportunities import router as opportunities_router
 from .routes_policy import router as policy_router
 from .routes_runs import router as runs_router
+from .routes_shop import router as shop_router
 from .routes_tools import router as tools_router
 from .settings import load_settings
 
@@ -30,6 +31,7 @@ app.include_router(tools_router)
 app.include_router(browser_router)
 app.include_router(agents_router)
 app.include_router(opportunities_router)
+app.include_router(shop_router)
 
 
 @app.get("/health")
@@ -39,7 +41,7 @@ def health() -> dict:
         "status": "ok",
         "service": "jackson-api",
         "version": __version__,
-        "phase": "14-product-economics",
+        "phase": "15-shopify-drafts",
         "integrations": "none (no external connectors are live)",
     }
 

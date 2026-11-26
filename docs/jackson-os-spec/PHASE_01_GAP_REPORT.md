@@ -2,7 +2,7 @@
 
 Date: 2026-11-25 · Repo: `STEADYLITT/Jaxon-core` · Inspected at commit `cb722b6` (before any changes in this PR)
 Scope: phase 01 (inventory + gap report) delivered in full; phase 02 (scaffold + CI) delivered as a minimal, safe skeleton.
-Update: phases 03–04 delivered — see [PHASE_03_04_REPORT.md](PHASE_03_04_REPORT.md); phase 05 — see [PHASE_05_REPORT.md](PHASE_05_REPORT.md); phase 06 — see [PHASE_06_REPORT.md](PHASE_06_REPORT.md); phase 07 — see [PHASE_07_REPORT.md](PHASE_07_REPORT.md); phase 08 — see [PHASE_08_REPORT.md](PHASE_08_REPORT.md); phase 09 — see [PHASE_09_REPORT.md](PHASE_09_REPORT.md); phase 10 — see [PHASE_10_REPORT.md](PHASE_10_REPORT.md); phase 11 — see [PHASE_11_REPORT.md](PHASE_11_REPORT.md); phase 12 — see [PHASE_12_REPORT.md](PHASE_12_REPORT.md); phase 13 — see [PHASE_13_REPORT.md](PHASE_13_REPORT.md); phase 14 — see [PHASE_14_REPORT.md](PHASE_14_REPORT.md). Status rows below are kept current.
+Update: phases 03–04 delivered — see [PHASE_03_04_REPORT.md](PHASE_03_04_REPORT.md); phase 05 — see [PHASE_05_REPORT.md](PHASE_05_REPORT.md); phase 06 — see [PHASE_06_REPORT.md](PHASE_06_REPORT.md); phase 07 — see [PHASE_07_REPORT.md](PHASE_07_REPORT.md); phase 08 — see [PHASE_08_REPORT.md](PHASE_08_REPORT.md); phase 09 — see [PHASE_09_REPORT.md](PHASE_09_REPORT.md); phase 10 — see [PHASE_10_REPORT.md](PHASE_10_REPORT.md); phase 11 — see [PHASE_11_REPORT.md](PHASE_11_REPORT.md); phase 12 — see [PHASE_12_REPORT.md](PHASE_12_REPORT.md); phase 13 — see [PHASE_13_REPORT.md](PHASE_13_REPORT.md); phase 14 — see [PHASE_14_REPORT.md](PHASE_14_REPORT.md); phase 15 — see [PHASE_15_REPORT.md](PHASE_15_REPORT.md). Status rows below are kept current.
 
 ---
 
@@ -72,7 +72,8 @@ Legend: ✅ done · 🟡 scaffolded (shape only, no behaviour) · ❌ missing
 | Agent factory (05) | AgentSpec lifecycle, quotas, depth caps | ✅ versioned specs, validate → evaluate → owner activates, rollback, verifier, delegation quotas (ADR-022) | 12 |
 | Opportunity engine (03) | | ✅ sourced signals, dedupe, transparent scores + uncertainty, briefs (ADR-023) | 13 |
 | Product economics (03) | landed cost, margin, breakeven | ✅ exact calculator, assumptions listed, opportunity re-scoring, agent tool (ADR-024) | 14 |
-| Shopify / content / website / CRM (03) | | ❌ | 15–18 |
+| Shopify draft connector (03) | draft → verify; approval to publish | ✅ mock + real Admin API 2026-10 backend, QA report (ADR-025); live run needs dev-store token | 15 |
+| Content / website / CRM (03) | | ❌ | 16–18 |
 | Owner dashboard + global stop (04) | | ❌ | 19 |
 | Security, backup/restore, E2E pilot | | ❌ | 20 |
 | Growth OS import | (owner requirement) | ❌ design only (ADR-008, §6) | after 09/12 |
@@ -91,7 +92,7 @@ Legend: ✅ done · 🟡 scaffolded (shape only, no behaviour) · ❌ missing
 | Secrets absent from logs | ✅ repo scan (02), model calls (08), tool inputs/outputs redacted (10) |
 | Browser session visible | ✅ phase 11 (`test_browser_session_is_visible`) |
 | Memory cites source | ✅ phase 09 (`test_planner_cites_memory_sources`) |
-| Sandbox Shopify draft verified | ❌ phase 15 |
+| Sandbox Shopify draft verified | ✅ phase 15 on the mock store (`test_sandbox_shopify_draft_verified`); real dev store pending credentials |
 | Website preview passes tests | ❌ phase 17 |
 | Content remains draft until approved | ❌ phase 16 |
 
@@ -140,6 +141,8 @@ Legend: ✅ done · 🟡 scaffolded (shape only, no behaviour) · ❌ missing
 **ADR-023 — Opportunity scores are transparent and evidence-bound.** Signals are typed, normalized, timestamped and must cite a source URL. During research, a signal whose source wasn't actually fetched through the tool gateway is dropped. Scoring is a pure, documented weighted mean over the factors that have data, never imputing missing ones. Uncertainty = 1 − evidence × coverage. IP risk caps the score at 20. Opportunities dedupe by normalized title and merge signals by (type, source). The worker can refresh evidence columns (column-level grant) and inserts only `new` rows. Status is the owner's decision.
 
 **ADR-024 — Unit economics are pure, exact and assumption-explicit.** The calculator uses Decimal arithmetic and rounds to cents only for display. Every omitted input takes a documented default that's echoed back under `assumptions`, and outputs are labeled estimates. Per-order contribution counts landed cost, returns (refunds, handling, recovered stock), payment and platform fees, outbound shipping and CAC. Breakeven CAC/ROAS, orders-for-target and sensitivity are derived from the same core function. Saving economics on an opportunity replaces the gross price-vs-cost margin proxy with the contribution margin and re-scores it. The worker may attach economics (column grant) but still can't change status.
+
+**ADR-025 — Shopify work is draft-first and verified by read-back; publishing is always approved.** The connector has a labeled mock backend (default) and a real Admin GraphQL backend pinned to API version 2026-10, checked against shopify.dev. The real backend is enabled only when the grant says `mode: shopify`, `dev_store: true` and a `*.myshopify.com` domain, and `SHOPIFY_ADMIN_API_TOKEN` is set in the environment. Creation looks up the handle first (idempotent), creates the product with status DRAFT, then reads it back. A draft counts as verified only if the store reports DRAFT with the same handle. `shop_products` is the canonical record; the worker can insert only DRAFT rows and can't change title or price. Publishing is `production_change`, which is in ALWAYS_APPROVE. Customer-facing copy must pass the shared claims checker.
 
 **ADR-011 — Trading is simulation-only.** APEX-7 and any trading work are backtest/paper-trade only (vol. 00, vol. 03). No live-trade connector will be built without a new ADR and explicit owner approval.
 
