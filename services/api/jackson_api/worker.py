@@ -133,9 +133,10 @@ Handler = Callable[[TaskContext], TaskResult]
 def default_handlers() -> dict[str, Handler]:
     from .agent_handlers import agent_handler, eval_handler, factory_handler
     from .planner import plan_handler  # lazy: planner imports TaskResult from here
+    from .research import research_handler
 
     return {"plan": plan_handler, "agent": agent_handler, "agent_eval": eval_handler,
-            "agent_factory": factory_handler}
+            "agent_factory": factory_handler, "opportunity_research": research_handler}
 
 
 class ModelBudgetExhausted(NonRetryableError):

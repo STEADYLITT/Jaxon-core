@@ -11,7 +11,7 @@ def test_health_ok_and_honest_about_integrations():
     assert r.status_code == 200
     body = r.json()
     assert body["status"] == "ok"
-    assert body["phase"] == "12-agent-factory"
+    assert body["phase"] == "13-opportunity-research"
     assert "none" in body["integrations"]
 
 

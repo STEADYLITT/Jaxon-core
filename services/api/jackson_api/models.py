@@ -536,3 +536,48 @@ class AgentSpec(Base):
         ForeignKey("agent_specs.id"))
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = _updated()
+
+
+# --- Phase 13: opportunities ------------------------------------------------------------------
+
+OPPORTUNITY_STATUSES = ("new", "researching", "validated", "rejected", "pursuing")
+
+
+class Opportunity(Base):
+    """A scored business opportunity with its evidence (spec vol. 03 "Opportunity engine").
+
+    `signals` are normalized, timestamped, source-linked observations; `scores` holds the
+    transparent component scores; `brief` is generated from them. The worker can update the
+    evidence columns but never `status` (that's the owner's call).
+    """
+
+    __tablename__ = "opportunities"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "dedupe_key"),
+        CheckConstraint("status IN ('new','researching','validated','rejected','pursuing')",
+                        name="ck_opportunity_status"),
+    )
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    business_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("businesses.id"))
+    title: Mapped[str] = mapped_column(String(300), nullable=False)
+    dedupe_key: Mapped[str] = mapped_column(String(300), nullable=False)
+    category: Mapped[str | None] = mapped_column(String(100))
+    summary: Mapped[str | None] = mapped_column(Text)
+    signals: Mapped[list] = mapped_column(JSON().with_variant(JSONB(), "postgresql"),
+                                          nullable=False, default=list)
+    scores: Mapped[dict] = mapped_column(JSON().with_variant(JSONB(), "postgresql"),
+                                         nullable=False, default=dict)
+    score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    uncertainty: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+    brief: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    sources: Mapped[list] = mapped_column(JSON().with_variant(JSONB(), "postgresql"),
+                                          nullable=False, default=list)
+    economics: Mapped[dict | None] = mapped_column(JSON().with_variant(JSONB(), "postgresql"))
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="new")
+    created_by: Mapped[str] = mapped_column(String(16), nullable=False)  # owner|run
+    source_ref: Mapped[str | None] = mapped_column(String(300))
+    created_at: Mapped[datetime] = _created()
+    updated_at: Mapped[datetime] = _updated()
