@@ -7,7 +7,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 \
 WORKDIR /app
 COPY services/api services/api
 COPY infra/deploy infra/deploy
-RUN pip install -e ./services/api \
+# libatomic1: needed by Playwright's own installer before it can add Chromium's libraries
+RUN apt-get update && apt-get install -y --no-install-recommends libatomic1 \
+ && pip install -e ./services/api \
  && python -m playwright install --with-deps chromium \
  && rm -rf /var/lib/apt/lists/*
 
