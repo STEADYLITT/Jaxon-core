@@ -89,6 +89,7 @@ export interface Command {
   constraints?: string[];
   success_criteria?: string[];
   target_run_id?: string;
+  route?: boolean; // from the City command bar: Jaxon routes it to a department agent
 }
 
 export interface TaskOut {
