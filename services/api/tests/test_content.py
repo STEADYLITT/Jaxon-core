@@ -185,7 +185,9 @@ def test_content_remains_draft_until_approved(client, world, alice, maker, owner
             db.flush()
     with maker() as db, pytest.raises(DBAPIError, match="permission denied"):
         db.execute(text("UPDATE content_items SET approved_by = NULL"))
-    with maker() as db, pytest.raises(DBAPIError, match="row-level security"):
+    # inserting already-approved content is refused (approval trigger, or RLS insert policy)
+    with maker() as db, pytest.raises(DBAPIError,
+                                      match="ck_content_needs_approval|row-level security"):
         db.add(ContentItem(tenant_id=world.tenant_a, channel="x", kind="post", body="b",
                            status="approved", review={}))
         db.flush()

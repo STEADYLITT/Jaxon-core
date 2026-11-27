@@ -27,6 +27,9 @@ GUARD_TRIGGERS = {
     ("outreach_messages", "outreach_send_guard"),
     ("workflow_runs", "tenant_not_stopped"),
     ("tasks", "tenant_not_stopped"),
+    ("content_items", "content_needs_approval"),
+    ("outreach_campaigns", "campaign_needs_approval"),
+    ("workflow_runs", "run_launch_fixed"),
 }
 
 

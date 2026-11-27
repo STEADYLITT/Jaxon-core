@@ -240,6 +240,15 @@ A trigger refuses to claim a message for sending (`sending`) unless the campaign
   - scheduled backups on the host are still to set up (runbook exists)
   - Clerk production instances need the owner's own domain
 
+**ADR-032 — Launch approvals: one owner approval per launch, then autonomy inside it.** This is the owner's product decision of 2026-11-27.
+- **Scope:** a `launches` row holds budget, daily cap, window, channels (Shopify publish, social accounts, email lists, ads) and kill rules. Only the owner sets it, via the API.
+- **Enforcement:** runs started under a launch carry a `launch_id`, fixed by trigger. The policy engine allows in-scope actions at level 3 and sends everything else to the inbox. Spend must fit the launch caps, with the launch row locked. Payments, account creation, sensitive data and live trades are never in scope.
+- **Health:** checked before every in-scope decision and by a worker sweep. Spend, bounce, complaint, refund or error spikes pause the launch. Kill rules, end of window or used-up budget stop it.
+- **Database guards:**
+  - content and campaigns can go out without a person only under a covering, active launch of the same business
+  - the worker may only propose launches and move an active one to a stopped state
+  - global stop pauses all launches
+
 **ADR-011 — Trading is simulation-only.** APEX-7 and any trading work are backtest/paper-trade only (vol. 00, vol. 03). No live-trade connector will be built without a new ADR and explicit owner approval.
 
 ## 4. Dependency inventory

@@ -262,8 +262,24 @@ def build(db: Session, tenant_id) -> dict:
                       .order_by(Artifact.created_at.desc()).limit(10)).all()
     audit_rows = db.scalars(select(AuditEvent).where(AuditEvent.tenant_id == tenant_id)
                             .order_by(AuditEvent.created_at.desc()).limit(20)).all()
+    from . import launches as LA
+    from .models import Launch
+
+    launch_rows = db.scalars(select(Launch).where(Launch.tenant_id == tenant_id)
+                             .order_by(Launch.created_at.desc()).limit(20)).all()
+    launches = []
+    for la in launch_rows:
+        m = LA.metrics(db, la) if la.status not in ("proposed", "rejected") else {}
+        launches.append({"id": str(la.id), "title": la.title, "status": la.status,
+                         "status_reason": la.status_reason,
+                         "opportunity_id": str(la.opportunity_id) if la.opportunity_id else None,
+                         "total_budget_cents": la.total_budget_cents,
+                         "daily_cap_cents": la.daily_cap_cents,
+                         "spend_cents": m.get("spend_cents", 0), "sales": m.get("sales", 0),
+                         "ends_at": _iso(la.ends_at)})
     return {
         "generated_at": datetime.now(UTC).isoformat(),
+        "launches": launches,
         "stop": {"active": bool(t and t.stopped_at), "since": _iso(t.stopped_at) if t else None,
                  "reason": t.stop_reason if t else None},
         "portfolio": portfolio(db, tenant_id),
@@ -271,6 +287,7 @@ def build(db: Session, tenant_id) -> dict:
         "alerts": alerts(db, tenant_id),
         "opportunities": {"by_status": opp_counts, "top": [
             {"id": str(o.id), "title": o.title, "score": o.score, "status": o.status,
+             "business_id": str(o.business_id) if o.business_id else None,
              "has_economics": bool(o.economics)} for o in top]},
         "agents": [{"id": str(a.id), "name": a.name, "version": a.version, "status": a.status,
                     "tasks": agent_tasks.get(a.id, {})} for a in agent_rows],
@@ -334,6 +351,12 @@ def global_stop(db: Session, tenant_id, user_id, reason: str) -> dict:
         BrowserSession.status.in_(["active", "paused", "taken_over"]))).all()
     for s in sessions:
         s.control = "terminate"  # the watching worker closes it (phase 11 owner control)
+    from .models import Launch
+
+    launches = db.scalars(select(Launch).where(Launch.tenant_id == tenant_id,
+                                               Launch.status == "active")).all()
+    for la in launches:  # stays paused after resume: the owner restarts each launch
+        la.status, la.status_reason = "paused", f"global stop: {reason}"
     since = datetime.now(UTC) - timedelta(hours=24)
     reconcile = {
         "runs_that_were_mid_task": was_running,
@@ -353,7 +376,8 @@ def global_stop(db: Session, tenant_id, user_id, reason: str) -> dict:
     }
     summary = {"already_stopped": already, "runs_canceled": canceled,
                "content_unscheduled": len(content), "campaigns_cancelled": len(campaigns),
-               "browser_sessions_terminated": len(sessions), "reconcile": reconcile,
+               "browser_sessions_terminated": len(sessions),
+               "launches_paused": len(launches), "reconcile": reconcile,
                "note": "Live products and sites stay up: taking them down is a separate, "
                        "approved production change. Review the reconcile list."}
     db.add(AuditEvent(tenant_id=tenant_id, actor_user_id=user_id, action="tenant.global_stop",
@@ -386,6 +410,10 @@ def daily_report(db: Session, tenant_id, day: datetime | None = None) -> dict:
     blockers = ([f"{t.kind}: {(t.error or '')[:160]}" for t in failed_tasks]
                 + [a["message"] for a in dash["alerts"] if a["level"] != "info"])
     next_actions = [f"Decide approval: {a['description']}" for a in dash["approvals"]["items"]]
+    next_actions += [f"Review proposed launch: {la['title']}" for la in dash["launches"]
+                     if la["status"] == "proposed"]
+    blockers += [f"Launch '{la['title']}' is {la['status']}: {la['status_reason']}"
+                 for la in dash["launches"] if la["status"] in ("paused", "killed")]
     next_actions += [f"Connect {c['name']} ({c['needs']})" for c in dash["connectors"]
                      if c["mode"] == "mock"][:3]
     report = {"type": "daily_report", "period_start": start.isoformat(),
@@ -403,6 +431,10 @@ def daily_report(db: Session, tenant_id, day: datetime | None = None) -> dict:
     lines += ["", "## Blockers"] + ([f"- {b}" for b in blockers] or ["- None."])
     lines += ["", "## Next actions"] + ([f"- {n}" for n in next_actions] or ["- None."])
     n = report["numbers"]
+    lines += ["", "## Launches"] + ([
+        f"- {la['title']}: {la['status']} · spent ${la['spend_cents'] / 100:,.2f} of "
+        f"${la['total_budget_cents'] / 100:,.2f} · {la['sales']} sale(s)"
+        for la in dash["launches"] if la["status"] not in ("rejected",)] or ["- None."])
     lines += ["", "## Numbers", f"- Runs finished: {n['runs_finished']} "
               f"({n['runs_succeeded']} succeeded)",
               f"- Pending approvals: {n['pending_approvals']}",

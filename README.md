@@ -25,6 +25,7 @@ Phases 01–20 of 20: inventory, scaffold + CI, hosted-provider auth + tenant is
 - Website factory: [`PHASE_17_REPORT.md`](docs/jackson-os-spec/PHASE_17_REPORT.md)
 - CRM + compliant outreach: [`PHASE_18_REPORT.md`](docs/jackson-os-spec/PHASE_18_REPORT.md)
 - Owner dashboard: [`PHASE_19_REPORT.md`](docs/jackson-os-spec/PHASE_19_REPORT.md)
+- Launch approvals: [`PHASE_21_LAUNCH_APPROVALS.md`](docs/jackson-os-spec/PHASE_21_LAUNCH_APPROVALS.md)
 - Security, recovery, pilot: [`PHASE_20_REPORT.md`](docs/jackson-os-spec/PHASE_20_REPORT.md) · runbooks in [`docs/runbooks/`](docs/runbooks/)
 
 ## Layout

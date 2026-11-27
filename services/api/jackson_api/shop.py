@@ -84,9 +84,11 @@ class ShopHandle:
                 raise NonRetryableError("product not found")
             ext = row.external_id
             db.rollback()
-        # Always needs an approval on file (production_change is in ALWAYS_APPROVE).
-        self.w._authorize(self.task_id, Action(Category.PRODUCTION_CHANGE,
-                                               f"publish shopify product {ext}"))
+        # Needs an approval on file (production_change is in ALWAYS_APPROVE), or an active
+        # Launch approval that allows Shopify publishing (phase 21).
+        self.w._authorize(self.task_id, Action(
+            Category.PRODUCTION_CHANGE, f"publish shopify product {ext}",
+            channel="shopify_publish"))
         res = self.backend.set_status(ext, "ACTIVE")
         with self.w.maker() as db:
             row = db.get(ShopProduct, row_id)
