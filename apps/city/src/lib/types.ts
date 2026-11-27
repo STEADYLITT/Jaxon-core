@@ -103,3 +103,9 @@ export interface LineView {
   budget: { monthly_cents: number; spent_this_month_usd: number };
   launch: { how: string; active: number; template: Record<string, unknown> };
 }
+
+export interface CourseSummary {
+  id: string; title: string; status: string; mode: string; modules: number; lessons: number;
+  price: string | null; platform_passed: boolean | null; sales_passed: boolean | null;
+  launch: { id: string; status: string } | null;
+}

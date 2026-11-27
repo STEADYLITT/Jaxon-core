@@ -198,13 +198,14 @@ def test_full_scope_examples_route_with_reasons(client, world, make_token, maker
         monkeypatch.delenv(v, raising=False)
     setup_lines(owner_db, world)
     w = Worker(maker, retry_base_seconds=0)
-    cases = [("AI trading course is trending, build it", "courses", "course-architect"),
+    cases = [("AI trading course is trending, build it", "courses", "Course Builder"),
              ("build a landing page for GOTTINK", "factory", "web-developer"),
              ("backtest APEX-7 on MNQ last 30 days", "trading", "backtest-runner"),
              ("draft an NDA for the Atom Labs partner", "legal", "contract-drafter")]
     for text, line, agent in cases:
         rid = command(client, world, make_token, text)
-        w.run_once()
+        for _ in range(3):  # the course build is queued too: run until this plan has routed
+            w.run_once()
         e = routed(owner_db, rid)
         assert e.payload["line"] == line, (text, e.payload)
         assert agent in e.payload["reason"], (text, e.payload["reason"])
