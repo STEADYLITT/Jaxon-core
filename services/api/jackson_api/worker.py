@@ -514,6 +514,7 @@ class Worker:
                 city.emit(db, task.tenant_id, "cost.recorded", agent_id=a.id, task_id=task.id,
                           run_id=task.run_id, payload={"usd": cents / 100, "source": "spend",
                                                        "description": description[:200]})
+                city.cost_guard(db, a)
             db.commit()
 
     def _model_spend_this_month(self, db: Session, tenant_id: uuid.UUID) -> int:
@@ -565,6 +566,7 @@ class Worker:
                 city.emit(db, tenant_id, "cost.recorded", agent_id=a.id, task_id=task_id,
                           run_id=run_id, payload={"usd": resp.cost_usd_micros / 1e6,
                                                   "source": "model", "model": resp.model})
+                city.cost_guard(db, a)
             db.commit()
         return resp
 
@@ -848,7 +850,8 @@ class Worker:
         task.status = TaskState.FAILED.value
         task.finished_at = func.now()
         _event(db, task, "task.dead_lettered", attempts=task.attempts, error=message)
-        city.on_task(db, task, "task.failed", "failed", error=message[:500])
+        failed_agent = city.on_task(db, task, "task.failed", "failed", error=message[:500])
+        city.failure_siren(db, failed_agent)
         run = db.scalar(select(WorkflowRun).where(WorkflowRun.id == task.run_id)
                         .with_for_update())
         if TaskState(run.status) not in TERMINAL_TASK_STATES:

@@ -7,7 +7,7 @@ import { api, post } from "../lib/api";
 import { describe } from "../lib/effects";
 import { windowState } from "../lib/layout";
 import { useCity, type Focus } from "../lib/store";
-import type { AgentDetail, JaxonView } from "../lib/types";
+import type { AgentDetail, JaxonView, TraceView } from "../lib/types";
 
 const money = (c: number) => `$${(c / 100).toFixed(2)}`;
 const STATE: Record<string, string> = {
@@ -130,6 +130,7 @@ export function AgentPanel({ id }: { id: string }) {
         </div>
       )}
       {msg && <p className="msg" role="status">{msg}</p>}
+      <LimitEditor id={id} limit={d.daily_limit_usd ?? 0} spent={d.cost_today_usd} onSaved={reload} />
       <section>
         <h3>Live log</h3>
         {d.log.length ? <ol className="log">{d.log.map((e) => <li key={e.id}>{String(e.payload["line"] ?? "")}</li>)}</ol>
@@ -141,6 +142,95 @@ export function AgentPanel({ id }: { id: string }) {
           : <p className="muted">None yet.</p>}
       </section>
     </Shell>
+  );
+}
+
+function LimitEditor({ id, limit, spent, onSaved }: {
+  id: string; limit: number; spent: number; onSaved: () => void;
+}) {
+  const [v, setV] = useState(String(limit));
+  const [msg, setMsg] = useState("");
+  useEffect(() => { setV(String(limit)); }, [limit]);
+  async function save() {
+    setMsg("");
+    try {
+      await api(`/city/agents/${id}`, { method: "PATCH", body: JSON.stringify({ daily_limit_usd: Number(v) }) });
+      setMsg("Saved."); onSaved();
+    } catch (e) { setMsg((e as Error).message); }
+  }
+  return (
+    <section>
+      <h3>Cost guard</h3>
+      <p className="muted">Spent ${spent.toFixed(2)} of ${limit.toFixed(2)} today. Over the limit it pauses and sends you a red letter.</p>
+      <div className="controls">
+        <label className="limit">Daily limit $ <input type="number" min={0} step={0.5} value={v}
+          onChange={(e) => setV(e.target.value)} aria-label="Daily limit in dollars" /></label>
+        <button onClick={save}>Save</button>
+      </div>
+      {msg && <p className="msg" role="status">{msg}</p>}
+    </section>
+  );
+}
+
+function TracePanel({ runId }: { runId: string }) {
+  const setFocus = useCity((st) => st.setFocus);
+  const [t] = useEvery(() => api<TraceView>(`/city/trace/${runId}`), [runId], 4000);
+  return (
+    <Shell title="Trace" label="trace" onClose={() => setFocus(null)}>
+      {!t ? <p className="muted">Loading…</p> : (
+        <ol className="trace-steps">
+          <li><strong>Steady:</strong> “{t.command.text}” <span className="muted">· {t.command.status}</span></li>
+          {t.routing.map((r) => (
+            <li key={r.id}><strong>Jaxon routed it</strong> → {String(r.payload["agent"])}: {String(r.payload["reason"])}</li>
+          ))}
+          {t.tasks.map((x) => (
+            <li key={x.task_id}>
+              <button className="link" onClick={() => setFocus({ kind: "agent", id: x.agent_id, from: { kind: "trace", runId } })}>
+                {x.agent}</button>: {x.title} <span className="muted">({x.status})</span>
+              {x.error && <p className="err">{x.error}</p>}
+              {x.result && <p className="muted">{Object.entries(x.result).slice(0, 4).map(([k, v]) => `${k}: ${String(v)}`).join(" · ")}</p>}
+            </li>
+          ))}
+          {t.approvals.map((a) => <li key={a.id}>{describe(a)}</li>)}
+          <li className="muted">Cost of this command: ${t.cost_usd.toFixed(4)}</li>
+        </ol>
+      )}
+    </Shell>
+  );
+}
+
+function ClientLinks() {
+  const [biz, setBiz] = useState<{ id: string; name: string }[]>([]);
+  const [shares, setShares] = useState<{ id: string; label: string; expires_at: string; revoked: boolean }[]>([]);
+  const [pick, setPick] = useState("");
+  const [made, setMade] = useState("");
+  const load = () => {
+    api<{ id: string; name: string }[]>("/businesses").then(setBiz).catch(() => undefined);
+    api<typeof shares>("/city/shares").then(setShares).catch(() => undefined);
+  };
+  useEffect(load, []);
+  async function create() {
+    const r = await post<{ url: string }>("/city/shares", { business_id: pick, days: 7 });
+    setMade(r.url); load();
+  }
+  return (
+    <section>
+      <h3>Client view links</h3>
+      <p className="muted">A read-only city showing only that client's work. Expires in 7 days; revoke any time.</p>
+      <div className="controls">
+        <select value={pick} onChange={(e) => setPick(e.target.value)} aria-label="Client">
+          <option value="">Choose a client…</option>
+          {biz.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+        </select>
+        <button disabled={!pick} onClick={create}>Create link</button>
+      </div>
+      {made && <p className="share-url"><input readOnly value={made} aria-label="Share link" onFocus={(e) => e.currentTarget.select()} /></p>}
+      <ul>{shares.map((x) => (
+        <li key={x.id}>{x.label} · {x.revoked ? "revoked" : `until ${new Date(x.expires_at).toLocaleDateString()}`}
+          {!x.revoked && <button className="link" onClick={async () => { await post(`/city/shares/${x.id}/revoke`); load(); }}> revoke</button>}
+        </li>
+      ))}</ul>
+    </section>
   );
 }
 
@@ -200,11 +290,23 @@ export function InboxPanel() {
       </section>
       {msg && <p className="msg" role="status">{msg}</p>}
       <section>
+        <h3>Red letters</h3>
+        {!(s.inbox.letters ?? []).length ? <p className="muted">None in the last 24 hours.</p> : (
+          <ul className="approvals">{(s.inbox.letters ?? []).map((e) => (
+            <li key={e.id} className="sealed letter" data-letter={String(e.payload["kind"])}>
+              <p>{String(e.payload["message"] ?? "")}</p>
+              <p className="muted">{new Date(e.ts).toLocaleTimeString()}</p>
+            </li>
+          ))}</ul>
+        )}
+      </section>
+      <section>
         <h3>Alerts</h3>
         {!s.inbox.alerts.length ? <p className="muted">No alerts.</p> : (
           <ul>{s.inbox.alerts.map((a, i) => <li key={i} data-level={a.level}>{a.message ?? a.kind}</li>)}</ul>
         )}
       </section>
+      <ClientLinks />
     </Shell>
   );
 }
@@ -226,13 +328,16 @@ function FloorPanel({ deptId, floorId }: { deptId: string; floorId: string }) {
 
 export function Panels() {
   const focus: Focus = useCity((st) => st.focus);
+  const share = useCity((st) => st.shareToken);
   if (!focus) return null;
+  if (share && !["building", "floor"].includes(focus.kind)) return null; // client view: read-only
   switch (focus.kind) {
     case "building": return <BuildingPanel id={focus.id} />;
     case "floor": return <FloorPanel deptId={focus.deptId} floorId={focus.floorId} />;
     case "agent": return <AgentPanel id={focus.id} />;
     case "jaxon": return <JaxonPanel />;
     case "ceo": return <InboxPanel />;
+    case "trace": return <TracePanel runId={focus.runId} />;
     default: return null;
   }
 }

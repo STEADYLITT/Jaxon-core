@@ -18,7 +18,7 @@ DIST = Path(__file__).parents[1] / "jackson_api" / "city_dist" / "assets"
 
 
 @contextmanager
-def city(client, world, token, viewport=None, device=None, reduced_motion=None):
+def city(client, world, token, viewport=None, device=None, reduced_motion=None, share=None):
     from playwright.sync_api import sync_playwright
 
     def proxy(route, request):
@@ -45,10 +45,13 @@ def city(client, world, token, viewport=None, device=None, reduced_motion=None):
         page.on("pageerror", lambda e: problems.append(f"pageerror: {e}"))
         page.on("console", lambda m: problems.append(m.text) if m.type == "error" else None)
         page.route("**/*", proxy)
-        page.goto("http://city.test/city")
-        page.fill("#token", token)
-        page.fill("#tenant", str(world.tenant_a))
-        page.click("#go")
+        if share:  # the client's read-only link: no sign-in at all
+            page.goto(f"http://city.test/city?share={share}")
+        else:
+            page.goto("http://city.test/city")
+            page.fill("#token", token)
+            page.fill("#tenant", str(world.tenant_a))
+            page.click("#go")
         page.wait_for_selector(".hud")
         try:
             yield page, problems
@@ -300,4 +303,90 @@ def test_typing_a_command_flies_to_jaxon_and_a_real_agent_starts(client, world, 
         assert owner_db.scalar(select(Event.id).where(Event.task_id == routed.id,
                                                       Event.type == "task.started"))
         page.wait_for_selector(".ticker li:has-text('Done: Draft content')", timeout=15_000)
+        assert problems == [], problems
+
+
+# --- Phase 6: client view, replay, trace, red letters -----------------------------------------
+
+def test_client_link_shows_a_read_only_city_of_one_client(client, world, make_token, maker,
+                                                          owner_db, drain, monkeypatch):
+    import uuid as _uuid
+
+    from jackson_api.models import Business
+
+    monkeypatch.setenv("UNSUBSCRIBE_SECRET", "s" * 40)
+    h = auth(make_token, world.alice)
+    other = Business(tenant_id=world.tenant_a, name="Other client", kind="agency")
+    owner_db.add(other)
+    owner_db.commit()
+    for biz, text_ in ((world.biz_a, "Client A launch plan"), (other.id, "Secret other plan")):
+        client.post(f"/tenants/{world.tenant_a}/commands", headers=h, json={
+            "type": "PLAN", "objective": text_, "business_id": str(biz),
+            "idempotency_key": _uuid.uuid4().hex})
+    w = Worker(maker, retry_base_seconds=0)
+    w.city_heartbeat()
+    w.run_once()
+    w.run_once()
+    token = client.post(f"/tenants/{world.tenant_a}/city/shares", headers=h,
+                        json={"business_id": str(world.biz_a)}).json()["token"]
+    with city(client, world, "", share=token) as (page, problems):
+        page.wait_for_selector(".client-banner:has-text('read only')")
+        page.wait_for_selector(".ticker li:has-text('Client A launch plan')")
+        body = page.text_content("body")
+        assert "Secret other plan" not in body
+        assert page.locator(".command-bar").count() == 0  # no commands from a client view
+        assert page.locator("#replay").count() == 0
+        assert page.locator(".ticker .traceable").count() == 0
+        page.wait_for_selector(".label.ceo", state="attached", timeout=20_000)
+        click3d(page, "ceo-tower")
+        page.wait_for_timeout(500)
+        assert page.locator("[data-panel=inbox]").count() == 0  # Steady's inbox stays private
+        assert problems == [], problems
+    sid = token.split(".")[1]
+    client.post(f"/tenants/{world.tenant_a}/city/shares/{sid}/revoke", headers=h)
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as pw:  # a revoked link shows a plain refusal, no city
+        b = pw.chromium.launch(executable_path=EXE, args=["--no-sandbox"] if EXE else [])
+        page = b.new_page()
+        page.route("**/*", lambda route, req: route.fulfill(
+            status=(r := client.get(req.url.removeprefix("http://city.test"))).status_code,
+            body=r.content, headers={"content-type": r.headers.get("content-type", "")}))
+        page.goto(f"http://city.test/city?share={token}")
+        page.wait_for_selector(".err:has-text('not valid or has expired')")
+        b.close()
+
+
+def test_replay_trace_and_red_letters(client, world, make_token, maker, owner_db, drain):
+    from jackson_api import city as city_mod
+    from jackson_api.models import Agent as AgentRow
+
+    w = Worker(maker, retry_base_seconds=0)
+    w.city_heartbeat()
+    new_run(client, world, make_token, objective="Replay me later")
+    w.run_once()
+    a = owner_db.scalar(select(AgentRow).where(AgentRow.tenant_id == world.tenant_a,
+                                               AgentRow.key == "kind:content_generate"))
+    city_mod.alert(owner_db, a, "cost_guard", "Content Writer spent $6.00 today, over its "
+                                              "$5.00 limit.")
+    owner_db.commit()
+    with city(client, world, make_token(world.alice)) as (page, problems):
+        page.wait_for_selector(".label.ceo", state="attached", timeout=20_000)
+        # trace: click a ticker line back to the command
+        page.click(".ticker .traceable:has-text('Replay me later')")
+        page.wait_for_selector("[data-panel=trace]:has-text('Steady: “Replay me later”')")
+        page.click("[data-panel=trace] .close")
+        # red letter in the CEO inbox
+        click3d(page, "ceo-tower")
+        page.wait_for_selector("[data-panel=inbox] [data-letter=cost_guard]:has-text('over its')")
+        page.click("[data-panel=inbox] .close")
+        # replay the last 24h from the event log
+        page.click("#replay")
+        page.wait_for_selector(".replay-banner")
+        page.select_option(".replay-bar select", "3600")
+        page.wait_for_selector(".ticker li:has-text('Steady → Jaxon: Replay me later')",
+                               timeout=20_000)
+        assert page.locator(".command-bar").count() == 0  # no commands while replaying
+        page.click(".replay-bar button:has-text('Live')")
+        page.wait_for_selector(".command-bar")
         assert problems == [], problems

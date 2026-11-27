@@ -263,3 +263,74 @@ def sweep_offline(db: Session, at: datetime | None = None) -> list[uuid.UUID]:
             else None})
         out.append(a.id)
     return out
+
+
+# --- Phase 6: cost guard and failure siren ---------------------------------------------------
+
+SIREN_STREAK = 3
+
+
+def default_daily_limit_usd() -> float:
+    try:
+        return float(os.environ.get("CITY_AGENT_DAILY_LIMIT_USD", "5"))
+    except ValueError:
+        return 5.0
+
+
+def daily_limit(agent: Agent) -> float:
+    return float(agent.daily_limit_usd) if agent.daily_limit_usd is not None \
+        else default_daily_limit_usd()
+
+
+def cost_today(db: Session, agent: Agent) -> float:
+    day = now().replace(hour=0, minute=0, second=0, microsecond=0)
+    return float(sum(float(e.payload.get("usd") or 0) for e in db.scalars(select(Event).where(
+        Event.agent_id == agent.id, Event.type == "cost.recorded", Event.ts >= day))))
+
+
+def alert(db: Session, agent: Agent, kind: str, message: str, **payload) -> Event:
+    """A red letter from the agent's building to Steady's inbox."""
+    return emit(db, agent.tenant_id, "alert.raised", from_=address(agent), to=("ceo", "steady"),
+                agent_id=agent.id, payload={"kind": kind, "message": message,
+                                            "agent": agent.name, **payload})
+
+
+def cost_guard(db: Session, agent: Agent) -> bool:
+    """Over its daily limit: pause the agent (and its current run) first, then tell Steady."""
+    from .models import WorkflowRun
+
+    if agent.status in ("paused", "killed"):
+        return False
+    spent, limit = cost_today(db, agent), daily_limit(agent)
+    if spent <= limit:
+        return False
+    agent.status, agent.status_changed_at = "paused", now()
+    task = db.get(Task, agent.current_task_id) if agent.current_task_id else None
+    if task is not None:
+        run = db.get(WorkflowRun, task.run_id)
+        if run is not None and not run.paused and run.status not in ("succeeded", "failed",
+                                                                      "canceled"):
+            run.paused = True
+    db.flush()  # the hold is in place before anyone hears about it
+    emit(db, agent.tenant_id, "agent.paused", agent_id=agent.id,
+         payload={"reason": "cost guard", "spent_usd": round(spent, 4), "limit_usd": limit})
+    alert(db, agent, "cost_guard",
+          f"{agent.name} spent ${spent:.2f} today, over its ${limit:.2f} limit. It is paused "
+          "until you resume it.", spent_usd=round(spent, 4), limit_usd=limit)
+    return True
+
+
+def failure_siren(db: Session, agent: Agent) -> bool:
+    """Three failures in a row (and only once per streak): the building flashes red."""
+    last = [e.type for e in db.scalars(select(Event).where(
+        Event.agent_id == agent.id, Event.type.in_(("task.completed", "task.failed")))
+        .order_by(Event.id.desc()).limit(SIREN_STREAK + 1))]
+    streak = last[:SIREN_STREAK]
+    if len(streak) < SIREN_STREAK or set(streak) != {"task.failed"}:
+        return False
+    if len(last) > SIREN_STREAK and last[SIREN_STREAK] == "task.failed":
+        return False  # already sounded for this streak
+    alert(db, agent, "failure_siren",
+          f"{agent.name} failed {SIREN_STREAK} times in a row. Check its log before it "
+          "runs again.", department_id=str(agent.department_id) if agent.department_id else None)
+    return True

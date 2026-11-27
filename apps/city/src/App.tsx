@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 
-import { follow, getState, manualSignIn, startAuth, type SignIn } from "./lib/api";
+import { follow, getSharedState, getState, manualSignIn, startAuth, type SignIn } from "./lib/api";
 import { windowState } from "./lib/layout";
 import { pickMode, type Mode } from "./lib/mode";
 import { useCity } from "./lib/store";
@@ -8,6 +8,7 @@ import { Hud } from "./ui/Hud";
 import { ListView } from "./ui/ListView";
 import { CommandBar } from "./ui/CommandBar";
 import { Panels } from "./ui/Panels";
+import { ReplayBar } from "./ui/ReplayBar";
 import { Ticker } from "./ui/Ticker";
 
 const City = lazy(() => import("./scene/City"));
@@ -29,6 +30,17 @@ function useLive(ready: boolean) {
     const every = window.setInterval(load, 15_000); // offline/heartbeat changes
     return () => { stopped = true; window.clearInterval(every); };
   }, [ready]);
+}
+
+function useShared(token: string | null, setErr: (m: string) => void) {
+  useEffect(() => {
+    if (!token) return;
+    const load = () => getSharedState(token).then((s) => useCity.getState().setSnapshot(s))
+      .catch((e: Error) => setErr(e.message));
+    load();
+    const t = window.setInterval(load, 5000); // read-only: a refresh every few seconds
+    return () => window.clearInterval(t);
+  }, [token, setErr]);
 }
 
 function useDebugHook(mode: Mode) {
@@ -57,15 +69,25 @@ export function App() {
   const demo = useCity((st) => st.snapshot?.demo ?? false);
   const has = useCity((st) => !!st.snapshot);
   const signInEl = useRef<HTMLDivElement>(null);
+  const [share] = useState<string | null>(() => new URLSearchParams(location.search).get("share"));
+  const [shareErr, setShareErr] = useState("");
+  const replaying = useCity((st) => !!st.replay);
+  const client = useCity((st) => st.snapshot?.client);
+  useEffect(() => { useCity.setState({ shareToken: share }); }, [share]);
+  useShared(share, setShareErr);
   useEffect(() => {
+    if (share) return; // client view: no sign-in
     startAuth(() => signInEl.current).then(setAuth)
       .catch((e: Error) => setAuth({ kind: "error", message: `Sign-in couldn't start (${e.message}).` }));
   }, []);
-  useLive(auth?.kind === "ready");
+  useLive(!share && auth?.kind === "ready");
   useDebugHook(mode);
   const showList = mode === "list" || listView;
 
-  if (auth?.kind !== "ready") {
+  if (share && shareErr) {
+    return <div className="signin"><h1>JAXON OS</h1><p className="err" role="alert">{shareErr}</p></div>;
+  }
+  if (!share && auth?.kind !== "ready") {
     return (
       <div className="signin">
         <h1>JAXON OS</h1>
@@ -89,6 +111,8 @@ export function App() {
   return (
     <div className={`app mode-${mode}`} data-mode={mode}>
       {demo && <div className="demo-banner" role="alert">DEMO DATA — not real activity</div>}
+      {client && <div className="client-banner" role="note">CLIENT VIEW · {client.label || client.business} · read only</div>}
+      {replaying && <div className="replay-banner" role="status">REPLAY · past 24 hours from the event log</div>}
       <Hud />
       {mode !== "list" && (
         <button className="toggle" id="list-toggle" onClick={toggle} aria-pressed={listView}>
@@ -103,9 +127,10 @@ export function App() {
           <Suspense fallback={<p className="loading">Building the city…</p>}><City mode={mode} /></Suspense>
         </div>
       )}
-      {!showList && <a className="nav-console" href="/console">Classic console</a>}
+      {!showList && !share && <a className="nav-console" href="/console">Classic console</a>}
       <Panels />
-      <CommandBar />
+      {!share && !replaying && <CommandBar />}
+      {!share && <ReplayBar />}
       <Ticker />
     </div>
   );

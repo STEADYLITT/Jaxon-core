@@ -21,6 +21,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -1033,6 +1034,23 @@ class Agent(Base):
     last_heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     status_changed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), server_default=func.now())
+    daily_limit_usd: Mapped[float | None] = mapped_column(Numeric(10, 2))
+    created_at: Mapped[datetime] = _created()
+
+
+class CityShare(Base):
+    """A read-only link to one client's (business's) view of the City."""
+
+    __tablename__ = "city_shares"
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    business_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("businesses.id"), nullable=False)
+    label: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _created()
 
 

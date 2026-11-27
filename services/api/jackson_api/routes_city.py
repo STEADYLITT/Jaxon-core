@@ -20,6 +20,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Header, HTTPException, Query, Response
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -114,6 +115,7 @@ def snapshot(db: Session, tenant_id: uuid.UUID) -> dict:
                                  "command": commands[t.run_id].objective
                                  if t.run_id in commands else None} if t else None,
                 "cost_today_usd": round(cost.get(a.id, 0.0), 6),
+                "daily_limit_usd": city.daily_limit(a),
                 "done_today": counts.get(a.id, {}).get("task.completed", 0),
                 "failed_today": counts.get(a.id, {}).get("task.failed", 0),
                 "success_rate_7d": round(w.get("task.completed", 0) / tried, 3)
@@ -143,7 +145,7 @@ def snapshot(db: Session, tenant_id: uuid.UUID) -> dict:
         RevenueEntry.tenant_id == tenant_id, RevenueEntry.source != "manual")) or 0
     revenue = None
     if connected:  # only a connected source (Shopify/Whop/Stripe/import), never estimated
-        revenue = (db.scalar(select(func.coalesce(func.sum(RevenueEntry.amount_cents), 0))
+        revenue = int(db.scalar(select(func.coalesce(func.sum(RevenueEntry.amount_cents), 0))
                              .where(RevenueEntry.tenant_id == tenant_id,
                                     RevenueEntry.kind == "actual",
                                     RevenueEntry.source != "manual",
@@ -164,6 +166,12 @@ def snapshot(db: Session, tenant_id: uuid.UUID) -> dict:
 
     ticker = db.scalars(select(Event).where(Event.tenant_id == tenant_id)
                         .order_by(Event.id.desc()).limit(20)).all()
+    raised = db.scalars(select(Event).where(Event.tenant_id == tenant_id,
+                                            Event.type == "alert.raised",
+                                            Event.ts >= now - timedelta(hours=24))
+                        .order_by(Event.id.desc()).limit(20)).all()
+    sirens = sorted({e.from_id for e in raised if e.payload.get("kind") == "failure_siren"
+                     and e.from_kind == "department" and e.ts >= now - timedelta(minutes=10)})
     last5 = db.scalar(select(func.count()).select_from(Event).where(
         Event.tenant_id == tenant_id, Event.ts >= now - timedelta(minutes=5))) or 0
     last_id = db.scalar(select(func.max(Event.id)).where(Event.tenant_id == tenant_id)) or 0
@@ -189,10 +197,13 @@ def snapshot(db: Session, tenant_id: uuid.UUID) -> dict:
                                           TaskState.QUEUED.value),
             "done_today": task_count(TaskState.SUCCEEDED.value, since=today),
             "failed_today": task_count(TaskState.FAILED.value, since=today),
-            "spend_today_usd": round(model_micros / 1e6 + ledger_cents / 100, 4),
+            # SUM() comes back as Decimal once there is real spend: keep plain numbers
+            "spend_today_usd": round(int(model_micros) / 1e6 + int(ledger_cents) / 100, 4),
             "revenue_today_usd": revenue,  # null = hidden: no connected revenue source
         },
-        "inbox": {"approvals": inbox, "alerts": alerts(db, tenant_id)},
+        "inbox": {"approvals": inbox, "alerts": alerts(db, tenant_id),
+                  "letters": [event_dict(e) for e in raised]},
+        "sirens": sirens,
         "ticker": [event_dict(e) for e in ticker],
     }
 
@@ -338,6 +349,242 @@ def jaxon_view(tenant_id: uuid.UUID, member: TenantMember, db: DB) -> dict:
                     "routing_reasons": reasons, "memory": memory})
     db.commit()
     return {"commands": out}
+
+
+@router.get("/tenants/{tenant_id}/city/trace/{run_id}")
+def trace(tenant_id: uuid.UUID, run_id: uuid.UUID, member: TenantMember, db: DB) -> dict:
+    """Any envelope → its command → Jaxon's routing → every task → the result."""
+    run = db.scalar(select(WorkflowRun).where(WorkflowRun.id == run_id,
+                                              WorkflowRun.tenant_id == tenant_id))
+    if run is None:
+        raise HTTPException(404, "command not found")
+    tasks = db.scalars(select(Task).where(Task.run_id == run.id).order_by(Task.sequence)).all()
+    evs = db.scalars(select(Event).where(Event.run_id == run.id).order_by(Event.id)).all()
+    cost = sum(float(e.payload.get("usd") or 0) for e in evs if e.type == "cost.recorded")
+    steps = []
+    for t in tasks:
+        a = city.agent_for_task(db, t)
+        out = t.output if isinstance(t.output, dict) else {}
+        steps.append({"task_id": str(t.id), "title": t.title, "kind": t.kind, "status": t.status,
+                      "agent": a.name, "agent_id": str(a.id),
+                      "started_at": _iso(t.started_at), "finished_at": _iso(t.finished_at),
+                      "result": {k: v for k, v in out.items()
+                                 if isinstance(v, (str, int, float, bool))} or None,
+                      "error": t.error})
+    db.commit()
+    return {"command": {"run_id": str(run.id), "text": run.objective, "type": run.command_type,
+                        "status": run.status, "issued_at": _iso(run.created_at)},
+            "routing": [event_dict(e) for e in evs if e.type == "command.routed"],
+            "tasks": steps, "cost_usd": round(cost, 6),
+            "approvals": [event_dict(e) for e in evs
+                          if e.type in ("approval.requested", "approval.decided")],
+            "events": [event_dict(e) for e in evs]}
+
+
+class LimitIn(BaseModel):
+    daily_limit_usd: float | None = Field(default=None, ge=0, le=10_000)
+
+
+@router.patch("/tenants/{tenant_id}/city/agents/{agent_id}")
+def set_limit(tenant_id: uuid.UUID, agent_id: uuid.UUID, body: LimitIn, writer: TenantWriter,
+              db: DB) -> dict:
+    """The cost guard's daily limit for one agent (null = the default)."""
+    from .governance import audit
+
+    _admin(writer)
+    a = _get_agent(db, tenant_id, agent_id)
+    before = city.daily_limit(a)
+    a.daily_limit_usd = body.daily_limit_usd
+    db.flush()
+    audit(db, tenant_id, writer.user_id, "agent.daily_limit", "Agent", a.id,
+          before=before, after=city.daily_limit(a))
+    out = {"agent_id": str(a.id), "daily_limit_usd": city.daily_limit(a)}
+    db.commit()
+    return out
+
+
+# --- Client view: a read-only, business-scoped City behind a signed link ---------------------
+
+class ShareIn(BaseModel):
+    business_id: uuid.UUID
+    days: int = Field(default=7, ge=1, le=90)
+    label: str = Field(default="", max_length=120)
+
+
+def _share_key() -> bytes:
+    import hashlib
+    import os
+
+    secret = os.environ.get("UNSUBSCRIBE_SECRET") or os.environ.get("CITY_SHARE_SECRET") or ""
+    if len(secret) < 16:
+        raise HTTPException(503, "sharing needs UNSUBSCRIBE_SECRET (set at deploy) to sign links")
+    return hashlib.sha256(b"jackson-city-share:" + secret.encode()).digest()
+
+
+def share_token(tenant_id: uuid.UUID, share_id: uuid.UUID) -> str:
+    import base64
+    import hashlib
+    import hmac
+
+    body = f"{tenant_id}.{share_id}"
+    sig = hmac.new(_share_key(), body.encode(), hashlib.sha256).digest()[:18]
+    return f"{body}.{base64.urlsafe_b64encode(sig).decode().rstrip('=')}"
+
+
+def read_share_token(token: str) -> tuple[uuid.UUID, uuid.UUID] | None:
+    import hmac
+
+    try:
+        t, sid, _sig = token.split(".")
+        tenant_id, share_id = uuid.UUID(t), uuid.UUID(sid)
+    except ValueError:
+        return None
+    if not hmac.compare_digest(share_token(tenant_id, share_id), token):
+        return None
+    return tenant_id, share_id
+
+
+@router.post("/tenants/{tenant_id}/city/shares", status_code=201)
+def create_share(tenant_id: uuid.UUID, body: ShareIn, writer: TenantWriter, db: DB) -> dict:
+    import os
+
+    from .governance import audit
+    from .models import Business, CityShare
+
+    _admin(writer)
+    b = db.get(Business, body.business_id)
+    if b is None or b.tenant_id != tenant_id:
+        raise HTTPException(404, "business not found")
+    sh = CityShare(tenant_id=tenant_id, business_id=b.id, label=body.label or b.name,
+                   created_by=writer.user_id,
+                   expires_at=datetime.now(UTC) + timedelta(days=body.days))
+    db.add(sh)
+    db.flush()
+    token = share_token(tenant_id, sh.id)
+    audit(db, tenant_id, writer.user_id, "city.share.created", "CityShare", sh.id,
+          business_id=str(b.id), days=body.days)
+    base = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/")
+    out = {"id": str(sh.id), "business": b.name, "label": sh.label,
+           "expires_at": _iso(sh.expires_at), "url": f"{base}/city?share={token}",
+           "token": token}
+    db.commit()
+    return out
+
+
+@router.get("/tenants/{tenant_id}/city/shares")
+def list_shares(tenant_id: uuid.UUID, writer: TenantWriter, db: DB) -> list[dict]:
+    from .models import CityShare
+
+    _admin(writer)
+    return [{"id": str(s.id), "business_id": str(s.business_id), "label": s.label,
+             "expires_at": _iso(s.expires_at), "revoked": s.revoked_at is not None}
+            for s in db.scalars(select(CityShare).where(CityShare.tenant_id == tenant_id)
+                                .order_by(CityShare.created_at.desc()))]
+
+
+@router.post("/tenants/{tenant_id}/city/shares/{share_id}/revoke")
+def revoke_share(tenant_id: uuid.UUID, share_id: uuid.UUID, writer: TenantWriter,
+                 db: DB) -> dict:
+    from .governance import audit
+    from .models import CityShare
+
+    _admin(writer)
+    sh = db.scalar(select(CityShare).where(CityShare.id == share_id,
+                                           CityShare.tenant_id == tenant_id))
+    if sh is None:
+        raise HTTPException(404, "share not found")
+    sh.revoked_at = sh.revoked_at or datetime.now(UTC)
+    audit(db, tenant_id, writer.user_id, "city.share.revoked", "CityShare", sh.id)
+    db.commit()
+    return {"id": str(share_id), "revoked": True}
+
+
+def client_snapshot(db: Session, tenant_id: uuid.UUID, business_id: uuid.UUID) -> dict:
+    """Only this client's work: statuses come from this business's tasks, events from its
+    runs. No spend, no inbox, no other client, no controls."""
+    from .models import Business
+
+    today = _day_start()
+    biz = db.get(Business, business_id)
+    run_ids = select(WorkflowRun.id).where(WorkflowRun.tenant_id == tenant_id,
+                                           WorkflowRun.business_id == business_id)
+    tasks = db.scalars(select(Task).where(Task.run_id.in_(run_ids))).all()
+    live: dict = {}
+    for t in tasks:
+        if t.status in (TaskState.RUNNING.value, TaskState.WAITING_APPROVAL.value):
+            live[city.agent_for_task(db, t).id] = (
+                "working" if t.status == TaskState.RUNNING.value else "waiting", t.title)
+    depts = db.scalars(select(Department).where(Department.tenant_id == tenant_id)
+                       .order_by(Department.slot)).all()
+    floors = db.scalars(select(Floor).where(Floor.tenant_id == tenant_id)
+                        .order_by(Floor.level)).all()
+    agents = db.scalars(select(Agent).where(Agent.tenant_id == tenant_id)
+                        .order_by(Agent.name)).all()
+    staffed = {a.department_id for a in agents if a.department_id}
+    fa: dict = {}
+    for a in agents:
+        if a.floor_id:
+            fa.setdefault(a.floor_id, []).append(str(a.id))
+    evs = db.scalars(select(Event).where(Event.tenant_id == tenant_id, Event.run_id.in_(run_ids),
+                                         Event.type.in_(("command.issued", "task.created",
+                                                         "task.started", "task.completed",
+                                                         "task.failed", "command.routed")))
+                     .order_by(Event.id.desc()).limit(20)).all()
+    safe = ("title", "kind", "agent", "text")
+    return {
+        "generated_at": datetime.now(UTC).isoformat(), "demo": city.demo_mode(),
+        "client": {"business": biz.name if biz else "", "read_only": True},
+        "last_event_id": evs[0].id if evs else 0,
+        "jaxon": {"events_per_minute": 0, "agents": [str(a.id) for a in agents
+                                                     if not a.department_id]},
+        "departments": [{"id": str(d.id), "key": d.key, "name": d.name, "color": d.color,
+                         "slot": d.slot, "staffed": d.id in staffed,
+                         "floors": [{"id": str(f.id), "key": f.key, "name": f.name,
+                                     "level": f.level, "agents": fa.get(f.id, [])}
+                                    for f in floors if f.department_id == d.id]}
+                        for d in depts],
+        "agents": [{"id": str(a.id), "name": a.name, "role": a.role, "key": a.key,
+                    "department_id": str(a.department_id) if a.department_id else None,
+                    "floor_id": str(a.floor_id) if a.floor_id else None,
+                    "status": live.get(a.id, ("idle", None))[0], "online": True,
+                    "model": None, "last_heartbeat_at": None, "status_changed_at": None,
+                    "current_task": {"id": "", "title": live[a.id][1], "status": live[a.id][0],
+                                     "started_at": None, "run_id": "", "command": None}
+                    if a.id in live else None,
+                    "cost_today_usd": 0, "daily_limit_usd": 0, "done_today": 0,
+                    "failed_today": 0, "success_rate_7d": None} for a in agents],
+        "hud": {"agents_online": len(live), "agents_total": len(agents),
+                "tasks_in_flight": sum(1 for t in tasks if t.status in (
+                    "running", "waiting_approval", "queued")),
+                "done_today": sum(1 for t in tasks if t.status == "succeeded"
+                                  and t.finished_at and t.finished_at >= today),
+                "failed_today": sum(1 for t in tasks if t.status == "failed"
+                                    and t.finished_at and t.finished_at >= today),
+                "spend_today_usd": 0, "revenue_today_usd": None},
+        "inbox": {"approvals": [], "alerts": [], "letters": []}, "sirens": [],
+        "ticker": [{**event_dict(e), "payload": {k: v for k, v in e.payload.items()
+                                                 if k in safe}} for e in evs],
+    }
+
+
+@router.get("/city/share/{token}/state", include_in_schema=False)
+def shared_state(token: str, db: DB) -> dict:
+    """Public, read-only: the signed token is the credential; revocable and expiring."""
+    from .models import CityShare
+
+    parsed = read_share_token(token)
+    if parsed is None:
+        raise HTTPException(404, "link not valid")
+    tenant_id, share_id = parsed
+    bind_tenant(db, tenant_id)
+    sh = db.get(CityShare, share_id)
+    if sh is None or sh.revoked_at is not None or sh.expires_at <= datetime.now(UTC):
+        raise HTTPException(404, "link not valid or expired")
+    out = client_snapshot(db, tenant_id, sh.business_id)
+    out["client"]["label"] = sh.label
+    out["client"]["expires_at"] = _iso(sh.expires_at)
+    db.rollback()  # read-only
+    return out
 
 
 # --- Controls: they act first, and only then is the event emitted --------------------------
