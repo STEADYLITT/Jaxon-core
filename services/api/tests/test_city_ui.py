@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from conftest import auth, new_run
-from sqlalchemy import text, update
+from sqlalchemy import select, text, update
 
 from jackson_api.models import Agent
 from jackson_api.worker import Worker
@@ -176,3 +176,92 @@ def test_production_bundle_has_no_fake_activity():
         assert "faker" not in p.read_text().lower(), p.name
 
 
+
+
+# --- Phase 4: click-through, real controls, CEO inbox -------------------------------------------
+
+def click3d(page, name, timeout=20_000):
+    """Click a 3D object with the real mouse at its projected position."""
+    until(page, f"window.__cityScreenOf && window.__cityScreenOf({name!r})", timeout)
+    x, y = page.evaluate(f"window.__cityScreenOf({name!r})")
+    page.mouse.click(x, y)
+
+
+def test_ceo_tower_inbox_approves_and_the_agent_continues(client, world, make_token, maker,
+                                                          owner_db, drain):
+    from jackson_api.policy import Action, Category
+    from jackson_api.worker import TaskResult
+
+    def plan(ctx):
+        ctx.authorize(Action(Category.SPEND, "Buy 2 grip samples", 1800, always_ask=True))
+        return TaskResult({"bought": True})
+
+    w = Worker(maker, handlers={"plan": plan}, retry_base_seconds=0)
+    w.city_heartbeat()
+    run_id = new_run(client, world, make_token, objective="Get samples")
+    w.run_once()
+    with city(client, world, make_token(world.alice)) as (page, problems):
+        page.wait_for_selector(".label.ceo", state="attached", timeout=20_000)
+        click3d(page, "ceo-tower")
+        page.wait_for_selector("[data-panel=inbox] li:has-text('Buy 2 grip samples')")
+        assert "$18.00" in page.text_content("[data-panel=inbox]")
+        page.click("[data-panel=inbox] li:has-text('Buy 2 grip samples') >> text=Approve")
+        page.wait_for_selector("[data-panel=inbox] .msg:has-text('Approved')")
+        assert problems == [], problems
+    w.run_once()  # acceptance 5: the waiting agent continues
+    from conftest import run_state
+    run, tasks = run_state(owner_db, run_id)
+    assert run.status == "succeeded" and tasks[0].output == {"bought": True}
+
+
+def test_building_floor_office_agent_and_real_pause(client, world, make_token, maker, owner_db,
+                                                    drain):
+    w = Worker(maker, retry_base_seconds=0)
+    w.city_heartbeat()
+    client.post(f"/tenants/{world.tenant_a}/content/generate",
+                headers=auth(make_token, world.alice),
+                json={"brief": "grip tips", "channel": "x", "count": 1,
+                      "business_id": str(world.biz_a)})
+    w.run_once()
+    with city(client, world, make_token(world.alice)) as (page, problems):
+        page.wait_for_selector(".label.ceo", state="attached", timeout=20_000)
+        click3d(page, "building-marketing")
+        page.wait_for_selector("[data-panel=building] h2:has-text('Marketing')")
+        page.click("[data-panel=building] button.floor:has-text('Content')")
+        page.wait_for_selector(".floor-bar:has-text('Floor 1 · Content')")
+        page.wait_for_selector(".screen:has-text('Content Writer')", state="attached")
+        writer = owner_db.scalar(select(Agent.id).where(Agent.tenant_id == world.tenant_a,
+                                                        Agent.key == "kind:content_generate"))
+        page.wait_for_selector(f".screen[data-agent='{writer}'] .tools:has-text('Tool: model')",
+                               state="attached")  # its real model call, on its monitor
+        click3d(page, f"desk-{writer}")
+        page.wait_for_selector("[data-panel=agent] h2:has-text('Content Writer')")
+        assert "Done today" in page.text_content("[data-panel=agent]")
+        page.click("[data-panel=agent] button:has-text('Pause')")
+        page.wait_for_selector("[data-panel=agent] .msg:has-text('Now paused')")
+        owner_db.expire_all()
+        assert owner_db.get(Agent, writer).status == "paused"  # really paused, in the DB
+        page.click("[data-panel=agent] button:has-text('Resume')")
+        page.wait_for_selector("[data-panel=agent] .msg:has-text('Now idle')")
+        assert problems == [], problems
+
+
+def test_orb_shows_routing_and_phone_list_opens_panels(client, world, make_token, maker,
+                                                       owner_db, drain):
+    w = Worker(maker, retry_base_seconds=0)
+    w.city_heartbeat()
+    new_run(client, world, make_token, objective="Route me please")
+    w.run_once()
+    with city(client, world, make_token(world.alice)) as (page, problems):
+        page.wait_for_selector(".label.ceo", state="attached", timeout=20_000)
+        click3d(page, "jaxon-orb")
+        page.wait_for_selector("[data-panel=jaxon] li:has-text('Route me please')")
+        assert "Jaxon → Jaxon Planner" in page.text_content("[data-panel=jaxon]")
+    with city(client, world, make_token(world.alice), device="iPhone 15") as (page, problems):
+        page.click("#list-toggle")
+        page.click(".list .agent-link:has-text('Content Writer')")
+        page.wait_for_selector("[data-panel=agent] h2:has-text('Content Writer')")
+        page.click("[data-panel=agent] .close")
+        page.click("#open-inbox")
+        page.wait_for_selector("[data-panel=inbox]")
+        assert problems == [], problems

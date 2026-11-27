@@ -3,7 +3,17 @@ import { create } from "zustand";
 import { admit, effectsFor, type Effect } from "./effects";
 import type { CityEvent, Snapshot } from "./types";
 
+export type Focus =
+  | { kind: "building"; id: string }
+  | { kind: "floor"; deptId: string; floorId: string }
+  | { kind: "agent"; id: string; from?: Focus | null }
+  | { kind: "jaxon" }
+  | { kind: "ceo" }
+  | null;
+
 export interface CityState {
+  focus: Focus;
+  setFocus(f: Focus): void;
   snapshot: Snapshot | null;
   lastEventId: number;
   ticker: CityEvent[];
@@ -20,6 +30,8 @@ export interface CityState {
 }
 
 export const useCity = create<CityState>((set, get) => ({
+  focus: null,
+  setFocus(f) { set({ focus: f }); },
   snapshot: null,
   lastEventId: 0,
   ticker: [],

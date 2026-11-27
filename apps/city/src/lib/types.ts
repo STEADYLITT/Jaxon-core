@@ -59,3 +59,20 @@ export interface Snapshot {
   inbox: { approvals: InboxApproval[]; alerts: { level: string; kind: string; message?: string }[] };
   ticker: CityEvent[];
 }
+
+export interface AgentDetail extends Agent {
+  trace: { command?: string; run_id?: string; type?: string; issued_at?: string | null;
+           id?: string; title?: string; kind?: string; status?: string }[];
+  time_on_task_s: number | null;
+  log: CityEvent[]; tools: CityEvent[]; recent: CityEvent[];
+  controls: { pause: boolean; resume: boolean; kill: boolean; reassign: boolean };
+}
+
+export interface JaxonView {
+  commands: {
+    run_id: string; command: string; type: string; status: string; at: string | null;
+    routed_to: { task: string; status: string; agent: string; agent_id: string; department: string }[];
+    routing_reasons: CityEvent[];
+    memory: { offered: number | null; cited: unknown[] | null }[];
+  }[];
+}

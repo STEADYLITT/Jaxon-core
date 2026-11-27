@@ -6,6 +6,7 @@ import { pickMode, type Mode } from "./lib/mode";
 import { useCity } from "./lib/store";
 import { Hud } from "./ui/Hud";
 import { ListView } from "./ui/ListView";
+import { Panels } from "./ui/Panels";
 import { Ticker } from "./ui/Ticker";
 
 const City = lazy(() => import("./scene/City"));
@@ -102,6 +103,7 @@ export function App() {
         </div>
       )}
       {!showList && <a className="nav-console" href="/console">Classic console</a>}
+      <Panels />
       <Ticker />
     </div>
   );

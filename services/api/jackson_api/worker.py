@@ -200,6 +200,7 @@ class Worker:
         model_monthly_budget_usd: float | None = None,
         artifact_store: LocalArtifactStore | None = None,
         browser_poll_s: float = 0.5,
+        isolate: bool = False,
     ):
         self.maker = maker
         self.handlers = handlers if handlers is not None else default_handlers()
@@ -214,6 +215,12 @@ class Worker:
         self.model_budget_micros = int(budget * 1_000_000)
         self.artifacts = artifact_store or LocalArtifactStore()
         self.browser_poll_s = browser_poll_s
+        # Phase 23: run each task in a child process so the owner's Kill really stops it.
+        self.isolate = isolate and hasattr(os, "fork")
+        self._default_router = router is None
+        # Held by the heartbeat thread while it uses the DB, and around fork(): the child
+        # never inherits a connection pool or lock another thread was in the middle of.
+        self._fork_lock = threading.Lock()
         self._stop = threading.Event()
 
     # --- Queue mechanics --------------------------------------------------------
@@ -257,6 +264,8 @@ class Worker:
             for task in candidates:
                 if not self._tenant_has_capacity(db, task.tenant_id):
                     continue
+                if city.agent_for_task(db, task).status in ("paused", "killed"):
+                    continue  # the owner paused or killed this agent: no new work
                 if task.agent_spec_id is not None and not self._spec_has_capacity(db, task):
                     continue
                 run = db.scalar(select(WorkflowRun).where(WorkflowRun.id == task.run_id)
@@ -363,6 +372,13 @@ class Worker:
                 artifacts=self.artifacts,
             )
         handler = self.handlers.get(ctx.kind)
+        if self.isolate:
+            self._run_isolated(task_id, ctx, handler)
+        else:
+            self._execute(task_id, ctx, handler)
+        return True
+
+    def _execute(self, task_id: uuid.UUID, ctx: "TaskContext", handler) -> None:
         try:
             if handler is None:
                 raise NonRetryableError(f"no handler registered for task kind '{ctx.kind}'")
@@ -373,7 +389,82 @@ class Worker:
             self._record_failure(task_id, exc)
         else:
             self._record_success(task_id, result)
-        return True
+
+    # --- Isolation and the owner's Kill (phase 23) ---------------------------------------
+
+    def _run_isolated(self, task_id: uuid.UUID, ctx: "TaskContext", handler,
+                      poll_s: float = 0.25) -> None:
+        """Run the task in a forked child. The parent watches for the owner's Kill; on Kill
+        it SIGKILLs the child, then records it, then emits agent.killed (never before)."""
+        import warnings
+
+        with self._fork_lock, warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)  # guarded by _fork_lock
+            pid = os.fork()
+        if pid == 0:  # child: fresh DB connections and HTTP clients, then the real work
+            code = 0
+            try:
+                engine = getattr(self.maker, "kw", {}).get("bind")
+                if engine is not None:
+                    engine.dispose(close=False)
+                if self._default_router:
+                    self.router = ModelRouter()
+                self._stop.set()  # the child never serves the loop
+                self._execute(task_id, ctx, handler)
+            except BaseException:  # noqa: BLE001 - the parent records what is left
+                code = 1
+            finally:
+                os._exit(code)
+        while True:
+            done, status = os.waitpid(pid, os.WNOHANG)
+            if done:
+                break
+            if self._kill_requested(task_id):
+                os.kill(pid, signal.SIGKILL)
+                os.waitpid(pid, 0)
+                log.warning("task %s killed by the owner (pid %s stopped)", task_id, pid)
+                self._record_killed(task_id, pid)
+                return
+            time.sleep(poll_s)
+        if status != 0:
+            self._record_failure(task_id, RuntimeError(
+                f"task process exited unexpectedly (status {status})"))
+
+    def _kill_requested(self, task_id: uuid.UUID) -> bool:
+        with self.maker() as db:
+            task = db.get(Task, task_id)
+            if task is None:
+                return False
+            killed = city.agent_for_task(db, task).status == "killed"
+            db.rollback()
+            return killed
+
+    def _record_killed(self, task_id: uuid.UUID, pid: int) -> None:
+        with self.maker() as db:
+            task = db.scalar(select(Task).where(Task.id == task_id).with_for_update())
+            run = db.scalar(select(WorkflowRun).where(WorkflowRun.id == task.run_id)
+                            .with_for_update())
+            if TaskState(task.status) not in TERMINAL_TASK_STATES:
+                task.status = TaskState.CANCELED.value
+                task.error = "killed by the owner"
+                task.finished_at = func.now()
+            task.lease_owner, task.lease_expires_at = None, None
+            if TaskState(run.status) not in TERMINAL_TASK_STATES:
+                transition(db, run, TaskState.CANCELED)
+                for other in db.scalars(select(Task).where(Task.run_id == run.id,
+                                                           Task.id != task.id)):
+                    if TaskState(other.status) not in TERMINAL_TASK_STATES:
+                        other.status = TaskState.CANCELED.value
+            _event(db, task, "task.killed", pid=pid)
+            a = city.agent_for_task(db, task)
+            a.current_task_id = None
+            city.emit(db, task.tenant_id, "agent.killed", agent_id=a.id, task_id=task.id,
+                      run_id=task.run_id, payload={"title": task.title[:200],
+                                                   "stopped": "process terminated"})
+            db.add(AuditEvent(tenant_id=task.tenant_id, actor_user_id=None,
+                              action="agent.killed", entity_type="Task", entity_id=task.id,
+                              data={"pid": pid}))
+            db.commit()
 
     def _log(self, task_id: uuid.UUID, line: str) -> None:
         """A handler's log line, shown live on the agent's monitor in the City."""
@@ -798,7 +889,8 @@ class Worker:
     def _heartbeat_loop(self) -> None:
         while not self._stop.is_set():
             try:
-                self.city_heartbeat()
+                with self._fork_lock:
+                    self.city_heartbeat()
             except Exception:  # noqa: BLE001 - a missed beat just shows as offline
                 log.exception("city heartbeat error")
             self._stop.wait(city.HEARTBEAT_S)
@@ -832,7 +924,8 @@ def main() -> None:
     if not url:
         raise SystemExit("WORKER_DATABASE_URL is not set (connect as role jackson_worker)")
     worker = Worker(make_sessionmaker(url),
-                    tenant_concurrency=int(os.environ.get("WORKER_TENANT_CONCURRENCY", "4")))
+                    tenant_concurrency=int(os.environ.get("WORKER_TENANT_CONCURRENCY", "4")),
+                    isolate=os.environ.get("WORKER_ISOLATE", "1") != "0")
     signal.signal(signal.SIGTERM, worker.stop)
     signal.signal(signal.SIGINT, worker.stop)
     worker.serve()

@@ -6,12 +6,13 @@ import * as THREE from "three";
 
 import { BEAM_MS, ENVELOPE_MS, type Beam, type Envelope } from "../lib/effects";
 import {
-  BUILDING_W, FLOOR_H, ORB, RING_R, TOWER_H, TOWER_W, buildingHeight, buildingPos, facing,
-  windowColor, windows,
+  BUILDING_W, FLOOR_H, ORB, ORB_Y, RING_R, TOWER_H, TOWER_W, buildingHeight, buildingPos, facing,
+  windowColor, windows, type Vec3,
 } from "../lib/layout";
 import type { Mode } from "../lib/mode";
 import { seeded } from "../lib/rand";
-import { useCity } from "../lib/store";
+import { useCity, type Focus } from "../lib/store";
+import { Office } from "./Office";
 import type { Department, Snapshot } from "../lib/types";
 
 // Labels portal into a stable overlay outside the canvas (drei's default target changes
@@ -23,22 +24,74 @@ function Label({ position, className, children }: {
 }) {
   const layer = useContext(LabelLayer);
   return (
-    <Html position={position} center className={className}
+    <Html position={position} center className={className} pointerEvents="none"
       portal={layer as RefObject<HTMLElement> | undefined}>{children}</Html>
   );
 }
 
-/** Fit the whole ring on screen: portrait phones need the camera further back. */
-function FitCamera() {
-  const { camera, size } = useThree();
-  const aspect = size.width / Math.max(size.height, 1);
-  useMemo(() => {
-    const far = aspect < 0.8 ? 1.75 : aspect < 1.2 ? 1.3 : 1;
-    camera.position.set(0, 32 * far, 62 * far);
-    camera.lookAt(0, 13, 0);
-    camera.updateProjectionMatrix();
-  }, [aspect, camera]);
+type Pose = { pos: Vec3; target: Vec3; key: string };
+
+/** Where the camera should be for what Steady is looking at. Portrait phones need the
+ *  camera further back to fit the ring. */
+function poseFor(focus: Focus, s: Snapshot, aspect: number, inOffice: boolean): Pose | null {
+  const far = aspect < 0.8 ? 1.75 : aspect < 1.2 ? 1.3 : 1;
+  if (inOffice) return { pos: [0, 7 * far, 15 * far], target: [0, 2.2, 0], key: "office" };
+  if (!focus) return { pos: [0, 32 * far, 62 * far], target: [0, 13, 0], key: "city" };
+  if (focus.kind === "building") {
+    const d = s.departments.find((x) => x.id === focus.id);
+    if (!d) return null;
+    const [x, , z] = buildingPos(d, s.departments.length);
+    const h = buildingHeight(d);
+    return { pos: [x * 1.9, h + 12 * far, z * 1.9], target: [x, h / 2, z], key: `b${d.id}` };
+  }
+  if (focus.kind === "jaxon") return { pos: [0, ORB_Y + 4, 24 * far], target: ORB, key: "jaxon" };
+  if (focus.kind === "ceo") return { pos: [0, TOWER_H + 6, 20 * far], target: [0, TOWER_H - 2, 0], key: "ceo" };
+  return null; // an agent panel: stay where we are
+}
+
+function CameraRig({ inOffice }: { inOffice: boolean }) {
+  const { camera, size, controls } = useThree();
+  const focus = useCity((st) => st.focus);
+  const s = useCity((st) => st.snapshot);
+  const pose = s ? poseFor(focus, s, size.width / Math.max(size.height, 1), inOffice) : null;
+  const flying = useRef<Pose | null>(null);
+  const lastKey = useRef("");
+  if (pose && pose.key !== lastKey.current) {
+    lastKey.current = pose.key;
+    flying.current = pose;
+  }
+  useFrame((_, dt) => {
+    const p = flying.current;
+    const c = controls as unknown as { target: THREE.Vector3; update(): void } | null;
+    if (!p) return;
+    const k = 1 - Math.exp(-dt * 4);
+    camera.position.lerp(new THREE.Vector3(...p.pos), k);
+    if (c) { c.target.lerp(new THREE.Vector3(...p.target), k); c.update(); }
+    else camera.lookAt(...p.target);
+    if (camera.position.distanceTo(new THREE.Vector3(...p.pos)) < 0.05) flying.current = null;
+  });
   return null;
+}
+
+/** For the acceptance tests: where a named object is on screen, so a test can click it
+ *  with the real mouse (and the real raycaster). Reads only; changes nothing. */
+function ScreenProbe() {
+  const { scene, camera, size } = useThree();
+  useFrame(() => {
+    (window as unknown as { __cityScreenOf?: (n: string) => [number, number] | null }).__cityScreenOf =
+      (name: string) => {
+        const o = scene.getObjectByName(name);
+        if (!o) return null;
+        const box = new THREE.Box3().setFromObject(o);
+        const v = box.getCenter(new THREE.Vector3()).project(camera);
+        return [(v.x + 1) / 2 * size.width, (1 - v.y) / 2 * size.height];
+      };
+  });
+  return null;
+}
+
+function pointer(on: boolean) {
+  document.body.style.cursor = on ? "pointer" : "";
 }
 
 function Ground() {
@@ -81,7 +134,9 @@ function Stars({ count }: { count: number }) {
 function Tower({ inbox }: { inbox: number }) {
   return (
     <group>
-      <mesh position-y={TOWER_H / 2} name="ceo-tower">
+      <mesh position-y={TOWER_H / 2} name="ceo-tower"
+        onClick={(e) => { e.stopPropagation(); useCity.getState().setFocus({ kind: "ceo" }); }}
+        onPointerOver={() => pointer(true)} onPointerOut={() => pointer(false)}>
         <boxGeometry args={[TOWER_W, TOWER_H, TOWER_W]} />
         <meshStandardMaterial color="#120a2e" emissive="#2a0f5c" emissiveIntensity={0.6}
           metalness={0.3} roughness={0.4} />
@@ -126,7 +181,9 @@ function Orb() {
     }
   });
   return (
-    <mesh ref={ref} position={ORB} name="jaxon-orb">
+    <mesh ref={ref} position={ORB} name="jaxon-orb"
+      onClick={(e) => { e.stopPropagation(); useCity.getState().setFocus({ kind: "jaxon" }); }}
+      onPointerOver={() => pointer(true)} onPointerOut={() => pointer(false)}>
       <icosahedronGeometry args={[3.2, 3]} />
       <meshStandardMaterial ref={mat} color="#1a0b3d" emissive="#9b5cff" emissiveIntensity={1}
         wireframe toneMapped={false} />
@@ -150,7 +207,9 @@ function Building({ d, n }: { d: Department; n: number }) {
   }
   const h = buildingHeight(d);
   return (
-    <group position={[x, 0, z]} rotation-y={rot} name={`building-${d.key}`}>
+    <group position={[x, 0, z]} rotation-y={rot} name={`building-${d.key}`}
+      onClick={(e) => { e.stopPropagation(); useCity.getState().setFocus({ kind: "building", id: d.id }); }}
+      onPointerOver={() => pointer(true)} onPointerOut={() => pointer(false)}>
       <mesh position-y={h / 2}>
         <boxGeometry args={[BUILDING_W, h, BUILDING_W]} />
         <meshStandardMaterial color="#0d0826" emissive={d.color} emissiveIntensity={0.05}
@@ -195,7 +254,12 @@ function Windows({ s }: { s: Snapshot }) {
   });
   if (!spots.length) return null;
   return (
-    <instancedMesh ref={ref} args={[undefined, undefined, spots.length]} name="windows">
+    <instancedMesh ref={ref} args={[undefined, undefined, spots.length]} name="windows"
+      onClick={(e) => {
+        e.stopPropagation();
+        const w = e.instanceId !== undefined ? spots[e.instanceId] : undefined;
+        if (w) useCity.getState().setFocus({ kind: "agent", id: w.agentId, from: useCity.getState().focus });
+      }}>
       <planeGeometry args={[1, 1.2]} />
       <meshBasicMaterial toneMapped={false} side={THREE.DoubleSide} />
     </instancedMesh>
@@ -267,7 +331,10 @@ function Effects() {
 
 export default function City({ mode }: { mode: Mode }) {
   const s = useCity((st) => st.snapshot);
+  const focus = useCity((st) => st.focus);
   const layer = useRef<HTMLDivElement>(null);
+  const floor = focus?.kind === "floor" ? focus
+    : focus?.kind === "agent" && focus.from?.kind === "floor" ? focus.from : null;
   // A slow GPU drops to the light look on its own (no bloom, 1x pixels).
   const [slow, setSlow] = useState(false);
   const light = mode === "low" || slow;
@@ -285,16 +352,21 @@ export default function City({ mode }: { mode: Mode }) {
       <ambientLight intensity={0.35} />
       <pointLight position={ORB} intensity={60} color="#9b5cff" distance={80} />
       <PerformanceMonitor onDecline={() => setSlow(true)} flipflops={1} />
-      <FitCamera />
+      <CameraRig inOffice={!!floor} />
+      <ScreenProbe />
       <Stars count={mode === "low" ? 300 : 1500} />
-      <Ground />
-      <Tower inbox={s.inbox.approvals.length} />
-      <CeoLabel inbox={s.inbox.approvals.length} />
-      <Orb />
-      {s.departments.map((d) => <Building key={d.id} d={d} n={n} />)}
-      <Windows s={s} />
-      <Effects />
-      <OrbitControls target={[0, 13, 0]} enablePan={false} minDistance={20} maxDistance={140}
+      {floor ? <Office deptId={floor.deptId} floorId={floor.floorId} layer={layer} /> : (
+        <group name="city" onPointerMissed={() => useCity.getState().setFocus(null)}>
+          <Ground />
+          <Tower inbox={s.inbox.approvals.length} />
+          <CeoLabel inbox={s.inbox.approvals.length} />
+          <Orb />
+          {s.departments.map((d) => <Building key={d.id} d={d} n={n} />)}
+          <Windows s={s} />
+          <Effects />
+        </group>
+      )}
+      <OrbitControls makeDefault target={[0, 13, 0]} enablePan={false} minDistance={20} maxDistance={140}
         maxPolarAngle={Math.PI / 2.1} />
       {!light && (
         <EffectComposer>

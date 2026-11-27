@@ -133,3 +133,6 @@ export async function follow(after: () => number, onEvent: (e: CityEvent) => voi
     }
   }
 }
+
+export const post = <T>(path: string, body?: unknown) =>
+  api<T>(path, { method: "POST", body: body === undefined ? undefined : JSON.stringify(body) });
