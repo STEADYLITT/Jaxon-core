@@ -273,11 +273,20 @@ def preview_check(files: dict[str, str]) -> dict:
                     hrefs = page.eval_on_selector_all("nav a", "els => els.map(e => "
                                                       "e.getAttribute('href'))")
                     for href in hrefs:
-                        page.goto(f"{PREVIEW_ORIGIN}/index.html")
-                        page.click(f'nav a[href="{href}"]')
-                        page.wait_for_load_state()
-                        if not page.url.endswith("/" + href):
+                        # A fresh page per link: a click on a broken link leaves an aborted
+                        # navigation behind, which must not interrupt the next page load.
+                        probe = ctx.new_page()
+                        probe.route("**/*", serve)
+                        probe.goto(f"{PREVIEW_ORIGIN}/index.html")
+                        try:
+                            with probe.expect_navigation(timeout=5000):
+                                probe.click(f'nav a[href="{href}"]')
+                            opened = probe.url.endswith("/" + href)
+                        except Exception:  # noqa: BLE001 - aborted or never navigated
+                            opened = False
+                        if not opened:
                             problems.append(f"{label}: nav link {href} didn't open")
+                        probe.close()
                     if label == "phone":
                         page.goto(f"{PREVIEW_ORIGIN}/index.html")
                         screenshot = page.screenshot(full_page=True)
