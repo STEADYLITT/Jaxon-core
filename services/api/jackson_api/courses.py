@@ -227,11 +227,22 @@ def build_sales_page(outline: dict, price: str | None) -> dict[str, str]:
         + (f"<h2>What you'll learn</h2><ul>{outcomes}</ul>" if outcomes else "")
         + f'<h2 id="curriculum">Curriculum</h2>{curriculum}'
         f'<h2 id="enroll">Enroll</h2>{price_txt}'
-        '<p class="draft">Draft: checkout through Whop connects when WHOP_API_KEY is set. '
-        "Nothing can be bought from this page yet.</p>"))}
+        + CHECKOUT_DRAFT))}
     files["privacy.html"] = _privacy(t, nav, "This page has no forms, cookies or tracking. "
                                      "Checkout is handled by Whop.")
     return files
+
+
+CHECKOUT_DRAFT = ('<p class="draft">Draft: checkout through Whop connects when WHOP_API_KEY is '
+                  "set. Nothing can be bought from this page yet.</p>")
+
+
+def with_checkout(html: str, purchase_url: str | None) -> str:
+    """Swap the checkout placeholder for the course's real Whop checkout link (ADR-041)."""
+    if not purchase_url or not purchase_url.startswith("https://"):
+        return html
+    return html.replace(CHECKOUT_DRAFT, f'<p><a class="cta" href="{_e(purchase_url)}">Enroll '
+                        "now</a> (secure checkout by Whop)</p>")
 
 
 def copy_of(outline: dict, lessons: dict) -> str:

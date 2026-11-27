@@ -11,6 +11,7 @@ one real, harmless call (ADR-038).
     Upload-Post GET /api/uploadposts/me (account + plan)
     Resend      one email to the signed-in owner's own address
     fal.ai      GET /v1/account/billing?expand=credits (balance)
+    Whop        GET /api/v1/accounts/me (the account behind the key)
 """
 
 import os
@@ -22,7 +23,7 @@ import httpx
 
 SECRET_VARS = ("ANTHROPIC_API_KEY", "SHOPIFY_CLIENT_SECRET", "SHOPIFY_ADMIN_API_TOKEN",
                "UPLOADPOST_API_KEY", "RESEND_API_KEY", "RESEND_WEBHOOK_SECRET", "FAL_KEY",
-               "CLERK_SECRET_KEY")
+               "CLERK_SECRET_KEY", "WHOP_API_KEY", "WHOP_WEBHOOK_SECRET")
 
 
 def _new_client() -> httpx.Client:
@@ -139,6 +140,18 @@ def test_fal(ctx: dict) -> dict:
     raise TestFailed(f"fal.ai refused the key: {_msg(body, r)}")
 
 
+def test_whop(ctx: dict) -> dict:
+    from .connectors.whop import Whop
+
+    try:
+        me = Whop(os.environ["WHOP_API_KEY"], client=_new_client()).me()
+    except Exception as e:  # noqa: BLE001
+        raise TestFailed(str(e)) from None
+    return {"account": me.get("id"), "name": me.get("title") or me.get("name"),
+            "webhook_secret_set": bool(os.environ.get("WHOP_WEBHOOK_SECRET")),
+            "access": "reads members and sales; makes checkout links only for plans you name"}
+
+
 # --- The list -----------------------------------------------------------------------------------
 
 @dataclass
@@ -163,6 +176,8 @@ CONNECTORS = [
               optional=["RESEND_WEBHOOK_SECRET"], test=test_resend),
     Connector("video", "UGC video (fal.ai)", ["FAL_KEY"],
               optional=["FAL_VIDEO_MODEL", "FAL_VIDEO_CENTS_PER_SECOND"], test=test_fal),
+    Connector("whop", "Whop (checkout, members, sales)", ["WHOP_API_KEY"],
+              optional=["WHOP_WEBHOOK_SECRET"], test=test_whop),
     Connector("dns", "Domain checks (DNS)", ["SITE_DOMAIN_VERIFY"],
               note="set to dns when you launch a site on your own domain; no key needed"),
     Connector("hosting", "Website hosting", [],

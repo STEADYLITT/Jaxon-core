@@ -898,6 +898,8 @@ class RevenueEntry(Base):
         CheckConstraint("amount_cents >= 0", name="ck_revenue_amount"),
         CheckConstraint("source IN ('manual','shopify','whop','stripe','import')",
                         name="ck_revenue_source"),
+        Index("uq_revenue_whop_ref", "tenant_id", "reference", unique=True,
+              postgresql_where=text("source = 'whop'")),
     )
     id: Mapped[uuid.UUID] = _pk()
     tenant_id: Mapped[uuid.UUID] = mapped_column(
@@ -1142,5 +1144,47 @@ class LinePlaybook(Base):
                                        nullable=False, default=dict)
     budget_monthly_cents: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     updated_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = _created()
+    updated_at: Mapped[datetime] = _updated()
+
+
+class WhopLink(Base):
+    """Ties a Whop product or plan to one of Steady's businesses (so sales land on the right
+    business), and holds a course's real Whop checkout link (ADR-041)."""
+
+    __tablename__ = "whop_links"
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    business_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("businesses.id"), nullable=False)
+    course_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("courses.id"))
+    product_id: Mapped[str | None] = mapped_column(String(64))
+    variant_id: Mapped[str | None] = mapped_column(String(64))
+    checkout_id: Mapped[str | None] = mapped_column(String(64))
+    purchase_url: Mapped[str | None] = mapped_column(String(500))
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = _created()
+
+
+class WhopMember(Base):
+    """One Whop membership as Whop last reported it. Access = status in active, trialing,
+    completed. Discord/Telegram ids come from the member's linked accounts on Whop."""
+
+    __tablename__ = "whop_members"
+    __table_args__ = (UniqueConstraint("tenant_id", "membership_id", name="uq_whop_member"),)
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    membership_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    business_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("businesses.id"))
+    product_id: Mapped[str | None] = mapped_column(String(64))
+    variant_id: Mapped[str | None] = mapped_column(String(64))
+    user_id: Mapped[str | None] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    discord_id: Mapped[str | None] = mapped_column(String(64))
+    telegram_id: Mapped[str | None] = mapped_column(String(64))
+    period_end: Mapped[str | None] = mapped_column(String(40))
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = _updated()

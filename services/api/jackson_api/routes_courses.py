@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 from .deps import DB, TenantMember, TenantWriter
 from .models import Course, Launch
+from .routes_whop import checkout_url
 
 router = APIRouter(tags=["courses"])
 
@@ -47,7 +48,8 @@ def get_course(tenant_id: uuid.UUID, cid: uuid.UUID, member: TenantMember, db: D
     return {**_summary(c, la), "brief": c.brief, "outline": c.outline, "lessons": c.lessons,
             "checks": c.checks, "platform_pages": sorted(c.platform_files),
             "sales_pages": sorted(c.sales_files),
-            "launch_plan": la.plan if la else None}
+            "launch_plan": la.plan if la else None,
+            "checkout_url": checkout_url(db, tenant_id, c.id)}
 
 
 @router.get("/tenants/{tenant_id}/courses/{cid}/files/{which}/{path}")
@@ -58,7 +60,11 @@ def course_file(tenant_id: uuid.UUID, cid: uuid.UUID, which: Literal["platform",
     files = c.platform_files if which == "platform" else c.sales_files
     if path not in files:
         raise HTTPException(404, "file not found")
-    return Response(files[path], media_type="text/html; charset=utf-8", headers={
+    html = files[path]
+    if which == "sales":
+        from .courses import with_checkout
+        html = with_checkout(html, checkout_url(db, tenant_id, c.id))
+    return Response(html, media_type="text/html; charset=utf-8", headers={
         "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; "
                                    "img-src data:; base-uri 'none'; form-action 'none'",
         "X-Content-Type-Options": "nosniff"})

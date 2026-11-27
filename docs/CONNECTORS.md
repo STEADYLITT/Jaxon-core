@@ -25,6 +25,7 @@ How to paste a variable into Railway (same every time):
 | 2 | **Upload-Post** (steps below) | `UPLOADPOST_API_KEY`, `UPLOADPOST_USER` | your Upload-Post plan and account email |
 | 3 | **Resend** (steps below) | `RESEND_API_KEY`, `RESEND_FROM`, then `RESEND_WEBHOOK_SECRET` | sends one test email **to you only** |
 | 4 | **fal.ai** (steps below) | `FAL_KEY` | your credit balance (or "key accepted") |
+| 5 | **Whop** (steps below) | `WHOP_API_KEY`, then `WHOP_WEBHOOK_SECRET` | your Whop account id and name (read-only) |
 | — | **Claude** | `ANTHROPIC_API_KEY` (already set) | how many models your key can use (free call) |
 
 Never needed yet: website hosting and SMS/calls aren't built, so they always show MOCK. File storage (S3) is optional, because files live on the Railway disk.
@@ -153,3 +154,33 @@ SMS and calls stay labeled stand-ins.
 | `FAL_VIDEO_MODEL` | optional. Leave it unset to use `fal-ai/veo3.1/fast`. If you set another model, also set `FAL_VIDEO_CENTS_PER_SECOND`, so Jackson knows the price. |
 
 fal.ai keeps generated files on its own servers. Post a clip within a few days of making it, or ask me to add permanent storage.
+
+---
+
+## Whop (course checkout, students, real sales)
+
+**What Jackson does:**
+- **Students:** reads your Whop memberships. "Students with access" counts active, trialing and completed one-time members. Each member's linked Discord account is kept for role sync, which comes in a later PR.
+- **Sales:** every **paid** Whop payment becomes one real revenue entry: amount, currency, month, and the Whop payment id. It's recorded once, even if both the webhook and a sync see it. Refunds are recorded as refunds. Nothing is ever estimated.
+- **Checkout:** link a course to a Whop plan and Jackson asks Whop for a checkout link. The course's sales page then shows **Enroll now** instead of "Nothing can be bought". Whop runs the checkout. Publishing the page is still your launch decision.
+- **Which business:** sales from Jackson's own checkout links land on the right business automatically. For products you made yourself on Whop, link each product to a business once (`POST /tenants/{t}/whop/links` with `business_id` and `product_id`). Until then, those sales count in totals but not on any one business.
+
+### Click steps
+1. Sign in at **whop.com** → **Dashboard** → **Developer** (whop.com/dashboard/developer).
+2. Under **Account API Keys**, click **Create**. Name it "Jackson".
+   - Permissions: pick a custom set with **member:basic:read**, **payment:basic:read** and **checkout_configuration:create**. Admin also works, but it gives more access than Jackson needs.
+   - Copy the key.
+3. In **Railway → Jaxon-core → Variables**, add `WHOP_API_KEY` and **Seal** it.
+4. After the redeploy: **Connections → Whop → Test**. It shows your Whop account.
+5. Webhook, so sales show up the moment they happen:
+   - Whop **Developer** tab → **Create webhook**.
+   - URL: `https://<your Railway domain>/webhooks/whop/<your tenant id>`. The console's Whop status (`GET /tenants/{t}/whop`) shows the exact URL.
+   - Events: `payment.succeeded`, `refund.created`, `membership.activated`, `membership.updated`.
+   - Copy the **Secret** (it starts `ws_`) into Railway as `WHOP_WEBHOOK_SECRET`, and **Seal** it.
+6. Run one **Sync** (`POST /tenants/{t}/whop/sync`) to pull the members and sales you already have.
+
+### Variables
+| Name | What to paste |
+|---|---|
+| `WHOP_API_KEY` | the Account API key (secret, seal it) |
+| `WHOP_WEBHOOK_SECRET` | the webhook's Secret, starting `ws_` (secret, seal it) |
