@@ -164,6 +164,7 @@ def connectors(db: Session, tenant_id) -> list[dict]:
     from .connectors import social
 
     social_live = social.configured()
+    from .connectors import email as email_conn
     rows = [
         ("models", "Claude (model gateway)", model_live, "ANTHROPIC_API_KEY"),
         ("shopify", "Shopify drafts", shop_live,
@@ -173,12 +174,20 @@ def connectors(db: Session, tenant_id) -> list[dict]:
         ("hosting", "Website hosting", False, "hosting account token"),
         ("dns", "Domain verification", os.environ.get("SITE_DOMAIN_VERIFY") == "dns",
          "SITE_DOMAIN_VERIFY=dns"),
-        ("outreach", "Email/SMS sending", False, "email/SMS provider key"),
+        ("outreach", "Email sending (Resend)", email_conn.configured(),
+         "RESEND_API_KEY + RESEND_FROM"),
         ("artifacts", "Artifact storage", bool(os.environ.get("S3_BUCKET")),
          "S3 bucket (local disk until then)"),
     ]
-    return [{"id": i, "name": n, "mode": "live" if live else "mock", "needs": None if live
-             else need} for i, n, live, need in rows]
+    out = [{"id": i, "name": n, "mode": "live" if live else "mock", "needs": None if live
+            else need} for i, n, live, need in rows]
+    base = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/")
+    for c in out:  # where to point Resend's bounce/complaint webhook (docs/CONNECTORS.md)
+        if c["id"] == "outreach" and c["mode"] == "live" and base:
+            c["setup"] = (f"Resend webhook URL: {base}/webhooks/resend/{tenant_id}" +
+                          ("" if os.environ.get("RESEND_WEBHOOK_SECRET")
+                           else " (then set RESEND_WEBHOOK_SECRET)"))
+    return out
 
 
 # --- Alerts -------------------------------------------------------------------------------------

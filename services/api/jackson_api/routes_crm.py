@@ -2,11 +2,13 @@
 page."""
 
 import html
+import json
+import os
 import uuid
 from datetime import datetime
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
@@ -26,6 +28,7 @@ from .governance import audit
 from .models import (
     Approval,
     Contact,
+    LaunchSignal,
     OutreachCampaign,
     OutreachMessage,
     Suppression,
@@ -434,3 +437,49 @@ def unsubscribe(token: str, db: DB):
     db.commit()
     return HTMLResponse(PAGE.format(t="You're unsubscribed",
                                     b="<p>You won't receive further messages from us.</p>"))
+
+
+# --- Resend delivery webhook (ADR-035) ------------------------------------------------------------
+
+WEBHOOK_KINDS = {"email.bounced": "bounce", "email.complained": "complaint"}
+
+
+@router.post("/webhooks/resend/{tenant_id}", include_in_schema=False)
+async def resend_webhook(tenant_id: uuid.UUID, request: Request, db: DB):
+    """Bounces and spam complaints from Resend. Signed (Svix); unsigned or stale calls are
+    refused. The address is opted out for good and the message's launch gets a signal, so
+    the launch auto-pauses if its bounce/complaint rate crosses the limit."""
+    from .connectors.email import verify_webhook
+
+    secret = os.environ.get("RESEND_WEBHOOK_SECRET", "")
+    if not secret:
+        raise HTTPException(503, "RESEND_WEBHOOK_SECRET is not set")
+    body = await request.body()
+    if not verify_webhook(secret, {k.lower(): v for k, v in request.headers.items()}, body):
+        raise HTTPException(401, "bad signature")
+    try:
+        event = json.loads(body)
+        kind = WEBHOOK_KINDS.get(event.get("type"))
+        email_id = str((event.get("data") or {}).get("email_id") or "")
+    except (ValueError, AttributeError):
+        raise HTTPException(400, "not a Resend event") from None
+    if kind is None or not email_id:
+        return {"ok": True, "ignored": True}
+    bind_tenant(db, tenant_id)
+    m = db.scalar(select(OutreachMessage).where(OutreachMessage.tenant_id == tenant_id,
+                                                OutreachMessage.external_id == email_id))
+    if m is None:
+        return {"ok": True, "ignored": True}
+    h = address_hash(m.to_address)
+    if db.scalar(select(Suppression.id).where(Suppression.tenant_id == tenant_id,
+                                              Suppression.channel == "email",
+                                              Suppression.value_hash == h)) is None:
+        db.add(Suppression(tenant_id=tenant_id, channel="email", value_hash=h, reason=kind))
+    k = db.get(OutreachCampaign, m.campaign_id)
+    if k is not None and k.launch_id is not None and db.scalar(select(LaunchSignal.id).where(
+            LaunchSignal.launch_id == k.launch_id, LaunchSignal.kind == kind,
+            LaunchSignal.external_ref == email_id)) is None:
+        db.add(LaunchSignal(tenant_id=tenant_id, launch_id=k.launch_id, kind=kind,
+                            source="resend", external_ref=email_id))
+    db.commit()
+    return {"ok": True, "recorded": kind}
