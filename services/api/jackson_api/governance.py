@@ -202,4 +202,13 @@ def decide_approval(db: Session, approval: Approval, user_id: uuid.UUID, approve
                           "task_id": str(task.id)}))
     audit(db, run.tenant_id, user_id, f"approval.{approval.status}", "Approval", approval.id,
           category=approval.category, amount_cents=approval.amount_cents, note=note)
+    from .city import address, agent_for_task, emit, set_status
+
+    a = agent_for_task(db, task)
+    if not approve:
+        set_status(db, a, "failed", None)
+    emit(db, run.tenant_id, "approval.decided", from_=("ceo", "steady"), to=address(a),
+         run_id=run.id, task_id=task.id, agent_id=a.id,
+         payload={"approval_id": str(approval.id), "decision": approval.status,
+                  "amount_cents": approval.amount_cents})
     return approval

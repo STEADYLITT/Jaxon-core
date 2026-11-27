@@ -971,3 +971,92 @@ class LaunchSignal(Base):
     source: Mapped[str] = mapped_column(String(32), nullable=False)
     external_ref: Mapped[str | None] = mapped_column(String(300))
     created_at: Mapped[datetime] = _created()
+
+
+# --- Phase 23: the City command center (ADR-037) -------------------------------------
+
+AGENT_STATUSES = ("idle", "working", "done", "waiting", "failed", "offline", "paused",
+                  "killed")
+
+
+class Department(Base):
+    __tablename__ = "departments"
+    __table_args__ = (UniqueConstraint("tenant_id", "key"),)
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    key: Mapped[str] = mapped_column(String(32), nullable=False)
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    color: Mapped[str] = mapped_column(String(16), nullable=False)
+    slot: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = _created()
+
+
+class Floor(Base):
+    __tablename__ = "floors"
+    __table_args__ = (UniqueConstraint("tenant_id", "department_id", "key"),)
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    department_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("departments.id"),
+                                                     nullable=False)
+    key: Mapped[str] = mapped_column(String(32), nullable=False)
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    level: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = _created()
+
+
+class Agent(Base):
+    """A real worker that exists in code (a task handler) or an AgentSpec. Its status is
+    only ever set by the worker (from real task transitions) or the owner (pause/kill)."""
+
+    __tablename__ = "agents"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "key"),
+        CheckConstraint(f"status IN {AGENT_STATUSES}", name="ck_agent_status_city"),
+    )
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    key: Mapped[str] = mapped_column(String(100), nullable=False)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    role: Mapped[str] = mapped_column(String(200), nullable=False)
+    task_kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    department_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("departments.id"))
+    floor_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("floors.id"))
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="idle")
+    model: Mapped[str | None] = mapped_column(String(100))
+    current_task_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("tasks.id"))
+    last_heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    status_changed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = _created()
+
+
+class Event(Base):
+    """Append-only: everything the City shows comes from these rows."""
+
+    __tablename__ = "events"
+    __table_args__ = (
+        Index("ix_events_tenant_id_id", "tenant_id", "id"),
+        Index("ix_events_ts", "ts"),
+        Index("ix_events_agent_ts", "agent_id", "ts"),
+        Index("ix_events_task", "task_id"),
+    )
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(),
+                                         nullable=False)
+    type: Mapped[str] = mapped_column(String(32), nullable=False)
+    from_kind: Mapped[str | None] = mapped_column(String(16))
+    from_id: Mapped[str | None] = mapped_column(String(100))
+    to_kind: Mapped[str | None] = mapped_column(String(16))
+    to_id: Mapped[str | None] = mapped_column(String(100))
+    run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("workflow_runs.id"))
+    task_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("tasks.id"))
+    agent_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agents.id"))
+    payload: Mapped[dict] = mapped_column(JSON().with_variant(JSONB(), "postgresql"),
+                                          nullable=False, default=dict)

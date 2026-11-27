@@ -1,0 +1,265 @@
+"""The City (phase 23, ADR-037): the agent registry and `emit()`.
+
+Rule zero: nothing fake. Every row here comes from a real agent action:
+- the registry lists only agents that exist in code (task handlers in the worker) or as an
+  AgentSpec the owner created; departments without one are shown as "not staffed";
+- `emit()` is called by the worker and the API at the moment something really happened,
+  in the same transaction as the state change, so the event and the truth commit together;
+- statuses come from real task transitions or the owner's pause/kill; a worker that stops
+  heartbeating turns its agents gray (`sweep_offline`).
+"""
+
+import os
+import uuid
+from datetime import UTC, datetime, timedelta
+
+from sqlalchemy import select, text, update
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.orm import Session
+
+from .models import Agent, AgentSpec, Department, Event, Floor, Task
+
+HEARTBEAT_S = 15
+OFFLINE_AFTER_S = 60
+
+# (key, name, color, slot, [(floor key, floor name)])
+DEPARTMENTS = [
+    ("marketing", "Marketing", "#ff3df2", 0, [("content", "Content"), ("social", "Social"),
+                                              ("email", "Email/Funnels"), ("seo", "SEO"),
+                                              ("ads", "Paid Ads")]),
+    ("sales", "Sales", "#00e5ff", 1, [("outreach", "Outreach")]),
+    ("fulfillment", "Agency Fulfillment", "#7cff6b", 2, [("delivery", "Client Delivery")]),
+    ("engineering", "Engineering", "#8f7bff", 3, [("store", "Store"), ("web", "Web"),
+                                                  ("factory", "Agent Factory")]),
+    ("finance", "Finance", "#ffd166", 4, [("reporting", "Reporting")]),
+    ("research", "Research", "#4dd2ff", 5, [("market", "Market Research")]),
+    ("support", "Support", "#ff8fa3", 6, [("helpdesk", "Help Desk")]),
+]
+
+# The real workers: task kind -> (department or "jaxon", floor, name, role)
+BUILT_IN = {
+    "plan": ("jaxon", None, "Jaxon Planner", "turns Steady's commands into tasks"),
+    "launch_propose": ("jaxon", None, "Launch Planner", "proposes launches for approval"),
+    "opportunity_research": ("research", "market", "Research Scout",
+                             "researches products and opportunities"),
+    "content_generate": ("marketing", "content", "Content Writer", "drafts posts in a voice"),
+    "content_video": ("marketing", "content", "Video Producer", "makes short UGC clips"),
+    "content_publish": ("marketing", "social", "Social Publisher",
+                        "posts approved content"),
+    "outreach_prepare": ("sales", "outreach", "Outreach Writer",
+                         "prepares and reviews campaigns"),
+    "outreach_send": ("sales", "outreach", "Outreach Sender", "sends approved email"),
+    "store_build": ("engineering", "store", "Store Builder", "builds Shopify drafts"),
+    "shopify_publish": ("engineering", "store", "Shop Publisher", "publishes products"),
+    "site_build": ("engineering", "web", "Site Builder", "builds websites"),
+    "site_launch": ("engineering", "web", "Site Launcher", "launches websites"),
+    "agent_factory": ("engineering", "factory", "Agent Factory", "drafts new agents"),
+    "agent_eval": ("engineering", "factory", "Agent Evaluator", "tests agents in a sandbox"),
+    "daily_report": ("finance", "reporting", "Daily Reporter", "writes Steady's report"),
+}
+
+SPEC_DEPARTMENT = [  # keyword in an AgentSpec's name/role -> department
+    (("market", "content", "social", "seo", "ads", "brand", "copy"), "marketing"),
+    (("sales", "outreach", "lead", "prospect"), "sales"),
+    (("client", "fulfil", "delivery", "agency"), "fulfillment"),
+    (("code", "engineer", "site", "store", "build", "developer"), "engineering"),
+    (("finance", "account", "budget", "bookkeep", "invoice"), "finance"),
+    (("support", "ticket", "helpdesk", "customer service"), "support"),
+]
+
+
+def now() -> datetime:
+    return datetime.now(UTC)
+
+
+def demo_mode() -> bool:
+    return os.environ.get("JAXON_DEMO", "").lower() == "true"
+
+
+# --- emit() ---------------------------------------------------------------------------------
+
+def emit(db: Session, tenant_id, type_: str, *, from_: tuple[str, str] | None = None,
+         to: tuple[str, str] | None = None, run_id=None, task_id=None, agent_id=None,
+         payload: dict | None = None) -> Event:
+    """Record one real event and announce it (pg_notify fires when the caller commits)."""
+    ev = Event(tenant_id=tenant_id, type=type_, run_id=run_id, task_id=task_id,
+               agent_id=agent_id, payload=payload or {},
+               from_kind=from_[0] if from_ else None, from_id=str(from_[1]) if from_ else None,
+               to_kind=to[0] if to else None, to_id=str(to[1]) if to else None)
+    db.add(ev)
+    db.flush()
+    db.execute(text("SELECT pg_notify('jackson_events', :p)"),
+               {"p": f"{tenant_id}:{ev.id}"})
+    return ev
+
+
+# --- Registry -------------------------------------------------------------------------------
+
+def _upsert(db: Session, model, values: dict, conflict: list[str]):
+    db.execute(insert(model).values(**values).on_conflict_do_nothing(index_elements=conflict))
+
+
+def ensure_departments(db: Session, tenant_id) -> dict[str, Department]:
+    have = {d.key: d for d in db.scalars(select(Department).where(
+        Department.tenant_id == tenant_id))}
+    if len(have) < len(DEPARTMENTS):
+        for key, name, color, slot, _floors in DEPARTMENTS:
+            _upsert(db, Department, {"id": uuid.uuid4(), "tenant_id": tenant_id, "key": key,
+                                     "name": name, "color": color, "slot": slot},
+                    ["tenant_id", "key"])
+        db.flush()
+        have = {d.key: d for d in db.scalars(select(Department).where(
+            Department.tenant_id == tenant_id))}
+        for key, _n, _c, _s, floors in DEPARTMENTS:
+            for level, (fk, fname) in enumerate(floors, start=1):
+                _upsert(db, Floor, {"id": uuid.uuid4(), "tenant_id": tenant_id,
+                                    "department_id": have[key].id, "key": fk, "name": fname,
+                                    "level": level}, ["tenant_id", "department_id", "key"])
+        db.flush()
+    return have
+
+
+def _floor(db: Session, tenant_id, dept: Department | None, key: str | None):
+    if dept is None or key is None:
+        return None
+    return db.scalar(select(Floor.id).where(Floor.tenant_id == tenant_id,
+                                            Floor.department_id == dept.id, Floor.key == key))
+
+
+def spec_department(name: str, role: str) -> str:
+    hay = f"{name} {role}".lower()
+    for words, dept in SPEC_DEPARTMENT:
+        if any(w in hay for w in words):
+            return dept
+    return "research"
+
+
+def ensure_agent(db: Session, tenant_id, kind: str, spec_name: str | None = None,
+                 spec_role: str | None = None) -> Agent:
+    """The registry row for a real worker, created on first sight."""
+    key = f"spec:{spec_name}" if spec_name else f"kind:{kind}"
+    a = db.scalar(select(Agent).where(Agent.tenant_id == tenant_id, Agent.key == key))
+    if a is not None:
+        return a
+    depts = ensure_departments(db, tenant_id)
+    if spec_name:
+        dkey, fkey = spec_department(spec_name, spec_role or ""), None
+        name, role = spec_name, spec_role or "custom agent"
+    else:
+        dkey, fkey, name, role = BUILT_IN.get(kind, ("research", None, kind, kind))
+    dept = depts.get(dkey)  # None for Jaxon's own agents (they live in the orb)
+    floor = _floor(db, tenant_id, dept, fkey)
+    if dept is not None and floor is None:  # AgentSpec agents get the department's 1st floor
+        floor = db.scalar(select(Floor.id).where(Floor.department_id == dept.id)
+                          .order_by(Floor.level).limit(1))
+    _upsert(db, Agent, {"id": uuid.uuid4(), "tenant_id": tenant_id, "key": key, "name": name,
+                        "role": role[:200], "task_kind": kind,
+                        "department_id": dept.id if dept else None, "floor_id": floor,
+                        "status": "idle"}, ["tenant_id", "key"])
+    db.flush()
+    return db.scalar(select(Agent).where(Agent.tenant_id == tenant_id, Agent.key == key))
+
+
+def ensure_registry(db: Session, tenant_id) -> None:
+    """Register every built-in worker and every active AgentSpec of the tenant."""
+    for kind in BUILT_IN:
+        ensure_agent(db, tenant_id, kind)
+    for s in db.scalars(select(AgentSpec).where(AgentSpec.tenant_id == tenant_id,
+                                                AgentSpec.status == "active")):
+        ensure_agent(db, tenant_id, "agent", s.name, s.role)
+
+
+def agent_for_task(db: Session, task: Task) -> Agent:
+    if task.agent_spec_id is not None:
+        s = db.get(AgentSpec, task.agent_spec_id)
+        if s is not None:
+            return ensure_agent(db, task.tenant_id, "agent", s.name, s.role)
+    return ensure_agent(db, task.tenant_id, task.kind)
+
+
+def address(agent: Agent) -> tuple[str, str]:
+    """Where an envelope for this agent goes: a department building, or the Jaxon orb."""
+    return ("department", str(agent.department_id)) if agent.department_id else ("jaxon", "jaxon")
+
+
+def set_status(db: Session, agent: Agent, status: str, task_id=None) -> None:
+    if agent.status in ("paused", "killed") and status not in ("paused", "killed", "idle"):
+        status = agent.status  # the owner's hold wins; only the owner lifts it
+    if agent.status in ("paused", "killed"):
+        agent.current_task_id = task_id
+        return
+    agent.status = status
+    agent.current_task_id = task_id
+    agent.status_changed_at = now()
+
+
+def other_running(db: Session, agent: Agent, task_id) -> uuid.UUID | None:
+    """Another task of the same agent still running (agents can work in parallel)."""
+    from .contracts import TaskState
+
+    q = select(Task.id).where(Task.tenant_id == agent.tenant_id, Task.id != task_id,
+                              Task.status == TaskState.RUNNING.value)
+    if agent.key.startswith("spec:"):
+        q = q.where(Task.agent_spec_id.in_(select(AgentSpec.id).where(
+            AgentSpec.tenant_id == agent.tenant_id, AgentSpec.name == agent.key[5:])))
+    else:
+        q = q.where(Task.kind == agent.task_kind, Task.agent_spec_id.is_(None))
+    return db.scalar(q.limit(1))
+
+
+def on_task(db: Session, task: Task, type_: str, status: str | None = None,
+            **payload) -> Agent:
+    """Worker/API hook for a real task transition: update the agent, emit the event.
+    Envelopes: task.created goes Jaxon -> the agent's building; task.completed/failed is
+    reported back building -> Jaxon; approval.requested goes building -> Steady (CEO)."""
+    a = agent_for_task(db, task)
+    if status is not None:
+        if status in ("done", "failed", "idle") and other_running(db, a, task.id):
+            status, keep = "working", other_running(db, a, task.id)
+        else:
+            keep = task.id if status in ("working", "waiting") else None
+        set_status(db, a, status, keep)
+    here = address(a)
+    route = {"task.created": (("jaxon", "jaxon"), here),
+             "task.completed": (here, ("jaxon", "jaxon")),
+             "task.failed": (here, ("jaxon", "jaxon")),
+             "approval.requested": (here, ("ceo", "steady"))}.get(type_, (None, None))
+    emit(db, task.tenant_id, type_, from_=route[0], to=route[1], run_id=task.run_id,
+         task_id=task.id, agent_id=a.id, payload={"title": task.title[:200], "kind": task.kind,
+                                                  **payload})
+    return a
+
+
+# --- Heartbeats and offline -----------------------------------------------------------------
+
+def heartbeat(db: Session, running: list[Task]) -> int:
+    """Called every HEARTBEAT_S by a live worker: every registered agent is reachable; the
+    running ones get an agent.heartbeat event naming their task."""
+    t = now()
+    db.execute(update(Agent).values(last_heartbeat_at=t))
+    back = db.scalars(select(Agent).where(Agent.status == "offline")).all()
+    for a in back:  # the worker came back: show the truth again
+        a.status, a.status_changed_at = "idle", t
+        emit(db, a.tenant_id, "agent.heartbeat", agent_id=a.id, payload={"back_online": True})
+    for task in running:
+        a = agent_for_task(db, task)
+        emit(db, task.tenant_id, "agent.heartbeat", agent_id=a.id, task_id=task.id,
+             run_id=task.run_id, payload={"task": task.title[:200]})
+    return len(running)
+
+
+def sweep_offline(db: Session, at: datetime | None = None) -> list[uuid.UUID]:
+    """No heartbeat for OFFLINE_AFTER_S -> the agent is offline (gray). Runs in the API, so it
+    works precisely when the worker is gone."""
+    cutoff = (at or now()) - timedelta(seconds=OFFLINE_AFTER_S)
+    stale = db.scalars(select(Agent).where(
+        Agent.status.not_in(("offline", "paused", "killed")),
+        (Agent.last_heartbeat_at.is_(None)) | (Agent.last_heartbeat_at < cutoff))).all()
+    out = []
+    for a in stale:  # never heartbeated = no worker has ever served it: offline too
+        a.status, a.status_changed_at = "offline", at or now()
+        emit(db, a.tenant_id, "agent.offline", agent_id=a.id, payload={
+            "last_heartbeat_at": a.last_heartbeat_at.isoformat() if a.last_heartbeat_at
+            else None})
+        out.append(a.id)
+    return out

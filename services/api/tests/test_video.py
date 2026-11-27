@@ -245,9 +245,10 @@ def test_console_video_button_shows_the_cost_and_asks_for_approval(client, world
     with console(client, world, make_token(world.alice)) as (page, errors):
         btn = page.wait_for_selector("#content li:has-text('Console clip') button.video")
         assert btn.text_content() == "Make 8s video ($1.20)"
-        btn.click()
-        page.wait_for_selector("#content li:has-text('Console clip') button.video",
-                               state="detached")  # reloaded after the request
+        with page.expect_response(lambda r: r.url.endswith("/video") and
+                                  r.request.method == "POST") as resp:
+            btn.click()
+        assert resp.value.status == 202
         assert errors == []
     Worker(maker, retry_base_seconds=0).run_once()
     ap = owner_db.scalar(select(Approval).where(Approval.description.like("%Console clip%")))

@@ -30,6 +30,7 @@ GUARD_TRIGGERS = {
     ("content_items", "content_needs_approval"),
     ("outreach_campaigns", "campaign_needs_approval"),
     ("workflow_runs", "run_launch_fixed"),
+    ("agents", "agent_owner_holds"),
 }
 
 

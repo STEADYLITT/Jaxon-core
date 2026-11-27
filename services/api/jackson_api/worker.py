@@ -38,7 +38,7 @@ from pydantic import ValidationError
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from . import tools
+from . import city, tools
 from .agents import MAX_AGENTS_PER_RUN, MAX_DEPTH, QuotaExceeded, spec_dict
 from .artifacts import LocalArtifactStore
 from .contracts import TERMINAL_TASK_STATES, TaskState
@@ -104,6 +104,8 @@ class TaskContext:
     authorize: Callable[[Action], None] = lambda action: None
     reserve_budget: Callable[[int, str], uuid.UUID] = lambda cents, desc: uuid.uuid4()
     settle_spend: Callable[[uuid.UUID, int, str], None] = lambda rid, cents, desc: None
+    # Phase 23: a log line for the agent's live monitor in the City (agent.log event).
+    log: Callable[[str], None] = lambda line: None
     # Phase 08: the only way handlers reach a model. It checks the tenant's monthly model
     # budget, routes to a provider (MOCK if none is configured) and meters usage.
     call_model: Callable[[str, "ModelRequest"], "ModelResponse"] = None  # type: ignore
@@ -166,6 +168,17 @@ class ModelBudgetExhausted(NonRetryableError):
 
 class ToolNotGranted(NonRetryableError):
     pass
+
+
+def _summary(output) -> str:
+    """A short, real summary of a task's output for the City (never invented)."""
+    if not isinstance(output, dict):
+        return str(output)[:200]
+    for k in ("summary", "result", "title", "status"):
+        if isinstance(output.get(k), str):
+            return output[k][:200]
+    return ", ".join(f"{k}={v}" for k, v in list(output.items())[:4]
+                     if isinstance(v, (str, int, float, bool)))[:200]
 
 
 def _event(db: Session, task: Task, type_: str, **data) -> None:
@@ -259,6 +272,7 @@ class Worker:
                 task.started_at = task.started_at or func.now()
                 task.next_attempt_at = None
                 _event(db, task, "task.started", attempt=task.attempts, worker=self.worker_id)
+                city.on_task(db, task, "task.started", "working", attempt=task.attempts)
                 db.commit()
                 return task.id
             db.commit()
@@ -327,6 +341,7 @@ class Worker:
                 reserve_budget=lambda cents, desc: self._reserve(task_id, cents, desc),
                 settle_spend=lambda rid, cents, desc: self._settle(task_id, rid, cents, desc),
                 call_model=lambda profile, req: self._call_model(task_id, profile, req),
+                log=lambda line: self._log(task_id, line),
                 recall=lambda query, limit=5: self._recall(task_id, query, limit),
                 remember=lambda **kw: self._remember(task_id, **kw),
                 use_tool=lambda name, args: self._use_tool(task_id, name, args),
@@ -359,6 +374,14 @@ class Worker:
         else:
             self._record_success(task_id, result)
         return True
+
+    def _log(self, task_id: uuid.UUID, line: str) -> None:
+        """A handler's log line, shown live on the agent's monitor in the City."""
+        with self.maker() as db:
+            task = db.get(Task, task_id)
+            if task is not None:
+                city.on_task(db, task, "agent.log", line=str(line)[:1000])
+                db.commit()
 
     # --- Policy hooks (phase 07) ------------------------------------------------------
 
@@ -394,6 +417,11 @@ class Worker:
             task, _ = self._locked(db, task_id)
             settle(db, reservation_id, cents, description,
                    f"{task.run_id}:{task.sequence}:settle:{reservation_id}")
+            if cents:
+                a = city.agent_for_task(db, task)
+                city.emit(db, task.tenant_id, "cost.recorded", agent_id=a.id, task_id=task.id,
+                          run_id=task.run_id, payload={"usd": cents / 100, "source": "spend",
+                                                       "description": description[:200]})
             db.commit()
 
     def _model_spend_this_month(self, db: Session, tenant_id: uuid.UUID) -> int:
@@ -437,6 +465,14 @@ class Worker:
                 "mode": resp.mode, "profile": profile, "input_tokens": resp.input_tokens,
                 "output_tokens": resp.output_tokens, "cost_usd_micros": resp.cost_usd_micros,
                 "route": route.reason}))
+            t = db.get(Task, task_id)
+            a = city.on_task(db, t, "tool.called", tool="model", model=resp.model,
+                             mode=resp.mode, profile=profile)
+            a.model = resp.model
+            if resp.cost_usd_micros:
+                city.emit(db, tenant_id, "cost.recorded", agent_id=a.id, task_id=task_id,
+                          run_id=run_id, payload={"usd": resp.cost_usd_micros / 1e6,
+                                                  "source": "model", "model": resp.model})
             db.commit()
         return resp
 
@@ -602,6 +638,8 @@ class Worker:
             db.add(RunEvent(tenant_id=tenant_id, run_id=run_id, type="tool.called", data={
                 "task_id": str(task_id), "tool": name, "mode": spec.mode,
                 "status": "failed" if error else "succeeded", "duration_ms": ms}))
+            city.on_task(db, db.get(Task, task_id), "tool.called", tool=name, mode=spec.mode,
+                         outcome="failed" if error else "succeeded", duration_ms=ms)
             db.commit()
         if error:
             raise error
@@ -629,6 +667,9 @@ class Worker:
             _event(db, task, "approval.requested", approval_id=str(ap.id),
                    category=exc.action.category, amount_cents=exc.action.amount_cents,
                    reason=exc.reason)
+            city.on_task(db, task, "approval.requested", "waiting", approval_id=str(ap.id),
+                         question=exc.action.description[:300],
+                         amount_cents=exc.action.amount_cents, reason=exc.reason[:300])
             audit(db, task.tenant_id, None, "approval.requested", "Approval", ap.id,
                   category=exc.action.category, reason=exc.reason)
             db.commit()
@@ -644,6 +685,7 @@ class Worker:
                 task.finished_at = func.now()
                 task.lease_owner = None
                 _event(db, task, "task.result_discarded", reason="run was canceled")
+                city.on_task(db, task, "agent.log", "idle", line="run canceled; result discarded")
                 db.commit()
                 return
             task.status = TaskState.SUCCEEDED.value
@@ -652,6 +694,8 @@ class Worker:
             task.lease_owner = None
             task.lease_expires_at = None
             _event(db, task, "task.succeeded", attempt=task.attempts)
+            city.on_task(db, task, "task.completed", "done", attempt=task.attempts,
+                         result_summary=_summary(result.output))
             for kind, title in result.follow_ups:
                 add_task(db, run, kind=kind, title=title)
             db.flush()
@@ -692,11 +736,15 @@ class Worker:
             task.next_attempt_at = func.now() + timedelta(seconds=delay)
             _event(db, task, "task.retry_scheduled", attempt=task.attempts,
                    retry_in_seconds=delay, error=message)
+            city.on_task(db, task, "agent.log", "idle",
+                         line=f"attempt {task.attempts} failed, retrying in {delay:.0f}s: "
+                              f"{message[:300]}")
             return
         # Dead letter: keep the task and its error for inspection; fail the run.
         task.status = TaskState.FAILED.value
         task.finished_at = func.now()
         _event(db, task, "task.dead_lettered", attempts=task.attempts, error=message)
+        city.on_task(db, task, "task.failed", "failed", error=message[:500])
         run = db.scalar(select(WorkflowRun).where(WorkflowRun.id == task.run_id)
                         .with_for_update())
         if TaskState(run.status) not in TERMINAL_TASK_STATES:
@@ -735,8 +783,30 @@ class Worker:
             log.warning("launch %s -> %s", lid, status)
         return changed
 
+    def city_heartbeat(self) -> int:
+        """Tell the City this worker is alive (every city.HEARTBEAT_S)."""
+        with self.maker() as db:
+            for tid in db.scalars(select(Tenant.id)):
+                city.ensure_registry(db, tid)
+            running = db.scalars(select(Task).where(
+                Task.status == TaskState.RUNNING.value,
+                Task.lease_owner == self.worker_id)).all()
+            n = city.heartbeat(db, list(running))
+            db.commit()
+        return n
+
+    def _heartbeat_loop(self) -> None:
+        while not self._stop.is_set():
+            try:
+                self.city_heartbeat()
+            except Exception:  # noqa: BLE001 - a missed beat just shows as offline
+                log.exception("city heartbeat error")
+            self._stop.wait(city.HEARTBEAT_S)
+
     def serve(self, idle_sleep: float = 1.0) -> None:
         log.info("worker %s started", self.worker_id)
+        threading.Thread(target=self._heartbeat_loop, name="city-heartbeat",
+                         daemon=True).start()
         every = float(os.environ.get("LAUNCH_SWEEP_SECONDS", "60"))
         last_sweep = 0.0
         while not self._stop.is_set():

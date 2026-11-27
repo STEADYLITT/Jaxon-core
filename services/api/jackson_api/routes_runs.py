@@ -100,7 +100,7 @@ def post_command(tenant_id: uuid.UUID, body: CommandIn, writer: TenantWriter, db
             status = 200
         else:
             payload = body.model_dump(exclude={"target_run_id"})
-            run, created = create_run(db, tenant_id, writer.user_id, payload)
+            run, created = create_run(db, tenant_id, writer.user_id, payload, announce=True)
             status = 201 if created else 200
     except CommandError as e:
         db.rollback()

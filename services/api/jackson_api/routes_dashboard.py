@@ -76,6 +76,12 @@ def add_revenue(tenant_id: uuid.UUID, body: RevenueIn, writer: TenantWriter, db:
     db.flush()
     audit(db, tenant_id, writer.user_id, f"revenue.{body.kind}", "RevenueEntry", e.id,
           amount_cents=body.amount_cents, period=body.period)
+    if body.kind == "actual":  # only real, referenced revenue lights the gold beam
+        from .city import emit
+
+        emit(db, tenant_id, "revenue.recorded", from_=("ceo", "steady"),
+             payload={"amount_cents": body.amount_cents, "source": "manual",
+                      "reference": body.reference[:300], "entry_id": str(e.id)})
     out = {"id": str(e.id), **body.model_dump(mode="json"), "source": "manual"}
     db.commit()
     return out
