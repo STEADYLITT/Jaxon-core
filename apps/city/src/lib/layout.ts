@@ -3,7 +3,7 @@ import type { Agent, AgentStatus, Department, Snapshot } from "./types";
 
 export type Vec3 = [number, number, number];
 
-export const RING_R = 26;
+export const RING_R = 36; // room for 15 departments
 export const FLOOR_H = 3.2;
 export const BUILDING_W = 6;
 export const TOWER_H = 22;

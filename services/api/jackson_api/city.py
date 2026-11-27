@@ -32,14 +32,14 @@ DEPARTMENTS = [(ln.key, ln.name, ln.color, ln.slot, ln.floors) for ln in LINES]
 BUILT_IN = {
     "plan": ("jaxon", None, "Jaxon Planner", "turns Steady's commands into plans"),
     "launch_propose": ("jaxon", None, "Launch Planner", "proposes launches for approval"),
-    "opportunity_research": ("rnd", "ideas", "Research Scout",
+    "opportunity_research": ("rnd", "board", "Research Scout",
                              "researches opportunities from cited sources"),
-    "content_generate": ("stu", "content", "Content Writer", "drafts posts in a voice"),
-    "content_publish": ("stu", "content", "Social Publisher", "posts approved content"),
-    "outreach_prepare": ("stu", "email", "Outreach Writer", "prepares and reviews campaigns"),
-    "outreach_send": ("stu", "email", "Outreach Sender", "sends approved email"),
-    "site_build": ("agency", "web", "Site Builder", "builds websites"),
-    "site_launch": ("agency", "web", "Site Launcher", "launches websites"),
+    "content_generate": ("marketing", "content", "Content Writer", "drafts posts in a voice"),
+    "content_publish": ("marketing", "content", "Social Publisher", "posts approved content"),
+    "outreach_prepare": ("marketing", "email", "Outreach Writer", "prepares and reviews campaigns"),
+    "outreach_send": ("marketing", "email", "Outreach Sender", "sends approved email"),
+    "site_build": ("factory", "build", "Site Builder", "builds websites"),
+    "site_launch": ("factory", "deploy", "Site Launcher", "launches websites"),
     "content_video": ("influencers", "studio", "Video Producer", "makes short clips (fal.ai)"),
     "store_build": ("ecommerce", "store", "Store Builder", "builds Shopify drafts"),
     "shopify_publish": ("ecommerce", "store", "Shop Publisher", "publishes products"),
@@ -48,13 +48,20 @@ BUILT_IN = {
     "daily_report": ("finance", "briefing", "Daily Reporter", "writes Steady's CEO briefing"),
 }
 
-SPEC_DEPARTMENT = [  # keyword in an AgentSpec's name/role -> line (when it has no business)
+SPEC_DEPARTMENT = [  # keyword in an AgentSpec's name/role -> department (no business)
     (("clip",), "clips"),
     (("creator", "caption-drafter"), "creators"),
     (("persona", "influencer", "virtual"), "influencers"),
+    (("backtest", "trading", "apex"), "trading"),
+    (("underwrit", "real estate", "wholesal"), "realestate"),
+    (("contract", "legal"), "legal"),
+    (("community", "discord", "telegram"), "community"),
+    (("lead", "call", "sales"), "sales"),
+    (("web", "qa", "app", "saas", "site"), "factory"),
     (("product", "shopify", "store", "ecommerce"), "ecommerce"),
     (("client", "agency"), "agency"),
-    (("course", "funnel", "student", "trades"), "stu"),
+    (("course", "lesson", "student"), "courses"),
+    (("funnel", "marketing"), "marketing"),
     (("finance", "budget", "invoice", "briefing"), "finance"),
 ]
 

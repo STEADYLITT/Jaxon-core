@@ -228,8 +228,8 @@ def test_building_floor_office_agent_and_real_pause(client, world, make_token, m
     w.run_once()
     with city(client, world, make_token(world.alice)) as (page, problems):
         page.wait_for_selector(".label.ceo", state="attached", timeout=20_000)
-        click3d(page, "building-stu")
-        page.wait_for_selector("[data-panel=building] h2:has-text('Steady Trades University')")
+        click3d(page, "building-marketing")
+        page.wait_for_selector("[data-panel=building] h2:has-text('Marketing')")
         page.click("[data-panel=building] button.floor:has-text('Content')")
         page.wait_for_selector(".floor-bar:has-text('Floor 1 · Content')")
         page.wait_for_selector(".screen:has-text('Content Writer')", state="attached")

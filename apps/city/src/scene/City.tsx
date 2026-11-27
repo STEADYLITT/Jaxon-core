@@ -32,12 +32,24 @@ function Label({ position, className, children }: {
 
 type Pose = { pos: Vec3; target: Vec3; key: string };
 
+/** How far back the overview camera stands: portrait phones need more room for the ring. */
+function farFor(aspect: number): number {
+  return aspect < 0.8 ? 1.95 : aspect < 1.2 ? 1.4 : 1;
+}
+
+/** Fog that starts behind the ring at whatever distance the camera stands. */
+function AutoFog() {
+  const { size } = useThree();
+  const far = farFor(size.width / Math.max(size.height, 1));
+  return <fog attach="fog" args={["#07031a", 90 * far, 230 * far]} />;
+}
+
 /** Where the camera should be for what Steady is looking at. Portrait phones need the
  *  camera further back to fit the ring. */
 function poseFor(focus: Focus, s: Snapshot, aspect: number, inOffice: boolean): Pose | null {
-  const far = aspect < 0.8 ? 1.75 : aspect < 1.2 ? 1.3 : 1;
+  const far = farFor(aspect);
   if (inOffice) return { pos: [0, 7 * far, 15 * far], target: [0, 2.2, 0], key: "office" };
-  if (!focus) return { pos: [0, 40 * far, 74 * far], target: [0, 9, 0], key: "city" };
+  if (!focus) return { pos: [0, 70 * far, 76 * far], target: [0, 4, 4], key: "city" };
   if (focus.kind === "building") {
     const d = s.departments.find((x) => x.id === focus.id);
     if (!d) return null;
@@ -393,7 +405,7 @@ export default function City({ mode }: { mode: Mode }) {
       gl={{ antialias: mode !== "low", powerPreference: "high-performance" }}
       onCreated={() => { document.documentElement.dataset.cityRender = light ? "light" : "full"; }}>
       <color attach="background" args={["#07031a"]} />
-      <fog attach="fog" args={["#07031a", 90, 220]} />
+      <AutoFog />
       <ambientLight intensity={0.35} />
       <pointLight position={ORB} intensity={60} color="#9b5cff" distance={80} />
       <PerformanceMonitor onDecline={() => setSlow(true)} flipflops={1} />
@@ -411,7 +423,7 @@ export default function City({ mode }: { mode: Mode }) {
           <Effects />
         </group>
       )}
-      <OrbitControls makeDefault target={[0, 13, 0]} enablePan={false} minDistance={20} maxDistance={140}
+      <OrbitControls makeDefault target={[0, 13, 0]} enablePan={false} minDistance={20} maxDistance={260}
         maxPolarAngle={Math.PI / 2.1} />
       {!light && (
         <EffectComposer>

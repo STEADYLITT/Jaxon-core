@@ -1,23 +1,28 @@
-"""Steady's business lines (ADR-039). Jackson is the CEO of all of them, not a store bot.
+"""Steady's departments (ADR-039, expanded to the full Jackson scope).
 
-Each line is one City department (building) with its own floors, agents, playbook, KPIs,
-budget, connectors and launch template. This module is the one registry; it reuses what
-exists instead of duplicating it:
-- businesses: each business belongs to a line (`businesses.line`); R&D and Finance & Ops are
-  cross-line functions with no business of their own;
-- agents: built-in task handlers are placed in a line (city.BUILT_IN); missing roles are
-  PROPOSED AgentSpecs (status draft) that Steady approves through the agents API;
-- launches: unchanged (one approval per launch, per business); each line just names the
-  channels and caps its launches usually need;
-- KPIs: computed from real rows only. A KPI with no data source says so (value null) —
-  it is never estimated.
+Jackson Vale is an AI CEO that discovers, validates, builds and operates businesses of any
+kind, then markets every company Steady owns (spec vol. 00, 03). Every department follows
+the same core loop: discover -> evidence -> unit economics -> propose an experiment (a
+Launch with scope + budget) -> Steady approves once -> build in a sandbox -> QA -> publish
+inside the scope -> market -> measure -> iterate or kill -> write the lesson to memory.
+
+Each department is one City building with floors, agents, a playbook, KPIs, a budget,
+connectors and launch rules. This registry reuses what exists:
+- businesses: each belongs to the department that builds/operates it (`businesses.line`);
+- agents: built-in handlers are placed here (city.BUILT_IN); missing roles are PROPOSED
+  AgentSpecs (drafts, empty tool scope = level 1: drafts only) that Steady approves;
+- launches: one approval per launch; restricted actions (vol. 04) are never covered;
+- KPIs: real rows only; no data source -> null with the reason, never estimated.
 """
 
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
+
+MAX_PROPOSED_AGENTS = 40  # vol. 05: cap total agents; Jackson proposes, Steady approves
 
 
 @dataclass
@@ -33,192 +38,333 @@ class Line:
     keywords: tuple[str, ...]
     connectors: list[str]               # ids in connections.CONNECTORS
     needs_not_built: list[tuple[str, str]] = field(default_factory=list)  # (variable, why)
-    launch: dict = field(default_factory=dict)  # suggested scope for a Launch approval
+    launch: dict = field(default_factory=dict)
+    restricted: list[str] = field(default_factory=list)  # never inside a Launch (vol. 04)
     budget_monthly_cents: int = 0
-    business: tuple[str, str, str] | None = None  # (seed source_id, name, kind) if its own
-    proposed: list[dict] = field(default_factory=list)  # AgentSpecs to propose (draft)
+    proposed: list[dict] = field(default_factory=list)  # AgentSpecs to propose (drafts)
 
 
 def _spec(name, role, objective, instructions):
     return {"name": name, "role": role, "objective": objective, "instructions": instructions}
 
 
+def _ch(social=(), email=(), shopify=False, ads=False, note=None):
+    out = {"channels": {"shopify_publish": shopify, "social_accounts": list(social),
+                        "email_lists": list(email), "ads": ads}}
+    if note:
+        out["note"] = note
+    return out
+
+
+CORE_LOOP = ["Discover and gather evidence (sources cited).", "Work out the unit economics.",
+             "Propose an experiment: one Launch with scope and budget.",
+             "Steady approves once.", "Build in a sandbox, then QA.",
+             "Publish only inside the approved scope.", "Market, measure.",
+             "Iterate or kill; write the lesson to memory with sources."]
+
 LINES: list[Line] = [
-    Line("rnd", "R&D / New Ideas", "#4dd2ff", 0,
-         [("ideas", "Opportunity Board"), ("simulate", "Simulation")],
-         "Finds opportunities across every line: trends, apps, digital products, e-com "
-         "products, agency clients, content channels, deals.",
+    Line("rnd", "R&D / Opportunities", "#4dd2ff", 0,
+         [("signals", "Signals"), ("board", "Opportunity Board"), ("simulate", "Simulation")],
+         "Finds trends across every department: courses, apps/SaaS, products, content "
+         "channels, agency niches, deals. Scored, sourced, deduplicated; Simulate / Plan / "
+         "Propose Launch.",
          ["Collect signals from permitted sources (each with its URL).",
-          "Score them on the opportunity board (demand, margin, effort, risk, fit).",
-          "Simulate the best ones (economics, not live money).",
-          "Propose a Launch for the winner: one approval with scope and budget."],
-         ["Every claim cites a source URL.", "No live trading: simulation only."],
-         ("idea", "opportunit", "trend", "find new", "new line", "deal", "research"),
-         ["models"], [],
-         {"channels": {"shopify_publish": False, "social_accounts": [], "email_lists": [],
-                       "ads": False}, "note": "R&D proposes launches for the other lines"},
+          "Deduplicate and score: demand, saturation, margin, effort, risk, fit.",
+          "Simulate the best (economics, no live money).",
+          "Propose a Launch for the department that would run it."],
+         ["Every claim cites a source URL.",
+          "Authorized data access only; no promise of unrestricted scraping."],
+         ("idea", "opportunit", "trend", "find new", "deal", "niche"),
+         ["models"], [], _ch(note="R&D proposes launches for the other departments"),
          budget_monthly_cents=2_000,
-         proposed=[_spec("trend-scout", "research: cross-line trend and opportunity scout",
-                         "Turn the sources Steady gives into scored opportunities for any line",
-                         "Read only the sources provided. Cite each signal's URL. Score "
-                         "demand, margin, effort, risk and fit. Never invent numbers.")]),
-    Line("stu", "Steady Trades University", "#ff3df2", 1,
-         [("content", "Content"), ("email", "Email & Funnels"), ("ads", "Paid Ads")],
-         "Markets Replay Trainer ($19.99/mo), One-on-One, Self-Paced, Live Group and the "
-         "indicators: content, emails, ads, funnels and follow-up.",
-         ["Plan the week's content per offer.", "Draft posts and emails (reviewed for claims).",
-          "Steady approves, or a Launch covers the channel.",
-          "Measure real sales from Whop only."],
-         ["No income promises or guaranteed results (claims check runs on every draft).",
-          "Revenue counts only when Whop reports it."],
-         ("replay trainer", "steady trades", "trades university", "course", "one-on-one",
-          "self-paced", "live group", "indicator", "student", "trading education"),
+         proposed=[_spec("trend-scout", "research: cross-department trend scout",
+                         "Turn the sources Steady gives into scored, deduplicated "
+                         "opportunities for any department",
+                         "Read only the sources provided. Cite each signal's URL. Never "
+                         "invent numbers.")]),
+    Line("courses", "Course & Education Factory", "#ff3df2", 1,
+         [("design", "Course Design"), ("lessons", "Lessons & Media"),
+          ("platform", "Student Platform"), ("launch", "Sales & Launch")],
+         "From a trending topic: a full course (outline, lessons, scripts, slides/cards, "
+         "quizzes, worksheets, AI video/voice where approved), a student platform (login, "
+         "dashboard, progress, quizzes, certificates, community, Whop payments), then a "
+         "sales page, funnel, email sequence and ads plan.",
+         [*CORE_LOOP, "Course pipeline: outline -> lessons -> quizzes/worksheets -> student "
+          "platform draft -> sales page + funnel + emails -> Launch proposal."],
+         ["Education only: no income promises or guaranteed results.",
+          "Payments only through Whop; the platform is a draft until a Launch covers it.",
+          "AI video/voice only where Steady approved it, labeled as AI."],
+         ("course", "lesson", "curriculum", "student platform", "academy", "university",
+          "blueprint", "education", "teach"),
+         ["models", "video", "email"],
+         [("WHOP_API_KEY", "course payments and real student/revenue numbers"),
+          ("ELEVENLABS_API_KEY", "AI voice for lessons (only where approved)")],
+         _ch(social=("instagram", "tiktok", "youtube_shorts"), email=("course-leads",)),
+         budget_monthly_cents=15_000,
+         proposed=[_spec("course-architect", "courses: course outline and curriculum",
+                         "Design a course from a validated topic: outcomes, modules, lessons",
+                         "Teach, don't promise income. Each module has a measurable outcome."),
+                   _spec("lesson-writer", "courses: lesson scripts, slides, quizzes",
+                         "Write lesson scripts, slide/picture-card text, quizzes and "
+                         "worksheets for an approved outline",
+                         "Accurate, plain language. No guaranteed results.")]),
+    Line("marketing", "Marketing (all companies)", "#ff8fa3", 2,
+         [("content", "Content"), ("email", "Email & Funnels"), ("ads", "Ads"),
+          ("seo", "SEO"), ("calendar", "Brand Calendars")],
+         "Markets every Steady company: Steady Trades University (Replay Trainer, "
+         "One-on-One, Self-Paced, Live Group, indicators incl. PRO Breakout), CSW Trades, "
+         "Steady Ventures, Atom Labs, Steady Growth OS, SHRED 90 and client brands. "
+         "Content, clips, emails, funnels, ads, SEO; one calendar per brand.",
+         ["One calendar per brand.", "Draft content and emails (claims-checked).",
+          "Approval or a Launch that names the channel.", "Measure; repurpose what works."],
+         ["No income promises or fake testimonials.",
+          "Every email has unsubscribe + postal address; opt-outs are permanent."],
+         ("marketing", "post", "posts", "campaign", "funnel", "seo", "ads", "replay trainer",
+          "steady trades", "pro breakout", "atom labs", "growth os", "shred 90",
+          "csw trades", "brand"),
          ["models", "social", "email"],
-         [("WHOP_API_KEY", "real Replay Trainer / course sales (revenue only from Whop)")],
-         {"channels": {"shopify_publish": False, "social_accounts": ["instagram", "tiktok",
-                                                                    "x"],
-                       "email_lists": ["students"], "ads": False}},
-         budget_monthly_cents=10_000,
-         business=("steady-trades-university", "Steady Trades University", "education"),
-         proposed=[_spec("stu-funnel-writer", "marketing: course funnel and email writer",
-                         "Write funnel pages and email sequences for Steady Trades University "
-                         "offers", "Educational tone. No income claims or guarantees. Every "
-                         "email has the unsubscribe link and postal address.")]),
-    Line("agency", "Agency", "#7cff6b", 2,
-         [("clients", "Client Accounts"), ("delivery", "Deliverables"), ("web", "Sites")],
-         "Markets other companies: client records, deliverables (content, ads, sites, "
-         "outreach), schedules, client reports and a read-only client City link.",
-         ["Keep each client as a record with its scope and schedule.",
-          "Produce deliverables; each one is approved before it goes out.",
-          "Send a weekly client report from real numbers.",
-          "Share a read-only City link with the client."],
-         ["Client work only inside the client's agreed scope.",
-          "Reports use real data; missing data is shown as missing."],
+         [("WHOP_API_KEY", "real sales for course offers (revenue only from Whop)")],
+         _ch(social=("instagram", "tiktok", "x", "facebook"), email=("students",)),
+         budget_monthly_cents=15_000,
+         proposed=[_spec("funnel-writer", "marketing: funnels and email sequences",
+                         "Write funnel pages and email sequences for any Steady brand",
+                         "Brand voice per company. No income claims. Unsubscribe + address "
+                         "in every email.")]),
+    Line("agency", "Agency", "#7cff6b", 3,
+         [("clients", "Client Accounts"), ("delivery", "Deliverables"),
+          ("reports", "Client Reports")],
+         "Markets other companies: client CRM, proposals, deliverables (content, ads, "
+         "sites, automations, AI lead-gen systems), schedules, reports, client-view City.",
+         ["Client record + scope.", "Deliverables, each approved before it goes out.",
+          "Weekly client report from real numbers.", "Read-only client City link."],
+         ["Client work only inside the agreed scope, in the client's own workspace.",
+          "Reports show missing data as missing."],
          ("client", "agency", "deliverable", "client report", "retainer"),
-         ["models", "social", "email", "hosting"], [],
-         {"channels": {"shopify_publish": False, "social_accounts": [], "email_lists": [],
-                       "ads": False}, "note": "one launch per client engagement"},
+         ["models", "social", "email"], [], _ch(note="one launch per client engagement"),
          budget_monthly_cents=10_000,
-         business=("steady-ventures", "Steady Ventures", "agency"),
          proposed=[_spec("client-reporter", "agency: weekly client report writer",
                          "Write each client's weekly report from their real numbers",
-                         "Only numbers from the records given. Say plainly what is not "
-                         "measured yet. No promises.")]),
-    Line("clips", "Clip Farming", "#ffb020", 3,
+                         "Only numbers from the records given; say what is not measured.")]),
+    Line("sales", "Sales & Lead Gen", "#00e5ff", 4,
+         [("leads", "Lead Research"), ("outreach", "Outreach"), ("calls", "Call Desk"),
+          ("pipeline", "Pipeline")],
+         "Lawful lead research, scoring, outreach drafts (opt-outs respected), call lists "
+         "and scripts for the sales team, booked calls, proposals, pipeline (insurance "
+         "lead gen/RGE, AI automation, local businesses).",
+         ["Find leads from permitted sources with a lawful basis.", "Score and dedupe.",
+          "Draft outreach; send only after approval or inside a Launch.",
+          "Call lists + scripts for the team; respect quiet hours and consent.",
+          "Book calls, send proposals, track stages."],
+         ["Opt-outs are permanent; SMS/calls need recorded consent.",
+          "Humanize for clarity, never to deceive."],
+         ("lead", "leads", "prospect", "call list", "script", "pipeline", "proposal",
+          "insurance", "rge", "local business", "outreach", "sales"),
+         ["models", "email", "sms"], [],
+         _ch(email=("prospects",), note="each campaign names its list"),
+         budget_monthly_cents=5_000,
+         proposed=[_spec("lead-researcher", "sales: lawful lead research and scoring",
+                         "Find and score leads from permitted sources for a named niche",
+                         "Permitted sources only, lawful basis recorded, dedupe, no "
+                         "scraping behind logins."),
+                   _spec("call-scripter", "sales: call lists and scripts",
+                         "Write call lists and scripts for the sales team",
+                         "Consent and quiet hours respected; honest, no pressure tactics.")]),
+    Line("factory", "App / SaaS / Web Factory", "#8f7bff", 5,
+         [("specs", "Requirements & Wireframes"), ("build", "Build & Tests"),
+          ("preview", "Preview & QA"), ("deploy", "Deploy & Domains")],
+         "From an idea: requirements, wireframes, repo, build, tests, preview link, "
+         "approval, deploy (e.g. Chart Lingo, Candle Rush, CartChef, InkFlow/GOTTINK CRM, a "
+         "wholesaling app, a sports-data app, client sites and landing pages). Tracks "
+         "sites, domains and hosting.",
+         ["Requirements + wireframes from the description.", "Build from templates.",
+          "Automated tests + accessibility + preview link.",
+          "Publish only under a Launch or an approval.", "Track domain and hosting."],
+         ["Domain ownership verified before launch; rollback ready.",
+          "Privacy notice and payments checked before going live."],
+         ("website", "landing page", "site", "app", "saas", "web app", "build a page",
+          "wireframe", "gottink", "inkflow", "chart lingo", "candle rush", "cartchef",
+          "domain"),
+         ["models", "dns", "hosting"],
+         [("GITHUB_APP_TOKEN", "create repos for new apps (not built yet)")],
+         _ch(note="publishing a site/app is a production change: approval or Launch"),
+         budget_monthly_cents=5_000,
+         proposed=[_spec("web-developer", "factory: requirements to site/app",
+                         "Turn a description into requirements, wireframes and a site/app "
+                         "build plan", "Reusable templates; accessible; nothing goes live "
+                         "without approval."),
+                   _spec("qa-tester", "factory: preview QA",
+                         "Check previews: links, layout, accessibility, forms",
+                         "Report real failures; never mark a failure as passed.")]),
+    Line("clips", "Content & Clip Farming", "#ffb020", 6,
          [("scouting", "Scouting"), ("editing", "Cutting & Captions"), ("posting", "Posting")],
-         "Finds clippable moments from creators and streams (e.g. GTA 6), cuts and captions "
-         "them, posts to TikTok/Shorts/Reels via Upload-Post, tracks views and payouts.",
-         ["Pick creators who allow clipping (clipping programs/permission).",
-          "Find moments from their VODs/streams.", "Cut + caption, credit the creator.",
-          "Post through Upload-Post (approval or Launch).", "Track views and payouts."],
-         ["Only creators whose terms allow clipping; always credit the source.",
-          "No reposting of full content."],
-         ("clip", "clipping", "gta", "stream highlight", "vod", "highlight"),
+         "Finds clippable moments (GTA 6 etc.), cuts and captions them, posts via "
+         "Upload-Post, tracks views/payouts; repurposes Steady's own content.",
+         ["Pick creators whose terms allow clipping.", "Find moments.",
+          "Cut + caption, credit the creator.", "Post (approval or Launch).",
+          "Track views and payouts."],
+         ["Only creators whose terms allow clipping; always credit the source."],
+         ("clip", "clipping", "gta", "stream highlight", "vod", "highlight", "repurpose"),
          ["social", "video"],
          [("YOUTUBE_API_KEY", "find clippable moments on YouTube VODs"),
           ("TWITCH_CLIENT_ID", "find clippable moments on Twitch streams"),
-          ("CLIP_PAYOUTS_SOURCE", "real views/payouts (clipping program dashboard)")],
-         {"channels": {"shopify_publish": False,
-                       "social_accounts": ["tiktok", "youtube_shorts", "instagram"],
-                       "email_lists": [], "ads": False}},
-         budget_monthly_cents=5_000,
-         business=("clip-farming", "Clip Farming", "clip_farming"),
+          ("CLIP_PAYOUTS_SOURCE", "real views/payouts")],
+         _ch(social=("tiktok", "youtube_shorts", "instagram")), budget_monthly_cents=5_000,
          proposed=[_spec("clip-scout", "clips: find clippable moments",
                          "Find clippable moments from permitted creators' VODs and streams",
-                         "Only creators whose terms allow clipping. Return timestamps and "
-                         "why each moment works. Credit the creator."),
+                         "Only creators whose terms allow clipping. Credit the creator."),
                    _spec("clip-captioner", "clips: cut list and captions",
                          "Write cut lists and captions for approved moments",
-                         "Short hook, credit line with the creator's handle, no clickbait "
-                         "lies.")]),
-    Line("creators", "Creator Agency", "#ff8fa3", 4,
+                         "Short hook, creator credit, no clickbait lies.")]),
+    Line("creators", "Creator Agency", "#ff6bd6", 7,
          [("calendar", "Content Calendar"), ("messages", "Captions & DMs"),
           ("earnings", "Earnings")],
-         "Manages real creators who signed with Steady: content calendars, SFW promo posts, "
-         "caption/DM drafts that wait for approval, earnings tracking.",
+         "Real creators who signed with Steady: calendar, SFW promo, caption/DM drafts that "
+         "wait for approval, earnings tracking.",
          ["Plan each creator's week (SFW promo only).", "Draft captions and DMs.",
-          "Everything waits for the creator's/Steady's approval or a Launch scope.",
-          "Track earnings from the real payout source."],
+          "Everything waits for approval or a Launch scope.", "Track real earnings."],
          ["Agents never generate explicit content.",
-          "Nothing is posted or sent without an approval or a Launch that covers it.",
-          "Only for creators who signed with Steady."],
+          "Nothing is posted or sent without an approval or a Launch that covers it."],
          ("creator", "talent", "signed creator", "creator x", "dm"),
          ["social", "email"],
-         [("CREATOR_EARNINGS_SOURCE", "real earnings per creator (platform payout reports)")],
-         {"channels": {"shopify_publish": False, "social_accounts": ["instagram", "x"],
-                       "email_lists": [], "ads": False}, "note": "one launch per creator"},
+         [("CREATOR_EARNINGS_SOURCE", "real earnings per creator")],
+         _ch(social=("instagram", "x"), note="one launch per creator"),
          budget_monthly_cents=3_000,
-         business=("creator-agency", "Creator Agency", "creator_agency"),
          proposed=[_spec("creator-planner", "creators: weekly SFW content calendar",
                          "Plan a signed creator's week of SFW promo posts",
                          "SFW only. Drafts wait for approval. Never write explicit content."),
                    _spec("caption-drafter", "creators: caption and DM drafts",
                          "Draft captions and DMs for a creator's approved calendar",
-                         "SFW only. Drafts only: they wait for approval before anything "
-                         "is posted or sent.")]),
-    Line("influencers", "AI Influencers", "#8f7bff", 5,
-         [("personas", "Personas"), ("studio", "Image & Video"), ("growth", "Growth")],
-         "SFW brand/lifestyle AI accounts, clearly labeled as AI per platform rules: content "
-         "plans, image/video via fal.ai, posting via Upload-Post, growth tracking.",
-         ["Define the persona (fictional, labeled as AI).",
-          "Plan content; generate images/video (cost approved first).",
-          "Post with the AI label (is_ai_generated) via Upload-Post.", "Track growth."],
-         ["Always labeled as AI; never impersonates a real person.", "SFW only."],
+                         "SFW only; drafts only, approval before anything is sent.")]),
+    Line("influencers", "AI Influencers", "#b388ff", 8,
+         [("personas", "Personas & Brand Bibles"), ("studio", "Image, Video & Voice"),
+          ("growth", "Scheduling & Growth")],
+         "Original fictional personas (brand bible, visuals, voice), SFW content plan, "
+         "fal.ai/ElevenLabs generation, AI-disclosure labels, scheduling, growth tracking.",
+         ["Define an original fictional persona.", "Plan content; generate (cost first).",
+          "Post with the AI label.", "Track growth."],
+         ["Always labeled as AI; no impersonation; no fake engagement.", "SFW only."],
          ("ai influencer", "virtual model", "ai model", "persona", "ai account"),
          ["video", "social"],
-         [("PLATFORM_ANALYTICS", "real follower growth (platform analytics)")],
-         {"channels": {"shopify_publish": False,
-                       "social_accounts": ["instagram", "tiktok"], "email_lists": [],
-                       "ads": False}, "note": "one launch per persona"},
+         [("ELEVENLABS_API_KEY", "persona voice"),
+          ("PLATFORM_ANALYTICS", "real follower growth")],
+         _ch(social=("instagram", "tiktok"), note="one launch per persona"),
          budget_monthly_cents=5_000,
-         business=("ai-influencers", "AI Influencers", "ai_influencer"),
-         proposed=[_spec("persona-planner", "influencers: AI persona content planner",
+         proposed=[_spec("persona-planner", "influencers: AI persona planner",
                          "Plan a labeled AI persona's posts and generation prompts",
-                         "SFW lifestyle/brand only. Always disclose it is AI. Never resemble "
-                         "a real person.")]),
-    Line("ecommerce", "E-commerce", "#00e5ff", 6,
-         [("research", "Product Research"), ("store", "Store")],
-         "Shopify stores, product research and listings (drafts until a Launch covers "
-         "publishing).",
-         ["Research products from sources.", "Model the economics.",
-          "Create draft listings and verify them.", "Publish only inside a Launch."],
-         ["Drafts until a Launch approval covers publishing."],
-         ("product", "shopify", "store", "listing", "e-com", "ecom", "dropship"),
-         ["shopify"], [],
-         {"channels": {"shopify_publish": True, "social_accounts": [], "email_lists": [],
-                       "ads": False}},
-         budget_monthly_cents=5_000,
-         business=("shopify-store", "Shopify Store", "ecommerce"),
+                         "SFW, always disclosed as AI, never resembles a real person.")]),
+    Line("ecommerce", "E-commerce & Reselling", "#2ee6a8", 9,
+         [("research", "Product Research"), ("store", "Store"), ("reselling", "FBA & eBay")],
+         "Shopify stores, dropshipping/holiday funnels, Amazon FBA, eBay reselling "
+         "research, product economics. Drafts until a Launch covers publishing.",
+         ["Research products from sources.", "Model landed cost and margin.",
+          "Draft listings and verify them.", "Publish only inside a Launch."],
+         ["No fake reviews or invented claims.", "Drafts until a Launch covers publishing."],
+         ("product", "shopify", "store", "listing", "e-com", "ecom", "dropship", "fba",
+          "amazon fba", "ebay", "resell", "holiday"),
+         ["shopify"],
+         [("AMAZON_SP_API_KEY", "Amazon FBA data (not built yet)"),
+          ("EBAY_API_KEY", "eBay reselling research (not built yet)")],
+         _ch(shopify=True), budget_monthly_cents=5_000,
          proposed=[_spec("product-researcher", "ecommerce: product researcher",
                          "Find product ideas within Steady's price and margin limits",
-                         "Cite sources. Compute landed cost and margin. Respect the price "
-                         "cap in the command.")]),
-    Line("finance", "Finance & Ops", "#ffd166", 7,
-         [("briefing", "CEO Briefing"), ("ops", "Ops & Agents")],
-         "Spend, revenue by line, cost caps and the daily CEO briefing across all lines.",
-         ["Track spend per line and agent.", "Record real revenue by line and source.",
-          "Enforce cost caps (cost guard).", "Write Steady's daily briefing across lines."],
-         ["Revenue is actual only when a connected source or a referenced entry reports it."],
+                         "Cite sources; compute landed cost and margin; respect the price "
+                         "cap.")]),
+    Line("community", "Community", "#5ce1e6", 10,
+         [("roles", "Role Sync"), ("onboarding", "Onboarding"), ("renewals", "Renewals")],
+         "Discord/Telegram role sync from Whop payments, onboarding DMs, renewals.",
+         ["Sync roles from real Whop payments.", "Draft onboarding DMs (approved template).",
+          "Renewal reminders inside the approved scope."],
+         ["Roles only from real payment records.", "DMs only from approved templates."],
+         ("discord", "telegram", "community", "members", "role sync", "renewal",
+          "onboarding"),
+         ["models"],
+         [("WHOP_API_KEY", "payments that drive roles"),
+          ("DISCORD_BOT_TOKEN", "Discord role sync"),
+          ("TELEGRAM_BOT_TOKEN", "Telegram access")],
+         _ch(note="role sync and DMs run inside an approved scope"),
+         budget_monthly_cents=1_000,
+         proposed=[_spec("community-manager", "community: onboarding and renewals",
+                         "Draft onboarding and renewal messages from approved templates",
+                         "Only to paying members; templates approved by Steady.")]),
+    Line("trading", "Trading (APEX-7 & bots)", "#ffd166", 11,
+         [("research", "Research"), ("backtests", "Backtests & Sim"),
+          ("propfirm", "Prop-Firm Rules"), ("reports", "Performance Reports")],
+         "APEX-7, Steady's automated bots and indicators: research, backtests, paper/sim "
+         "trading, prop-firm account rule checks, performance reports from real "
+         "backtest/sim data only.",
+         ["Research a strategy.", "Backtest on real historical data.",
+          "Paper/sim trade.", "Check prop-firm rules.", "Report real results."],
+         ["Live orders on real accounts are a restricted action: never inside a Launch, "
+          "always Steady's explicit approval, with daily loss caps and a kill switch. Not "
+          "built yet: Jackson refuses live orders until a broker connector with those "
+          "controls exists.", "Results only from real backtest/sim data."],
+         ("trading", "backtest", "apex", "apex-7", "mnq", "futures", "prop firm",
+          "paper trade", "indicator", "trading strategy", "trading bot"),
+         ["models"],
+         [("APEX7_RESULTS_SOURCE", "real backtest/sim results from APEX-7"),
+          ("MARKET_DATA_API_KEY", "historical data for backtests"),
+          ("BROKER_API_KEY", "live orders (restricted; not built)")],
+         _ch(note="Launches cover research and simulation only"),
+         restricted=["live_trade"], budget_monthly_cents=2_000,
+         proposed=[_spec("backtest-runner", "trading: backtests and sim reports",
+                         "Run and report backtests/paper trading from real data",
+                         "Real data only. Simulation only. Never place orders.")]),
+    Line("realestate", "Real Estate (wholesaling)", "#c9a46a", 12,
+         [("comps", "Comps Research"), ("underwriting", "Underwriting"),
+          ("leads", "Lead Lists")],
+         "Wholesaling: comps research, underwriting, lead lists. Research and simulation "
+         "only until Steady approves.",
+         ["Comps from permitted sources.", "Underwrite (ARV, repairs, MAO).",
+          "Build lawful lead lists.", "Offers only after Steady approves."],
+         ["Research/simulation only until Steady approves; no offers or contracts sent "
+          "automatically."],
+         ("real estate", "wholesal", "comps", "arv", "property", "underwrit", "mao"),
+         ["models"], [("PROPERTY_DATA_API_KEY", "comps and property data (not built)")],
+         _ch(note="research and simulation only"), budget_monthly_cents=1_000,
+         proposed=[_spec("underwriter", "real estate: comps and underwriting",
+                         "Underwrite a property from comps Steady provides",
+                         "Show the math; cite comps; simulation only.")]),
+    Line("legal", "Legal & Admin", "#9aa5b1", 13,
+         [("drafts", "Drafts"), ("review", "Steady's Review")],
+         "Contracts, filings and packets drafted from templates; always routed to Steady "
+         "for review, never filed automatically.",
+         ["Draft from an approved template.",
+          "Route to Steady (and a qualified reviewer).",
+          "Nothing is filed or signed by an agent."],
+         ["Never filed or sent automatically; drafts only, not legal advice."],
+         ("contract", "agreement", "nda", "filing", "llc", "legal", "terms of service",
+          "packet"),
+         ["models"], [], _ch(note="legal documents are never inside a Launch"),
+         restricted=["filing"], budget_monthly_cents=500,
+         proposed=[_spec("contract-drafter", "legal: drafts from templates",
+                         "Draft contracts and packets from Steady's templates for review",
+                         "Drafts only; flag anything that needs a lawyer; never file.")]),
+    Line("finance", "Finance & Ops", "#ffe08a", 14,
+         [("briefing", "CEO Briefing"), ("ledger", "Ledger & Forecast"),
+          ("ops", "Ops & Agents")],
+         "Cost ledger, revenue by business (real sources only), cash forecast, budgets, "
+         "daily CEO briefing across all departments.",
+         ["Track spend per department and agent.", "Record real revenue by business.",
+          "Enforce budgets (cost guard).", "Daily briefing across all departments."],
+         ["Revenue is actual only when a connected source or a referenced entry reports "
+          "it.", "Agents can't create agents; Jackson proposes, Steady approves."],
          ("spend", "revenue", "budget", "briefing", "finance", "cost", "profit", "report",
-          "summary", "recap"),
-         ["models"], [],
-         {}, budget_monthly_cents=0),
+          "summary", "recap", "forecast", "cash"),
+         ["models"], [], {}, budget_monthly_cents=0),
 ]
 BY_KEY = {ln.key: ln for ln in LINES}
-
-# Seeded businesses without a line of their own map here (owner can change it).
-BUSINESS_LINE_BY_SOURCE = {"csw-trades": "stu", "apex-7": "rnd"}
+LINE_KEYS = tuple(ln.key for ln in LINES)
 
 
 def line_of_text(text: str) -> tuple[Line | None, list[str]]:
-    """Which line a command is about, and the words that showed it."""
+    """Which department a command is about, and the words that showed it."""
     low = text.lower()
     best, hits = None, []
-    for ln in LINES:
-        h = [w for w in ln.keywords if w in low]
-        # more matching words wins; on a tie a specific line beats the cross-line ones
+    for ln in LINES:  # a keyword matches at the start of a word ("wholesal" -> "wholesaling")
+        h = [w for w in ln.keywords if re.search(rf"(?<![a-z0-9]){re.escape(w)}", low)]
+        # more matching words wins; on a tie a specific department beats the cross-cutting
         better = len(h) > len(hits) or (h and len(h) == len(hits) and best is not None
-                                        and best.key in ("rnd", "finance"))
+                                        and best.key in ("rnd", "finance", "marketing"))
         if better:
             best, hits = ln, h
     return best, hits
@@ -231,9 +377,10 @@ def _kpi(name, value, unit="", source="", note=None):
             "note": note if value is None else None}
 
 
-def kpis(db: Session, tenant_id, key: str) -> list[dict]:
+def kpis(db: Session, tenant_id, key: str) -> list[dict]:  # noqa: C901 - one branch per dept
     from .models import (
         Agent,
+        Artifact,
         Business,
         Contact,
         ContentItem,
@@ -246,6 +393,7 @@ def kpis(db: Session, tenant_id, key: str) -> list[dict]:
         Persona,
         RevenueEntry,
         ShopProduct,
+        SiteProject,
     )
 
     now = datetime.now(UTC)
@@ -268,80 +416,126 @@ def kpis(db: Session, tenant_id, key: str) -> list[dict]:
                                     RevenueEntry.business_id.in_(biz),
                                     RevenueEntry.created_at >= month)) or 0) / 100
 
-    def posts(statuses=("published",), channels=None, since=month):
+    def posts(statuses=("published",), channels=None, since=month, scope=biz):
         q = select(func.count()).select_from(ContentItem).where(
-            ContentItem.tenant_id == tenant_id, ContentItem.business_id.in_(biz),
-            ContentItem.status.in_(statuses), ContentItem.updated_at >= since)
+            ContentItem.tenant_id == tenant_id, ContentItem.status.in_(statuses),
+            ContentItem.updated_at >= since)
+        if scope is not None:
+            q = q.where(ContentItem.business_id.in_(scope))
         if channels:
             q = q.where(ContentItem.channel.in_(channels))
         return count(q)
 
+    def emails(scope=biz):
+        q = select(func.count()).select_from(OutreachMessage).where(
+            OutreachMessage.tenant_id == tenant_id, OutreachMessage.status == "sent",
+            OutreachMessage.sent_at >= month)
+        if scope is not None:
+            q = q.where(OutreachMessage.campaign_id.in_(select(OutreachCampaign.id).where(
+                OutreachCampaign.business_id.in_(scope))))
+        return count(q)
+
+    def stage(s, scope=biz):
+        q = select(func.count()).select_from(Contact).where(Contact.tenant_id == tenant_id,
+                                                           Contact.stage == s)
+        if scope is not None:
+            q = q.where(Contact.business_id.in_(scope))
+        return count(q)
+
     if key == "rnd":
+        n = count(select(func.count()).select_from(Opportunity).where(
+            Opportunity.tenant_id == tenant_id))
         return [
             _kpi("New opportunities (7 days)", count(select(func.count()).select_from(
                 Opportunity).where(Opportunity.tenant_id == tenant_id,
                                    Opportunity.created_at >= week)), "", "opportunities"),
             _kpi("Average score", round(float(db.scalar(select(func.avg(Opportunity.score))
-                 .where(Opportunity.tenant_id == tenant_id)) or 0), 1) if count(
-                select(func.count()).select_from(Opportunity).where(
-                    Opportunity.tenant_id == tenant_id)) else None, "/100", "opportunities",
-                 "no opportunities scored yet"),
+                 .where(Opportunity.tenant_id == tenant_id)) or 0), 1) if n else None,
+                 "/100", "opportunities", "no opportunities scored yet"),
         ]
-    if key == "stu":
+    if key == "courses":
         return [
-            _kpi("Revenue this month (Whop)", revenue("whop"), "USD", "revenue_entries",
-                 "Whop isn't connected yet: no revenue is shown until it reports"),
-            _kpi("Posts published this month", posts(), "", "content_items"),
-            _kpi("Emails sent this month", count(select(func.count()).select_from(
-                OutreachMessage).where(
-                OutreachMessage.tenant_id == tenant_id, OutreachMessage.status == "sent",
-                OutreachMessage.sent_at >= month,
-                OutreachMessage.campaign_id.in_(select(OutreachCampaign.id).where(
-                    OutreachCampaign.business_id.in_(biz))))), "", "outreach_messages"),
+            _kpi("Education businesses", count(select(func.count()).select_from(Business)
+                 .where(Business.tenant_id == tenant_id, Business.line == "courses")), "",
+                 "businesses"),
+            _kpi("Course revenue this month (Whop)", revenue("whop"), "USD",
+                 "revenue_entries", "Whop isn't connected yet: no revenue until it reports"),
+            _kpi("Students", None, "", "", "needs WHOP_API_KEY (memberships)"),
         ]
+    if key == "marketing":
+        brands = count(select(func.count(func.distinct(ContentItem.business_id))).where(
+            ContentItem.tenant_id == tenant_id, ContentItem.status == "published",
+            ContentItem.updated_at >= month))
+        return [_kpi("Posts published this month (all brands)", posts(scope=None), "",
+                     "content_items"),
+                _kpi("Brands with posts this month", brands, "", "content_items"),
+                _kpi("Emails sent this month (all brands)", emails(scope=None), "",
+                     "outreach_messages")]
     if key == "agency":
-        return [
-            _kpi("Active clients", count(select(func.count()).select_from(Contact).where(
-                Contact.tenant_id == tenant_id, Contact.business_id.in_(biz),
-                Contact.stage == "won")), "", "contacts (stage won)"),
-            _kpi("Deliverables published this month", posts(), "", "content_items"),
-            _kpi("Open proposals", count(select(func.count()).select_from(Contact).where(
-                Contact.tenant_id == tenant_id, Contact.business_id.in_(biz),
-                Contact.stage == "proposal")), "", "contacts (stage proposal)"),
-        ]
+        return [_kpi("Active clients", stage("won"), "", "contacts (stage won)"),
+                _kpi("Open proposals", stage("proposal"), "", "contacts (stage proposal)"),
+                _kpi("Deliverables published this month", posts(), "", "content_items")]
+    if key == "sales":
+        new = count(select(func.count()).select_from(Contact).where(
+            Contact.tenant_id == tenant_id, Contact.created_at >= week))
+        return [_kpi("New leads (7 days)", new, "", "contacts"),
+                _kpi("Meetings booked", stage("meeting", None), "",
+                     "contacts (stage meeting)"),
+                _kpi("Won", stage("won", None), "", "contacts (stage won)"),
+                _kpi("Outreach emails sent this month", emails(scope=None), "",
+                     "outreach_messages")]
+    if key == "factory":
+        sites = count(select(func.count()).select_from(SiteProject).where(
+            SiteProject.tenant_id == tenant_id))
+        live = count(select(func.count()).select_from(SiteProject).where(
+            SiteProject.tenant_id == tenant_id, SiteProject.status == "live"))
+        return [_kpi("Sites & apps", sites, "", "sites"), _kpi("Live", live, "", "sites"),
+                _kpi("Hosting", None, "", "", "website hosting isn't built yet")]
     if key == "clips":
-        return [
-            _kpi("Clips posted this month", posts(channels=("tiktok", "youtube_shorts",
-                                                             "instagram")), "", "content_items"),
-            _kpi("Views", None, "", "", "needs a views source (platform analytics)"),
-            _kpi("Payouts", None, "USD", "", "needs CLIP_PAYOUTS_SOURCE"),
-        ]
+        return [_kpi("Clips posted this month", posts(channels=("tiktok", "youtube_shorts",
+                                                                 "instagram")), "",
+                     "content_items"),
+                _kpi("Views", None, "", "", "needs a views source (platform analytics)"),
+                _kpi("Payouts", None, "USD", "", "needs CLIP_PAYOUTS_SOURCE")]
     if key == "creators":
-        return [
-            _kpi("Drafts waiting for approval", posts(("in_review",), since=month - timedelta(
-                days=365)), "", "content_items"),
-            _kpi("Posts published this month", posts(), "", "content_items"),
-            _kpi("Creator earnings", None, "USD", "", "needs CREATOR_EARNINGS_SOURCE"),
-        ]
+        return [_kpi("Drafts waiting for approval", posts(("in_review",),
+                     since=month - timedelta(days=365)), "", "content_items"),
+                _kpi("Posts published this month", posts(), "", "content_items"),
+                _kpi("Creator earnings", None, "USD", "", "needs CREATOR_EARNINGS_SOURCE")]
     if key == "influencers":
-        return [
-            _kpi("AI personas", count(select(func.count()).select_from(Persona).where(
-                Persona.tenant_id == tenant_id, Persona.kind == "virtual_influencer")),
-                 "", "personas"),
-            _kpi("Posts published this month", posts(), "", "content_items"),
-            _kpi("Followers gained", None, "", "", "needs PLATFORM_ANALYTICS"),
-        ]
+        return [_kpi("AI personas", count(select(func.count()).select_from(Persona).where(
+                    Persona.tenant_id == tenant_id, Persona.kind == "virtual_influencer")),
+                     "", "personas"),
+                _kpi("Posts published this month", posts(), "", "content_items"),
+                _kpi("Followers gained", None, "", "", "needs PLATFORM_ANALYTICS")]
     if key == "ecommerce":
-        return [
-            _kpi("Draft products", count(select(func.count()).select_from(ShopProduct).where(
-                ShopProduct.tenant_id == tenant_id, ShopProduct.status == "DRAFT")),
-                 "", "shop_products"),
-            _kpi("Published products", count(select(func.count()).select_from(ShopProduct)
-                 .where(ShopProduct.tenant_id == tenant_id, ShopProduct.status == "ACTIVE")),
-                 "", "shop_products"),
-            _kpi("Revenue this month (Shopify)", revenue("shopify"), "USD", "revenue_entries",
-                 "no Shopify sales reported yet"),
-        ]
+        return [_kpi("Draft products", count(select(func.count()).select_from(ShopProduct)
+                     .where(ShopProduct.tenant_id == tenant_id,
+                            ShopProduct.status == "DRAFT")), "", "shop_products"),
+                _kpi("Published products", count(select(func.count()).select_from(
+                    ShopProduct).where(ShopProduct.tenant_id == tenant_id,
+                                       ShopProduct.status == "ACTIVE")), "", "shop_products"),
+                _kpi("Revenue this month (Shopify)", revenue("shopify"), "USD",
+                     "revenue_entries", "no Shopify sales reported yet")]
+    if key == "community":
+        return [_kpi("Members synced", None, "", "",
+                     "needs WHOP_API_KEY + DISCORD_BOT_TOKEN/TELEGRAM_BOT_TOKEN"),
+                _kpi("Renewals this month", None, "", "", "needs WHOP_API_KEY")]
+    if key == "trading":
+        return [_kpi("Backtests run", None, "", "",
+                     "needs APEX7_RESULTS_SOURCE (real backtest/sim data)"),
+                _kpi("Sim P&L", None, "USD", "", "needs APEX7_RESULTS_SOURCE"),
+                _kpi("Live orders placed", 0, "", "policy (refused until a broker connector "
+                     "with loss caps and a kill switch exists)")]
+    if key == "realestate":
+        return [_kpi("Deals analyzed", count(select(func.count()).select_from(Opportunity)
+                     .where(Opportunity.tenant_id == tenant_id,
+                            Opportunity.category == "real_estate")), "", "opportunities"),
+                _kpi("Comps data", None, "", "", "needs PROPERTY_DATA_API_KEY")]
+    if key == "legal":
+        drafts = count(select(func.count()).select_from(Artifact).where(
+            Artifact.tenant_id == tenant_id, Artifact.kind == "legal_draft"))
+        return [_kpi("Drafts waiting for your review", drafts, "", "artifacts")]
     if key == "finance":
         model = int(db.scalar(select(func.coalesce(func.sum(ModelUsage.cost_usd_micros), 0))
                               .where(ModelUsage.tenant_id == tenant_id,
@@ -354,13 +548,16 @@ def kpis(db: Session, tenant_id, key: str) -> list[dict]:
                                .where(RevenueEntry.tenant_id == tenant_id,
                                       RevenueEntry.kind == "actual",
                                       RevenueEntry.created_at >= month)) or 0) / 100
-        paused = count(select(func.count()).select_from(Event).where(
+        alerts = count(select(func.count()).select_from(Event).where(
             Event.tenant_id == tenant_id, Event.type == "alert.raised", Event.ts >= week))
         agents = count(select(func.count()).select_from(Agent).where(
             Agent.tenant_id == tenant_id))
         return [_kpi("Spend this month", round(model + ledger, 2), "USD",
                      "model_usage + ledger"),
-                _kpi("Actual revenue this month (all lines)", actual, "USD", "revenue_entries"),
-                _kpi("Alerts (7 days)", paused, "", "events"),
+                _kpi("Actual revenue this month (all businesses)", actual, "USD",
+                     "revenue_entries"),
+                _kpi("Cash forecast", None, "USD", "",
+                     "needs real revenue history (Whop/Shopify connected)"),
+                _kpi("Alerts (7 days)", alerts, "", "events"),
                 _kpi("Agents on staff", agents, "", "agents")]
     return []

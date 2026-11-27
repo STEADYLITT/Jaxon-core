@@ -86,12 +86,17 @@ def plan_handler(ctx):
     from .worker import TaskResult  # local import: worker imports this module lazily too
 
     if (ctx.input or {}).get("route"):
-        from .router import refused
+        from .lines import line_of_text
+        from .router import refused, restricted
 
         bad = refused(ctx.objective or "")
-        if bad:  # never planned, never drafted
-            return TaskResult(output={"route": {"kind": None, "reason": bad, "via": "rules",
-                                                "line": None, "refused": True},
+        ln = line_of_text(ctx.objective or "")[0]
+        stop = None if bad else restricted(ln, ctx.objective or "")
+        if bad or stop:  # never planned, never drafted
+            reason = bad or f"line: {ln.name}; {stop}"
+            return TaskResult(output={"route": {"kind": None, "reason": reason, "via": "rules",
+                                                "line": ln.key if stop else None,
+                                                "refused": True},
                                       "mode": "refused", "plan": None})
 
     memories = ctx.recall(ctx.objective, limit=8)

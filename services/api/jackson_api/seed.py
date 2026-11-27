@@ -10,7 +10,7 @@ claim (for Clerk it looks like `user_...`). Running twice changes nothing.
 import argparse
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .db import bind_tenant, make_sessionmaker
@@ -23,14 +23,14 @@ OWNER_TENANT_NAME = "Steady (owner)"
 OWNER_BUSINESSES = [  # (source_id, name, kind, description, business line — ADR-039)
     ("steady-trades-university", "Steady Trades University", "education",
      "Trading education: Replay Trainer ($19.99/mo), One-on-One, Self-Paced, Live Group, "
-     "indicators. Checkout via Whop.", "stu"),
-    ("csw-trades", "CSW Trades", "education", None, "stu"),
+     "indicators. Checkout via Whop.", "courses"),
+    ("csw-trades", "CSW Trades", "education", None, "courses"),
     ("steady-ventures", "Steady Ventures", "agency",
      "Marketing agency for other companies. Client work runs in separate client tenants "
      "(ADR-010).", "agency"),
     ("apex-7", "APEX-7", "trading_research",
      "Simulated futures bot. Research and paper trading only; no live trades (ADR-011).",
-     "rnd"),
+     "trading"),
     ("shopify-store", "Shopify Store", "ecommerce", None, "ecommerce"),
     ("clip-farming", "Clip Farming", "clip_farming",
      "Clips from creators who allow clipping, posted to TikTok/Shorts/Reels.", "clips"),
@@ -39,6 +39,15 @@ OWNER_BUSINESSES = [  # (source_id, name, kind, description, business line — A
      "creators"),
     ("ai-influencers", "AI Influencers", "ai_influencer",
      "SFW brand/lifestyle AI accounts, labeled as AI per platform rules.", "influencers"),
+    # Steady's other companies named in the full-scope brief (descriptions left for Steady).
+    ("amazon-university", "Amazon University (with Jay)", "education", None, "courses"),
+    ("ai-wealth-academy", "AI Wealth Academy", "education", None, "courses"),
+    ("steady-ai", "Steady AI", "education", None, "courses"),
+    ("make-it-blueprints", "Make It (blueprints)", "education", None, "courses"),
+    ("atom-labs", "Atom Labs (with Q)", "brand", None, "marketing"),
+    ("steady-growth-os", "Steady Growth OS", "brand", None, "marketing"),
+    ("shred-90", "SHRED 90", "brand", None, "marketing"),
+    ("gottink", "GOTTINK / InkFlow CRM", "software", None, "factory"),
 ]
 
 
@@ -95,10 +104,12 @@ def seed_owner(session: Session, email: str, auth_subject: str) -> uuid.UUID:
 def propose_line_agents(session: Session, tenant_id, user_id) -> int:
     """Missing roles in each business line become PROPOSED agents (AgentSpec drafts). They
     do nothing until Steady validates, evaluates and activates them (agents API)."""
-    from .lines import LINES
+    from .lines import LINES, MAX_PROPOSED_AGENTS
     from .models import AgentSpec
 
     made = 0
+    total = session.scalar(select(func.count()).select_from(AgentSpec).where(
+        AgentSpec.tenant_id == tenant_id, AgentSpec.created_by == "factory")) or 0
     for ln in LINES:
         biz = session.scalar(select(Business.id).where(Business.tenant_id == tenant_id,
                                                        Business.line == ln.key)
@@ -107,6 +118,8 @@ def propose_line_agents(session: Session, tenant_id, user_id) -> int:
             if session.scalar(select(AgentSpec.id).where(AgentSpec.tenant_id == tenant_id,
                                                          AgentSpec.name == p["name"])):
                 continue
+            if total + made >= MAX_PROPOSED_AGENTS:  # vol. 05: total agents are capped
+                return made
             spec = AgentSpec(tenant_id=tenant_id, business_id=biz, name=p["name"], version=1,
                              role=p["role"], objective=p["objective"],
                              instructions=p["instructions"], status="draft",

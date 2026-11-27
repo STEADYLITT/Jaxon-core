@@ -97,14 +97,19 @@ class Membership(Base):
     updated_at: Mapped[datetime] = _updated()
 
 
+# ADR-039: the 15 department keys (lines.LINE_KEYS; migration 0020 holds the same list).
+LINE_SQL = (
+    "('rnd','courses','marketing','agency','sales','factory','clips','creators',"
+    "'influencers','ecommerce','community','trading','realestate','legal','finance')")
+
+
 class Business(Base):
     __tablename__ = "businesses"
     __table_args__ = (
         # Idempotent imports (ADR-008): one row per external record per tenant.
         UniqueConstraint("tenant_id", "source_system", "source_id"),
         CheckConstraint("autonomy_level BETWEEN 0 AND 3", name="ck_business_autonomy"),
-        CheckConstraint("line IS NULL OR line IN ('rnd','stu','agency','clips','creators',"
-                        "'influencers','ecommerce','finance')", name="ck_business_line"),
+        CheckConstraint("line IS NULL OR line IN " + LINE_SQL, name="ck_business_line"),
     )
     id: Mapped[uuid.UUID] = _pk()
     tenant_id: Mapped[uuid.UUID] = mapped_column(
@@ -1090,8 +1095,7 @@ class LinePlaybook(Base):
     __tablename__ = "line_playbooks"
     __table_args__ = (
         UniqueConstraint("tenant_id", "line"),
-        CheckConstraint("line IN ('rnd','stu','agency','clips','creators','influencers',"
-                        "'ecommerce','finance')", name="ck_playbook_line"),
+        CheckConstraint("line IN " + LINE_SQL, name="ck_playbook_line"),
         CheckConstraint("budget_monthly_cents >= 0", name="ck_playbook_budget"),
     )
     id: Mapped[uuid.UUID] = _pk()

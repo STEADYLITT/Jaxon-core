@@ -49,6 +49,22 @@ def refused(text: str) -> str | None:
     return None
 
 
+LIVE_TRADE_WORDS = ("live order", "live trade", "real account", "go live", "place an order",
+                    "place order", "buy ", "sell ", "enter a trade", "take the trade")
+FILING_WORDS = ("file the", "file it", "submit the", "sign the", "send the contract")
+
+
+def restricted(ln: Line | None, text: str) -> str | None:
+    """Restricted actions (vol. 04) a sentence can never start: say why, plan nothing."""
+    low = f"{text.lower()} "
+    if ln is not None and ln.key == "trading" and any(w in low for w in LIVE_TRADE_WORDS):
+        return ("live orders on real accounts are a restricted action: never inside a Launch, "
+                "always your explicit approval with daily loss caps and a kill switch. No "
+                "broker connector with those controls exists yet, so Jackson won't place it; "
+                "he can backtest or paper-trade it instead")
+    return None
+
+
 def _count(text: str) -> int:
     m = re.search(r"\b(\d{1,3})\b", text)
     return max(1, min(int(m.group(1)), 10)) if m else 1
@@ -167,6 +183,10 @@ def route(ctx, text: str) -> dict:
     if bad:
         return {"kind": None, "reason": bad, "via": "rules", "line": None, "refused": True}
     ln, line_hits = line_of_text(text)
+    stop = restricted(ln, text)
+    if stop:
+        return {"kind": None, "reason": f"line: {ln.name}; {stop}", "via": "rules",
+                "line": ln.key, "refused": True, "business_id": None, "missing": []}
     business_id = _line_business(ctx, ln)
     missing = _missing(ln)
     where = (f"line: {ln.name} (mentions {', '.join(repr(h) for h in line_hits[:3])})"
@@ -194,6 +214,8 @@ def route(ctx, text: str) -> dict:
                  f"{'them' if len(proposed) > 1 else 'it'}") if proposed else \
             "no agent of this line can start it from a sentence yet"
         keys = f"; to make it real set {', '.join(missing)}" if missing else ""
+        if ln.key == "legal" or any(w in text.lower() for w in FILING_WORDS):
+            keys += "; legal drafts go to you for review and are never filed automatically"
         return {**base, "kind": None, "via": "rules",
                 "reason": f"{where}; Jaxon keeps it and the plan is the draft — {staff}{keys}"}
     m = by_model(ctx, text)

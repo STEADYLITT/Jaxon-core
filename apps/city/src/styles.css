@@ -237,3 +237,7 @@ button { font: inherit; }
 .badge.mock { color: var(--muted); }
 .badge.error { color: var(--red); }
 .rules { color: var(--amber); font-size: 0.85rem; }
+
+/* 15 departments: on a phone, unstaffed lots keep their outline but drop the label (the
+   List view names every department). */
+@media (max-width: 600px) { .label.lot { display: none; } }

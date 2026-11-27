@@ -47,7 +47,7 @@ def test_typed_command_is_routed_to_marketing_and_a_real_agent_starts(client, wo
     evs = trail(owner_db, run_id)
     routed = next(e for e in evs if e.type == "command.routed")
     marketing = owner_db.scalar(select(Department.id).where(
-        Department.tenant_id == world.tenant_a, Department.key == "stu"))
+        Department.tenant_id == world.tenant_a, Department.key == "marketing"))
     assert (routed.from_kind, routed.to_kind, routed.to_id) == ("jaxon", "department",
                                                                 str(marketing))
     assert routed.payload["agent"] == "Content Writer" and routed.payload["via"] == "rules"

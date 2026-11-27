@@ -118,7 +118,7 @@ def test_first_boot_migrates_unlocks_roles_and_sets_up_the_owner(empty_db, tmp_p
         assert c.scalar(text("SELECT current_user")) == "jackson_app"
         assert c.scalar(text("SELECT count(*) FROM businesses")) == 0
         c.execute(text("SELECT set_config('app.tenant_id', :t, false)"), {"t": first["owner"]})
-        assert c.scalar(text("SELECT count(*) FROM businesses")) == 8  # one per line + CSW, APEX-7
+        assert c.scalar(text("SELECT count(*) FROM businesses")) == 16  # Steady's companies
     eng.dispose()
 
 

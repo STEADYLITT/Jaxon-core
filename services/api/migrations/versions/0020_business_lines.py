@@ -2,7 +2,7 @@
 
 - businesses.line: which line a business belongs to (owner-set; seeded for the owner);
 - line_playbooks: the versioned playbook + monthly budget per line (owner edits);
-- the City's generic departments are replaced by the 8 lines: old department/floor rows
+- the City's generic departments are replaced by Steady's 15 departments: old department/floor rows
   are removed (agents are re-placed by the registry on the next heartbeat; past events
   keep their history, they only reference departments by id string).
 
@@ -22,7 +22,9 @@ depends_on = None
 
 APP, WORKER = "jackson_app", "jackson_worker"
 TENANT_PREDICATE = "tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid"
-LINES = ("('rnd','stu','agency','clips','creators','influencers','ecommerce','finance')")
+LINES = (
+    "('rnd','courses','marketing','agency','sales','factory','clips','creators',"
+    "'influencers','ecommerce','community','trading','realestate','legal','finance')")
 
 
 def upgrade() -> None:
