@@ -41,3 +41,29 @@ The app was created from the Partner dashboard instead of the store admin. Redo 
 | `SHOPIFY_CLIENT_SECRET` | the app's **Client secret** (same page). Seal it in Railway. |
 
 **How the token works:** Jackson exchanges the client ID and secret for an Admin API token valid 24 hours (Shopify's "client credentials grant"). It renews the token automatically about 10 minutes before expiry, or straight away if Shopify rejects it. Tokens live only in memory: never in the database, logs or grants. If you already have a static Admin API token, you can set `SHOPIFY_ADMIN_API_TOKEN` instead of the client ID and secret.
+
+---
+
+## Social posting via Upload-Post
+
+**What Jackson does:** posts content you approved (or content inside an active Launch approval that names that account) to your connected social accounts. The post goes to Upload-Post's API with:
+- the caption and hashtags
+- any images or video, as public links
+- an "AI-generated" label when the media or persona is AI-made
+- a per-post Idempotency-Key, so a retry never posts twice
+
+Every post still needs your approval or a covering Launch approval. The database refuses anything else.
+
+### Click steps
+1. Sign in at **upload-post.com**. Your Growth OS app already uses this account.
+2. **Manage Users:** check the profile name your social accounts are connected under (for example `steady`). If there's no profile yet, create one and connect Instagram, TikTok, X, Facebook or YouTube there.
+3. **API Keys:** copy your API key (or create one).
+4. In **Railway → Jaxon-core → Variables**, add the two Upload-Post variables (listed below) and **Seal** the key.
+
+### Variables
+| Name | What to paste |
+|---|---|
+| `UPLOADPOST_API_KEY` | your Upload-Post API key. Seal it in Railway. |
+| `UPLOADPOST_USER` | the Upload-Post **profile name** your accounts are connected under |
+
+**In a Launch approval,** list the social accounts by platform name: `instagram`, `tiktok`, `x`, `facebook`, `youtube_shorts`. Instagram, TikTok and YouTube need an image or video. Text-only posts go to X and Facebook.

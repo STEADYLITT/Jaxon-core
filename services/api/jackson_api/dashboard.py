@@ -161,11 +161,15 @@ def connectors(db: Session, tenant_id) -> list[dict]:
     from .connectors.shopify import live_config
 
     shop_live = live_config() is not None and shop_modes != {"mock"}
+    from .connectors import social
+
+    social_live = social.configured()
     rows = [
         ("models", "Claude (model gateway)", model_live, "ANTHROPIC_API_KEY"),
         ("shopify", "Shopify drafts", shop_live,
          "SHOPIFY_STORE_DOMAIN + SHOPIFY_CLIENT_ID + SHOPIFY_CLIENT_SECRET"),
-        ("social", "Social posting", False, "posting provider key (e.g. Upload-Post)"),
+        ("social", "Social posting (Upload-Post)", social_live,
+         "UPLOADPOST_API_KEY + UPLOADPOST_USER"),
         ("hosting", "Website hosting", False, "hosting account token"),
         ("dns", "Domain verification", os.environ.get("SITE_DOMAIN_VERIFY") == "dns",
          "SITE_DOMAIN_VERIFY=dns"),
