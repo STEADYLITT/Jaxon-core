@@ -15,7 +15,8 @@ from jackson_api.models import AuditEvent
 VARS = ["ANTHROPIC_API_KEY", "SHOPIFY_STORE_DOMAIN", "SHOPIFY_CLIENT_ID", "SHOPIFY_CLIENT_SECRET",
         "SHOPIFY_ADMIN_API_TOKEN", "UPLOADPOST_API_KEY", "UPLOADPOST_USER", "RESEND_API_KEY",
         "RESEND_FROM", "RESEND_WEBHOOK_SECRET", "FAL_KEY", "FAL_VIDEO_MODEL",
-        "FAL_VIDEO_CENTS_PER_SECOND", "SITE_DOMAIN_VERIFY", "S3_BUCKET"]
+        "FAL_VIDEO_CENTS_PER_SECOND", "SITE_DOMAIN_VERIFY", "S3_BUCKET", "WHOP_API_KEY",
+        "WHOP_WEBHOOK_SECRET"]
 SECRETS = {"ANTHROPIC_API_KEY": "sk-ant-" + "a" * 24, "SHOPIFY_CLIENT_SECRET": "shpss_" + "b" * 24,
            "UPLOADPOST_API_KEY": "up-" + "c" * 24, "RESEND_API_KEY": "re_" + "d" * 24,
            "FAL_KEY": "fal-" + "e" * 24}
@@ -79,9 +80,9 @@ def rows(client, world, h):
 
 def test_everything_is_mock_with_the_missing_variable_names(client, world, make_token, net):
     s = rows(client, world, auth(make_token, world.alice))
-    assert {k: v["mode"] for k, v in s.items()} == {
-        "models": "MOCK", "shopify": "MOCK", "social": "MOCK", "email": "MOCK", "video": "MOCK",
-        "dns": "MOCK", "hosting": "MOCK", "sms": "MOCK", "artifacts": "MOCK"}
+    assert set(s) >= {"models", "shopify", "social", "email", "video", "whop", "dns", "sms",
+                      "artifacts"}
+    assert {v["mode"] for v in s.values()} == {"MOCK"}  # every connector, built or not
     assert s["shopify"]["missing"] == ["SHOPIFY_STORE_DOMAIN", "SHOPIFY_CLIENT_ID",
                                        "SHOPIFY_CLIENT_SECRET"]
     assert s["email"]["missing"] == ["RESEND_API_KEY", "RESEND_FROM"]

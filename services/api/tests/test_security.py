@@ -29,6 +29,7 @@ PUBLIC = {
     "/city/share/{token}/state": "read-only client view; the HMAC-signed, revocable token "
                                  "is the credential",
     "/webhooks/resend/{tenant_id}": "Resend bounce/complaint events; Svix-signed",
+    "/webhooks/whop/{tenant_id}": "Whop sales/membership events; Standard Webhooks-signed",
 }
 
 

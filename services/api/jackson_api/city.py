@@ -34,6 +34,8 @@ BUILT_IN = {
     "launch_propose": ("jaxon", None, "Launch Planner", "proposes launches for approval"),
     "course_build": ("courses", "design", "Course Builder",
                      "builds course drafts: outline, lessons, student platform, sales page"),
+    "whop_sync": ("courses", "launch", "Sales Recorder",
+                  "records real Whop members and sales (never estimated)"),
     "opportunity_research": ("rnd", "board", "Research Scout",
                              "researches opportunities from cited sources"),
     "content_generate": ("marketing", "content", "Content Writer", "drafts posts in a voice"),

@@ -96,9 +96,8 @@ LINES: list[Line] = [
           "AI video/voice only where Steady approved it, labeled as AI."],
          ("course", "lesson", "curriculum", "student platform", "academy", "university",
           "blueprint", "education", "teach"),
-         ["models", "video", "email"],
-         [("WHOP_API_KEY", "course payments and real student/revenue numbers"),
-          ("ELEVENLABS_API_KEY", "AI voice for lessons (only where approved)")],
+         ["models", "video", "email", "whop"],
+         [("ELEVENLABS_API_KEY", "AI voice for lessons (only where approved)")],
          _ch(social=("instagram", "tiktok", "youtube_shorts"), email=("course-leads",)),
          budget_monthly_cents=15_000,
          proposed=[_spec("course-architect", "courses: course outline and curriculum",
@@ -122,8 +121,8 @@ LINES: list[Line] = [
          ("marketing", "post", "posts", "campaign", "funnel", "seo", "ads", "replay trainer",
           "steady trades", "pro breakout", "atom labs", "growth os", "shred 90",
           "csw trades", "brand"),
-         ["models", "social", "email"],
-         [("WHOP_API_KEY", "real sales for course offers (revenue only from Whop)")],
+         ["models", "social", "email", "whop"],
+         [],
          _ch(social=("instagram", "tiktok", "x", "facebook"), email=("students",)),
          budget_monthly_cents=15_000,
          proposed=[_spec("funnel-writer", "marketing: funnels and email sequences",
@@ -277,9 +276,8 @@ LINES: list[Line] = [
          ["Roles only from real payment records.", "DMs only from approved templates."],
          ("discord", "telegram", "community", "members", "role sync", "renewal",
           "onboarding"),
-         ["models"],
-         [("WHOP_API_KEY", "payments that drive roles"),
-          ("DISCORD_BOT_TOKEN", "Discord role sync"),
+         ["models", "whop"],
+         [("DISCORD_BOT_TOKEN", "Discord role sync"),
           ("TELEGRAM_BOT_TOKEN", "Telegram access")],
          _ch(note="role sync and DMs run inside an approved scope"),
          budget_monthly_cents=1_000,
@@ -414,7 +412,23 @@ def kpis(db: Session, tenant_id, key: str) -> list[dict]:  # noqa: C901 - one br
                                     RevenueEntry.source == source,
                                     RevenueEntry.kind == "actual",
                                     RevenueEntry.business_id.in_(biz),
-                                    RevenueEntry.created_at >= month)) or 0) / 100
+                                    RevenueEntry.period == month.strftime("%Y-%m"))) or 0) / 100
+
+    def members(scope=biz, **where):
+        from .connectors.whop import ACCESS
+        from .models import WhopMember
+
+        if not count(select(func.count()).select_from(WhopMember).where(
+                WhopMember.tenant_id == tenant_id)):
+            return None  # Whop hasn't reported anyone yet
+        q = select(func.count()).select_from(WhopMember).where(
+            WhopMember.tenant_id == tenant_id, WhopMember.status.in_(ACCESS))
+        if scope is not None:
+            q = q.where(WhopMember.business_id.in_(scope))
+        for col, want in where.items():
+            q = q.where(getattr(WhopMember, col).is_not(None) if want else
+                        getattr(WhopMember, col).is_(None))
+        return count(q)
 
     def posts(statuses=("published",), channels=None, since=month, scope=biz):
         q = select(func.count()).select_from(ContentItem).where(
@@ -460,7 +474,8 @@ def kpis(db: Session, tenant_id, key: str) -> list[dict]:  # noqa: C901 - one br
                  "businesses"),
             _kpi("Course revenue this month (Whop)", revenue("whop"), "USD",
                  "revenue_entries", "Whop isn't connected yet: no revenue until it reports"),
-            _kpi("Students", None, "", "", "needs WHOP_API_KEY (memberships)"),
+            _kpi("Students with access (Whop)", members(), "", "whop_members",
+                 "no Whop members reported yet (connect WHOP_API_KEY, then Sync)"),
         ]
     if key == "marketing":
         brands = count(select(func.count(func.distinct(ContentItem.business_id))).where(
@@ -518,9 +533,12 @@ def kpis(db: Session, tenant_id, key: str) -> list[dict]:  # noqa: C901 - one br
                 _kpi("Revenue this month (Shopify)", revenue("shopify"), "USD",
                      "revenue_entries", "no Shopify sales reported yet")]
     if key == "community":
-        return [_kpi("Members synced", None, "", "",
-                     "needs WHOP_API_KEY + DISCORD_BOT_TOKEN/TELEGRAM_BOT_TOKEN"),
-                _kpi("Renewals this month", None, "", "", "needs WHOP_API_KEY")]
+        return [_kpi("Paying members (Whop, all businesses)", members(scope=None), "",
+                     "whop_members", "no Whop members reported yet"),
+                _kpi("Members with Discord linked", members(scope=None, discord_id=True), "",
+                     "whop_members", "no Whop members reported yet"),
+                _kpi("Renewals this month", None, "", "",
+                     "counted once Whop has reported a full month of payments")]
     if key == "trading":
         return [_kpi("Backtests run", None, "", "",
                      "needs APEX7_RESULTS_SOURCE (real backtest/sim data)"),
