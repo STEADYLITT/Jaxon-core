@@ -190,3 +190,14 @@ dialog::backdrop { background: rgba(0, 0, 0, .65); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* Connections */
+.hint { color: var(--muted); font-size: .85rem; margin: 0 0 .5rem; }
+.badge { display: inline-block; min-width: 3.6em; text-align: center; font-size: .72rem; font-weight: 700;
+  letter-spacing: .06em; padding: .1rem .4rem; border-radius: 999px; border: 1px solid currentColor; }
+.badge.live { color: #39ff88; }
+.badge.mock { color: var(--muted); }
+.badge.error { color: #ff6b81; }
+.cx-info { color: var(--muted); font-size: .85rem; margin: .2rem 0; overflow-wrap: anywhere; }
+.cx-test { margin-top: .2rem; }
+.cards .wide { grid-column: 1 / -1; }

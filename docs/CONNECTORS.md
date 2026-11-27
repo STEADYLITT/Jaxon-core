@@ -1,6 +1,33 @@
 # Connecting Jackson to your accounts
 
-Each connector stays a clearly labeled stand-in (MOCK in the console's **Connectors** panel) until its variables are set in **Railway → Jaxon-core → Variables**. Paste keys only there, never into chat. After saving, Railway redeploys and the panel shows **LIVE**.
+Each connector stays a clearly labeled stand-in until its variables are set in **Railway → Jaxon-core → Variables**.
+- Paste keys **only there, never into chat**.
+- After saving, Railway redeploys (about 2 minutes).
+- In the console, the **Connections** panel shows each service as:
+  - **LIVE**: connected
+  - **MOCK**: stand-in
+  - **ERROR**: a key is set, but the test failed
+- The panel also lists any missing variable names, and has a **Test** button. Test makes one harmless real call and shows the real answer.
+
+## The checklist: one at a time, in this order
+**Why this order:** Shopify comes first because it's the cash register. Nothing earns money until there's a product in your store to buy. Posting (Upload-Post) brings people to the store. Email (Resend) turns them into repeat buyers. Video (fal.ai) makes the posts better, but it costs money per clip, so it comes last.
+
+How to paste a variable into Railway (same every time):
+1. Go to **railway.com**, open the project, click the **Jaxon-core** service (not Postgres), and open the **Variables** tab.
+2. Click **+ New Variable**. Type the **name** exactly as shown, paste the value, then click **Add**.
+3. For keys and secrets: click **⋮** next to the variable, then **Seal**. Once sealed, the value can never be shown again, even to you.
+4. Click **Deploy** if Railway asks. Wait for the green **Active** badge.
+5. Open the console → **Connections**, and press **Test** next to that service.
+
+| # | Service | Variables | Test shows |
+|---|---|---|---|
+| 1 | **Shopify** (steps below) | `SHOPIFY_STORE_DOMAIN`, `SHOPIFY_CLIENT_ID`, `SHOPIFY_CLIENT_SECRET` | your store's name and plan (read-only) |
+| 2 | **Upload-Post** (steps below) | `UPLOADPOST_API_KEY`, `UPLOADPOST_USER` | your Upload-Post plan and account email |
+| 3 | **Resend** (steps below) | `RESEND_API_KEY`, `RESEND_FROM`, then `RESEND_WEBHOOK_SECRET` | sends one test email **to you only** |
+| 4 | **fal.ai** (steps below) | `FAL_KEY` | your credit balance (or "key accepted") |
+| — | **Claude** | `ANTHROPIC_API_KEY` (already set) | how many models your key can use (free call) |
+
+Never needed yet: website hosting and SMS/calls aren't built, so they always show MOCK. File storage (S3) is optional, because files live on the Railway disk.
 
 ---
 
@@ -28,7 +55,7 @@ Store: `cha6cs-6c.myshopify.com`.
 6. On the app's page, open **Installs** → **Install app** → choose **cha6cs-6c** → **Install**.
 7. Open the app's **Settings** and copy the **Client ID** and the **Client secret**.
 8. In **Railway → Jaxon-core → Variables**, add the three Shopify variables (listed below) and **Seal** the secret.
-9. Railway redeploys. In the logs: `connector: shopify.drafts enabled for the owner's workspace (drafts only)`. In the console, **Connectors → Shopify drafts: LIVE**.
+9. Railway redeploys. In the console, **Connections → Shopify store**, press **Test**. You should see your store's name and **Basic** plan.
 
 ### If it says "the Jackson app isn't in this store's organization"
 The app was created from the Partner dashboard instead of the store admin. Redo steps 2–7, starting from **your store's** Settings → Apps. You can delete the old app.
@@ -59,6 +86,7 @@ Every post still needs your approval or a covering Launch approval. The database
 2. **Manage Users:** check the profile name your social accounts are connected under (for example `steady`). If there's no profile yet, create one and connect Instagram, TikTok, X, Facebook or YouTube there.
 3. **API Keys:** copy your API key (or create one).
 4. In **Railway → Jaxon-core → Variables**, add the two Upload-Post variables (listed below) and **Seal** the key.
+5. After the redeploy: **Connections → Social posting → Test**. It should show your plan.
 
 ### Variables
 | Name | What to paste |
@@ -112,8 +140,11 @@ SMS and calls stay labeled stand-ins.
 
 ### Click steps
 1. Sign in at **fal.ai**. Your Growth OS app already uses this account. Make sure billing has credit.
-2. Go to **Dashboard → Keys → Add key**. Name it "Jackson", choose scope **API**, and copy the key. It's shown only once.
+2. Go to **fal.ai/dashboard/keys** (top right: your avatar → **API Keys**) → **Add key**. Name it "Jackson".
+   - **Permissions:** choose **API**, so it can run models. If you also want the Test to show your credit balance, choose **FULL** instead.
+   - Copy the key; it's shown only once.
 3. In **Railway → Jaxon-core → Variables**, add `FAL_KEY` and **Seal** it.
+4. After the redeploy: **Connections → UGC video → Test**. It shows your balance, or "key accepted" for an API-only key.
 
 ### Variables
 | Name | What to paste |

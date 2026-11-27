@@ -63,6 +63,60 @@ async function renderContent(d) {
   });
 }
 
+// Connections: LIVE / MOCK / ERROR, missing variable NAMES, and a real harmless Test.
+function describeResult(r) {
+  if (!r) return "not tested yet";
+  if (!r.ok) return `last test failed: ${r.error}`;
+  const s = r.summary || r.result || {};
+  return "last test OK: " + Object.entries(s).filter(([, v]) => v !== null && v !== "")
+    .map(([k, v]) => `${k.replace(/_/g, " ")} ${Array.isArray(v) ? v.join(", ") : v}`).join(" · ");
+}
+
+async function renderConnections() {
+  const ul = $("connections");
+  let rows;
+  try { rows = await api("/admin/connectors"); } catch (e) {
+    clear(ul); li(ul, "Only the owner or an admin can see connections."); return;
+  }
+  clear(ul);
+  rows.forEach((c) => {
+    const el = li(ul, "");
+    el.dataset.connector = c.id;
+    const badge = document.createElement("span");
+    badge.className = `badge ${c.mode.toLowerCase()}`;
+    badge.textContent = c.mode;
+    const name = document.createElement("strong");
+    name.textContent = ` ${c.name} `;
+    el.append(badge, name);
+    const info = document.createElement("div");
+    info.className = "cx-info";
+    const parts = [];
+    if (c.missing.length) parts.push(`needs ${c.missing.join(" + ")}`);
+    if (c.note) parts.push(c.note);
+    if (c.testable && !c.missing.length) parts.push(describeResult(c.last_test));
+    info.textContent = parts.join(" — ");
+    el.appendChild(info);
+    if (c.testable) {
+      const b = document.createElement("button");
+      b.className = "secondary cx-test";
+      b.textContent = "Test";
+      b.disabled = c.missing.length > 0;
+      b.title = c.missing.length ? "Set its variables in Railway first" : "One harmless real call";
+      b.addEventListener("click", async () => {
+        b.disabled = true; b.textContent = "Testing…";
+        try {
+          const r = await api(`/admin/connectors/${c.id}/test`, { method: "POST" });
+          info.textContent = describeResult(r);
+          badge.className = `badge ${r.status.mode.toLowerCase()}`;
+          badge.textContent = r.status.mode;
+        } catch (e) { info.textContent = `test couldn't run (${e.message})`; }
+        b.disabled = false; b.textContent = "Test";
+      });
+      el.appendChild(b);
+    }
+  });
+}
+
 function render(d) {
   $("signin").hidden = true;
   $("dash").hidden = false;
@@ -194,6 +248,7 @@ function render(d) {
   d.artifacts.forEach((a) => li(ar, `${a.type || a.kind} · ${a.content_type} · ${a.size_bytes} bytes`));
 
   renderContent(d);
+  renderConnections();
 
   const co = $("connectors"); clear(co);
   d.connectors.forEach((c) => li(co, `${c.name}: ${c.mode.toUpperCase()}` +
