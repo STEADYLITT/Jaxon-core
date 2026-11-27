@@ -1,11 +1,16 @@
-// Jackson OS interim owner console (phase 19). Plain DOM, no innerHTML with data:
-// every value from the API is set with textContent, so nothing it returns can run.
+// Jackson OS owner console: the command center (phase 19, redesigned in phase 22).
+// Plain DOM, no innerHTML with data: every value from the API is set with textContent,
+// so nothing it returns can run. Shows only real records; empty states otherwise.
 "use strict";
 
 const $ = (id) => document.getElementById(id);
 const money = (c) => (c < 0 ? "-$" : "$") + (Math.abs(c) / 100).toLocaleString(undefined,
   { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-let state = { token: "", tenant: "", clerk: null };
+let state = { token: "", tenant: "", clerk: null, me: null, feedStarted: false,
+  eventsTimeout: 25 };
+// What the 3D core draws (read every frame by core.js). Only real records go in here.
+window.__jackson = { state: { agents: [], thinking: false, stopped: false } };
+let lastDash = null;
 
 async function bearer() {
   // Clerk session tokens are short-lived; ask Clerk for a fresh one on every call.
@@ -40,6 +45,10 @@ function render(d) {
   $("banner").className = d.stop.active ? "critical" : "";
   $("stop").hidden = d.stop.active;
   $("resume").hidden = !d.stop.active;
+  lastDash = d;
+  greet(d);
+  coreStatus(d);
+  businesses(d.portfolio);
 
   const al = $("alerts"); clear(al);
   if (!d.alerts.length) li(al, "No alerts.");
@@ -126,9 +135,29 @@ function render(d) {
   });
 
   const ag = $("agents"); clear(ag);
-  if (!d.agents.length) li(ag, "No agents yet.");
-  d.agents.forEach((a) => li(ag, `${a.name} v${a.version} (${a.status}) — ` +
-    (Object.entries(a.tasks).map(([s, n]) => `${s} ${n}`).join(", ") || "no tasks")));
+  if (!d.agents.length) li(ag, "No agents yet. Jackson creates them as work needs them.");
+  d.agents.forEach((a) => {
+    const item = document.createElement("li");
+    const b = document.createElement("button");
+    b.type = "button";
+    b.dataset.agent = a.id;
+    const st = document.createElement("span");
+    st.className = `st st-${a.state}`; st.textContent = STATE_LABEL[a.state] || a.state;
+    const name = document.createElement("strong"); name.textContent = `${a.name} v${a.version}`;
+    const task = document.createElement("div");
+    task.textContent = a.current_task ? a.current_task : "No task yet";
+    const cost = document.createElement("div");
+    cost.textContent = `Cost today $${Number(a.cost_today_usd || 0).toFixed(4)}`;
+    b.append(st, name, task, cost);
+    b.addEventListener("click", () => showAgent(a.id));
+    item.appendChild(b);
+    ag.appendChild(item);
+  });
+  window.__jackson.state = {
+    agents: d.agents.map((a) => ({ id: a.id, name: a.name, state: a.state })),
+    thinking: d.activity.active_runs > 0, stopped: d.stop.active,
+  };
+  if (!state.feedStarted) { state.feedStarted = true; feed(d.activity.last_event_id); }
 
   const lv = $("live"); clear(lv);
   if (!d.live_visual_work.length) li(lv, "No browser sessions running.");
@@ -144,6 +173,157 @@ function render(d) {
 
   const au = $("audit"); clear(au);
   d.audit.forEach((e) => li(au, `${e.at.slice(0, 16).replace("T", " ")} · ${e.action}`));
+}
+
+const STATE_LABEL = { idle: "idle", running: "running", waiting_approval: "waiting approval",
+  error: "error" };
+
+function greet(d) {
+  const h = new Date().getHours();
+  const part = h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
+  const name = (state.me && state.me.display_name) || "Steady";
+  const n = d.approvals.pending + d.launches.filter((x) => x.status === "proposed").length +
+    d.alerts.filter((a) => a.level !== "info").length;
+  const g = $("greeting"); clear(g);
+  g.append(`${part}, ${name} — `);
+  const strong = document.createElement("strong");
+  strong.textContent = n === 0 ? "nothing needs you right now"
+    : `${n} thing${n === 1 ? "" : "s"} need${n === 1 ? "s" : ""} you today`;
+  g.appendChild(strong);
+  g.append(".");
+}
+
+function coreStatus(d) {
+  const cs = $("corestatus");
+  const active = d.activity.active_runs;
+  cs.className = "core-status" + (d.stop.active ? " stopped" : "");
+  cs.textContent = d.stop.active ? "STOPPED — nothing new will start"
+    : active ? `Thinking — ${active} run${active === 1 ? "" : "s"} in progress`
+      : "Standing by";
+  document.body.classList.toggle("thinking", !d.stop.active && active > 0);
+  document.body.classList.toggle("stopped", d.stop.active);
+}
+
+function businesses(p) {
+  const box = $("biz"); clear(box);
+  const rows = p.businesses.filter((b) => b.business_id);
+  if (!rows.length) { box.textContent = "No businesses yet."; return; }
+  rows.forEach((b) => {
+    const card = document.createElement("article"); card.className = "biz-card";
+    const h = document.createElement("h3"); h.textContent = b.business;
+    card.appendChild(h);
+    [["Revenue", b.actual_revenue_cents - b.refunds_cents, ""],
+      ["Spend", b.spend_cents + b.model_cost_cents, ""],
+      ["Profit", b.actual_profit_cents, b.actual_profit_cents >= 0 ? "profit" : "loss"]]
+      .forEach(([k, v, cls]) => {
+        const row = document.createElement("div"); row.className = `num ${cls}`;
+        const label = document.createElement("span"); label.textContent = k;
+        const val = document.createElement("b"); val.textContent = money(v);
+        row.append(label, val); card.appendChild(row);
+      });
+    if (b.estimated_revenue_cents) {
+      const est = document.createElement("div"); est.className = "est";
+      est.textContent = `Estimate (not actual): ${money(b.estimated_revenue_cents)}`;
+      card.appendChild(est);
+    }
+    box.appendChild(card);
+  });
+}
+
+function showAgent(id) {
+  const a = lastDash && lastDash.agents.find((x) => x.id === id);
+  if (!a) return;
+  $("ad-name").textContent = `${a.name} v${a.version}`;
+  $("ad-state").textContent = STATE_LABEL[a.state] || a.state;
+  $("ad-task").textContent = a.current_task || "No task yet";
+  $("ad-cost").textContent = `$${Number(a.cost_today_usd || 0).toFixed(4)}`;
+  $("ad-role").textContent = a.role || "";
+  $("ad-tasks").textContent = Object.entries(a.tasks).map(([s, n]) => `${s} ${n}`)
+    .join(", ") || "none yet";
+  $("agentdetail").hidden = false;
+  $("agentdetail").focus();
+}
+
+// Live feed: the tenant event stream (SSE) read with fetch so the sign-in token can be sent.
+async function feed(after) {
+  const list = $("feed");
+  if (!list.children.length) li(list, "Waiting for activity…", "mock");
+  let last = after || 0;
+  for (;;) {
+    try {
+      const r = await fetch(`/tenants/${encodeURIComponent(state.tenant)}/events?after=${last}` +
+        `&timeout=${state.eventsTimeout}`,
+        { headers: { Authorization: `Bearer ${await bearer()}` } });
+      if (!r.ok || !r.body) throw new Error(String(r.status));
+      $("feedstate").textContent = "live"; $("feedstate").className = "pill live";
+      const reader = r.body.getReader();
+      const dec = new TextDecoder();
+      let buf = "";
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let i;
+        while ((i = buf.indexOf("\n\n")) >= 0) {
+          const chunk = buf.slice(0, i); buf = buf.slice(i + 2);
+          const id = /^id: (\d+)/m.exec(chunk);
+          const data = /^data: (.*)$/m.exec(chunk);
+          if (id) last = Number(id[1]);
+          if (data) addFeed(JSON.parse(data[1]));
+        }
+      }
+    } catch (_) {
+      $("feedstate").textContent = "reconnecting"; $("feedstate").className = "pill";
+    }
+    await new Promise((res) => { setTimeout(res, 1500); });
+  }
+}
+
+function addFeed(ev) {
+  const list = $("feed");
+  if (list.firstChild && list.firstChild.classList.contains("mock")) clear(list);
+  const item = document.createElement("li");
+  const t = document.createElement("time");
+  t.textContent = (ev.created_at || "").slice(11, 19);
+  item.append(t, `${ev.type} · run ${String(ev.run_id).slice(0, 8)}`);
+  list.insertBefore(item, list.firstChild);
+  while (list.children.length > 60) list.removeChild(list.lastChild);
+  if (/^(run\.|approval\.|launch\.|policy\.checked)/.test(ev.type)) scheduleReload();
+}
+
+let reloadTimer = null;
+function scheduleReload() {
+  clearTimeout(reloadTimer);
+  reloadTimer = setTimeout(load, 1200);
+}
+
+// 3D only where it helps: wide screen, WebGL, no reduced-motion or low-power hint.
+function pickMode() {
+  const wide = window.matchMedia("(min-width: 900px)").matches;
+  const calm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const lowPower = (navigator.deviceMemory && navigator.deviceMemory <= 2) ||
+    (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2);
+  let gl = false;
+  try { gl = !!document.createElement("canvas").getContext("webgl2"); } catch (_) { gl = false; }
+  return wide && !calm && !lowPower && gl ? "3d" : "2d";
+}
+
+async function startCore() {
+  if (pickMode() !== "3d") { document.body.dataset.mode = "2d"; return; }
+  try {
+    const mod = await import("/console/core.js");
+    mod.start($("core3d"), $("corelabels"), () => window.__jackson.state, showAgent);
+    document.body.dataset.mode = "3d";
+  } catch (_) {
+    document.body.dataset.mode = "2d"; // any failure: the 2D core is always there
+  }
+}
+
+async function loadMe() {
+  try {
+    const r = await fetch("/me", { headers: { Authorization: `Bearer ${await bearer()}` } });
+    if (r.ok) state.me = await r.json();
+  } catch (_) { /* the greeting falls back to the owner's first name */ }
 }
 
 function openLaunch(opp, businesses) {
@@ -186,10 +366,13 @@ async function submitLaunch(ev) {
   }
 }
 
+let coreStarted = false;
 async function load() {
   try {
     $("err").textContent = "";
+    if (!state.me) await loadMe();
     render(await api("/dashboard"));
+    if (!coreStarted) { coreStarted = true; startCore(); }
   } catch (e) {
     $("signin").hidden = false; $("dash").hidden = true;
     $("err").textContent = `Couldn't load the dashboard (${e.message}).`;
@@ -238,6 +421,7 @@ async function startWithClerk(key) {
   }
   if (!r.ok) { $("err").textContent = `Sign-in check failed (${r.status}).`; return; }
   const me = await r.json();
+  state.me = me;
   const m = me.memberships.find((x) => x.role === "owner") || me.memberships[0];
   if (!m) { $("err").textContent = "Your account isn't a member of any workspace."; return; }
   state.tenant = m.tenant_id;
@@ -246,6 +430,7 @@ async function startWithClerk(key) {
 
 document.addEventListener("DOMContentLoaded", async () => {
   $("launchform").addEventListener("submit", submitLaunch);
+  $("ad-close").addEventListener("click", () => { $("agentdetail").hidden = true; });
   $("stop").addEventListener("click", async () => {
     const reason = window.prompt("GLOBAL STOP: all running work is cancelled and nothing new " +
       "starts until you resume. Why are you stopping?");
@@ -270,6 +455,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
   try {
     const cfg = await (await fetch("/console/config.json")).json();
+    if (cfg.events_timeout) state.eventsTimeout = cfg.events_timeout;
     if (cfg.clerk_publishable_key) {
       startWithClerk(cfg.clerk_publishable_key).catch((e) => {
         $("err").textContent = `Sign-in couldn't start (${e.message}).`;

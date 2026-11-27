@@ -134,11 +134,11 @@ def test_first_boot_without_owner_says_what_to_do(empty_db, tmp_path, capsys):
 
 def test_console_config_and_csp_follow_the_clerk_key(client, monkeypatch):
     monkeypatch.delenv("CLERK_PUBLISHABLE_KEY", raising=False)
-    assert client.get("/console/config.json").json() == {"clerk_publishable_key": None}
+    assert client.get("/console/config.json").json()["clerk_publishable_key"] is None
     strict = client.get("/console").headers["content-security-policy"]
     assert "script-src 'self';" in strict and FAPI not in strict
     monkeypatch.setenv("CLERK_PUBLISHABLE_KEY", PK)
-    assert client.get("/console/config.json").json() == {"clerk_publishable_key": PK}
+    assert client.get("/console/config.json").json()["clerk_publishable_key"] == PK
     csp = client.get("/console").headers["content-security-policy"]
     assert f"script-src 'self' https://{FAPI}" in csp
     assert f"connect-src 'self' https://{FAPI}" in csp

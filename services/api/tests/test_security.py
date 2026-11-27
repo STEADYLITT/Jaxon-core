@@ -22,6 +22,7 @@ PUBLIC = {
     "/console": "static page, no data; it calls the authenticated API",
     "/console/{name}": "static assets",
     "/console/config.json": "public Clerk publishable key (designed to be public)",
+    "/console/vendor/{name}": "pinned three.js files for the 3D core (allow-listed names)",
     "/u/{token}": "unsubscribe page; the HMAC-signed token is the credential",
 }
 
