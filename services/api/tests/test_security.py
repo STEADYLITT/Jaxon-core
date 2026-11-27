@@ -15,6 +15,7 @@ from jackson_api.security import preflight
 
 # Routes that are deliberately reachable without signing in, and why.
 PUBLIC = {
+    "/": "redirects to /console (keeps the Clerk handshake query)",
     "/health": "liveness probe, no data",
     "/ready": "readiness probe (database reachable), no data",
     "/contracts": "public enum values for clients",
