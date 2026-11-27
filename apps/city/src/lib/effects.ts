@@ -72,6 +72,7 @@ export function describe(ev: CityEvent): string {
   const t = (k: string) => (typeof p[k] === "string" ? (p[k] as string) : "");
   switch (ev.type) {
     case "command.issued": return `Steady → Jaxon: ${t("text")}`;
+    case "command.routed": return `Jaxon → ${t("agent")}: ${t("reason")}`;
     case "task.created": return `Task: ${t("title")}`;
     case "task.started": return `Started: ${t("title")}`;
     case "task.completed": return `Done: ${t("title")}`;

@@ -9,8 +9,8 @@ The City replaces the phase 22 console redesign as the main dashboard. It is bui
 | 2 | Snapshot API + live SSE stream + events query | done |
 | 3 | 3D exterior: buildings, windows, orb, envelopes, beams, HUD, ticker, phone list | done |
 | 4 | Interiors, agent panel with Pause/Resume/Reassign/Kill, CEO inbox | done |
-| 5 | Command bar → Jaxon routing, shown end to end | next |
-| 6 | Replay, cost guard, failure siren, trace view, client view | |
+| 5 | Command bar → Jaxon routing, shown end to end | done |
+| 6 | Replay, cost guard, failure siren, trace view, client view | next |
 
 ## Phase 3: what's on screen
 - **CEO tower** (Steady) in the middle. Each pending approval is a red letter on its roof, and the count shows on its label.
@@ -90,3 +90,26 @@ The City replaces the phase 22 console redesign as the main dashboard. It is bui
 | `POST /tenants/{t}/city/agents/{id}/resume` | Resume |
 | `POST /tenants/{t}/city/agents/{id}/kill` | Kill |
 | `POST /tenants/{t}/city/agents/{id}/reassign` | Reassign (`{to_agent_id}`) |
+
+## Phase 5: command bar → Jaxon routing
+1. Steady types a goal in the **command bar** (bottom of the City).
+2. It becomes a real command: `POST /tenants/{t}/commands` with `route: true`. That creates a row in `workflow_runs` and a `command.issued` event, so the letter flies from the CEO tower to the orb.
+3. Jaxon's planner runs. Then `router.route()` picks the department agent that can start from a sentence:
+   - **Rules first.** The reason names the words that matched, e.g. "the command mentions 'post', 'instagram'".
+   - **Otherwise the model picks**, labeled `[MOCK model]` when no Claude key is set.
+   - **If nothing fits,** Jaxon keeps the command and the plan is the result.
+4. The routed task is created in the same transaction as `command.routed`, which goes from Jaxon to that building and carries the reason, the agent and how it was decided. The task's own letter then flies to the agent's floor.
+5. The agent starts and finishes it as usual.
+
+**Routable agents** are the ones whose input can come from a sentence:
+- Content Writer (`content_generate`): the brief, with the channel detected from the text
+- Daily Reporter (`daily_report`)
+- Research Scout (`opportunity_research`): only when the command includes source links
+
+The other agents need records first (a product, a campaign, an opportunity), so their work comes from launches and approvals.
+
+**Where routing shows up:**
+- Jaxon's orb panel lists each command, where its tasks went, **why**, and the memory used.
+- The ticker shows "Jaxon → agent: reason".
+
+Routing is opt-in per command (`route`, default false), so the console's commands behave exactly as before.

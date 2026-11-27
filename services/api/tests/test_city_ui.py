@@ -265,3 +265,39 @@ def test_orb_shows_routing_and_phone_list_opens_panels(client, world, make_token
         page.click("#open-inbox")
         page.wait_for_selector("[data-panel=inbox]")
         assert problems == [], problems
+
+
+# --- Phase 5: command bar -> Jaxon routing, end to end -----------------------------------------
+
+def test_typing_a_command_flies_to_jaxon_and_a_real_agent_starts(client, world, make_token,
+                                                                 maker, owner_db, drain):
+    """Acceptance 2: a row in commands (workflow_runs) and events, the letter flies, and a
+    real agent starts the routed task."""
+    from jackson_api.models import Event, Task, WorkflowRun
+
+    w = Worker(maker, retry_base_seconds=0)
+    w.city_heartbeat()
+    text = "Write an Instagram post about the magnetic grip"
+    with city(client, world, make_token(world.alice)) as (page, problems):
+        page.wait_for_selector(".label.ceo", state="attached", timeout=20_000)
+        page.fill("#command", text)
+        page.click(".command-bar button")
+        page.wait_for_selector(".cmd-msg:has-text('Sent to Jaxon')")
+        owner_db.expire_all()
+        run = owner_db.scalar(select(WorkflowRun).where(WorkflowRun.objective == text))
+        assert run is not None  # the command row
+        assert owner_db.scalar(select(Event.id).where(Event.run_id == run.id,
+                                                      Event.type == "command.issued"))
+        until(page, "window.__city.envelopes + window.__city.queued > 0")  # the letter flies
+        page.wait_for_selector(f".ticker li:has-text('Steady → Jaxon: {text}')")
+        w.run_once()  # Jaxon plans and routes
+        page.wait_for_selector(".ticker li:has-text('Jaxon → Content Writer')", timeout=15_000)
+        w.run_once()  # the Content Writer starts the routed task
+        owner_db.expire_all()
+        routed = owner_db.scalar(select(Task).where(Task.run_id == run.id,
+                                                    Task.kind == "content_generate"))
+        assert routed is not None and routed.started_at is not None
+        assert owner_db.scalar(select(Event.id).where(Event.task_id == routed.id,
+                                                      Event.type == "task.started"))
+        page.wait_for_selector(".ticker li:has-text('Done: Draft content')", timeout=15_000)
+        assert problems == [], problems

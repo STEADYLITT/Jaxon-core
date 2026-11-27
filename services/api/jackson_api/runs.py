@@ -159,7 +159,10 @@ def create_run(
         emit(db, tenant_id, "command.issued", from_=("ceo", "steady"), to=("jaxon", "jaxon"),
              run_id=run.id, payload={"text": run.objective[:500], "type": ctype.value,
                                      "issued_by": str(user_id)})
-    first = first_task or {"kind": "plan", "title": f"Plan: {run.objective[:280]}"}
+    first = first_task or {"kind": "plan", "title": f"Plan: {run.objective[:280]}",
+                           # Steady's typed command: Jaxon routes it after planning
+                           **({"input": {"route": True}}
+                              if announce and payload.get("route") else {})}
     add_task(db, run, **first)
     db.add(AuditEvent(
         tenant_id=tenant_id, actor_user_id=user_id, action="command.accepted",
