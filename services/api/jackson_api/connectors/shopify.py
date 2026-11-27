@@ -1,20 +1,27 @@
-"""Shopify draft-product connector (phase 15, ADR-025).
+"""Shopify draft-product connector (phase 15, ADR-025; real store support ADR-033).
 
 Backends:
-- MockShopify: the default. Clearly labeled `backend: "mock"`. Products live in the
-  `shop_products` table.
+- MockShopify: used when Shopify isn't configured. Clearly labeled `backend: "mock"`.
+  Products live in the `shop_products` table.
 - ShopifyAdmin: the real Admin GraphQL API (version 2026-10, checked against shopify.dev).
-  Used only when the grant sets mode "shopify" and SHOPIFY_ADMIN_API_TOKEN is in the
-  environment. The token never goes in the database, grants or logs. It's meant for a
-  DEVELOPMENT store: the grant must set dev_store=true.
+  Turned on by the owner's settings (names only):
+    SHOPIFY_STORE_DOMAIN   the store, e.g. cha6cs-6c.myshopify.com
+    SHOPIFY_CLIENT_ID + SHOPIFY_CLIENT_SECRET   a Dev Dashboard app created in the STORE'S
+        organization and installed on it: Jackson exchanges them for an Admin API token
+        with the client credentials grant (24h tokens, renewed automatically)
+    or SHOPIFY_ADMIN_API_TOKEN   a static Admin API token, if the owner has one
+  Secrets stay in the environment: never in the database, grants or logs.
 
 Flow: create the product as DRAFT -> set the variant price -> read it back and verify
-it's still DRAFT. Publishing (DRAFT -> ACTIVE) is a separate tool in the
-`production_change` category, so it always needs owner approval.
+it's still DRAFT. Jackson only ever creates DRAFTS. Publishing (DRAFT -> ACTIVE) is a
+separate `production_change`: it needs the owner's approval, or a Launch approval that
+allows Shopify publishing.
 """
 
 import os
 import re
+import threading
+import time
 import uuid
 
 import httpx
@@ -60,20 +67,78 @@ def _gql_errors(body: dict, key: str) -> None:
         raise NonRetryableError(f"Shopify rejected {key}: {user_errors}"[:500])
 
 
+STORE_RE = re.compile(r"[a-z0-9][a-z0-9-]*\.myshopify\.com")
+
+
+class ClientCredentials:
+    """Admin API tokens from the client credentials grant (shopify.dev: "Authenticate an
+    app for stores in your organization"): POST the app's client ID and secret to the
+    store's token endpoint, get a token valid 24h, renew before it expires or after a
+    401. Works only when the app and the store are in the same Shopify organization."""
+
+    MARGIN_S = 600
+
+    def __init__(self, store_domain: str, client_id: str, client_secret: str,
+                 client: httpx.Client | None = None, clock=time.monotonic):
+        self.url = f"https://{store_domain}/admin/oauth/access_token"
+        self._id, self._secret = client_id, client_secret
+        self._client = client or httpx.Client(timeout=20)
+        self._clock = clock
+        self._token, self._expires = None, 0.0
+        self._lock = threading.Lock()
+
+    def token(self) -> str:
+        with self._lock:
+            if self._token and self._clock() < self._expires - self.MARGIN_S:
+                return self._token
+            r = self._client.post(self.url, data={
+                "grant_type": "client_credentials", "client_id": self._id,
+                "client_secret": self._secret}, headers={"Accept": "application/json"})
+            if r.status_code == 429 or r.status_code >= 500:
+                r.raise_for_status()  # retryable
+            body = r.json() if r.headers.get("content-type", "").startswith(
+                "application/json") else {}
+            if r.status_code >= 400 or "access_token" not in body:
+                err = str(body.get("error") or body.get("errors") or r.status_code)
+                if "shop_not_permitted" in err:
+                    raise NonRetryableError(
+                        "Shopify refused the token: the Jackson app isn't in this store's "
+                        "organization. Create it from the store admin (Settings > Apps > "
+                        "Develop apps > Build apps in Dev Dashboard) and install it there; "
+                        "see docs/CONNECTORS.md")
+                raise NonRetryableError(f"Shopify token request failed ({err[:120]})")
+            self._token = body["access_token"]
+            self._expires = self._clock() + float(body.get("expires_in", 86399))
+            return self._token
+
+    def invalidate(self) -> None:
+        with self._lock:
+            self._token, self._expires = None, 0.0
+
+
 class ShopifyAdmin:
     backend = "shopify"
 
-    def __init__(self, store_domain: str, token: str, client: httpx.Client | None = None):
-        if not re.fullmatch(r"[a-z0-9][a-z0-9-]*\.myshopify\.com", store_domain or ""):
+    def __init__(self, store_domain: str, token, client: httpx.Client | None = None):
+        """`token` is a static Admin API token (str) or a ClientCredentials provider."""
+        if not STORE_RE.fullmatch(store_domain or ""):
             raise NonRetryableError("store_domain must be a <name>.myshopify.com domain")
         self.url = f"https://{store_domain}/admin/api/{API_VERSION}/graphql.json"
-        self._headers = {"X-Shopify-Access-Token": token, "Content-Type": "application/json"}
+        self._auth = token
         self._client = client or httpx.Client(timeout=20)
         self.store_domain = store_domain
 
+    def _headers(self) -> dict:
+        tok = self._auth if isinstance(self._auth, str) else self._auth.token()
+        return {"X-Shopify-Access-Token": tok, "Content-Type": "application/json"}
+
     def _gql(self, query: str, variables: dict) -> dict:
         r = self._client.post(self.url, json={"query": query, "variables": variables},
-                              headers=self._headers)
+                              headers=self._headers())
+        if r.status_code == 401 and not isinstance(self._auth, str):
+            self._auth.invalidate()  # token expired or revoked: get a fresh one, once
+            r = self._client.post(self.url, json={"query": query, "variables": variables},
+                                  headers=self._headers())
         if r.status_code == 429 or r.status_code >= 500:
             r.raise_for_status()  # retryable: the worker backs off
         if r.status_code >= 400:
@@ -173,16 +238,42 @@ class MockShopify:
         return f"mock://shopify/admin/products/{product_id.rsplit('/', 1)[-1]}"
 
 
+_providers: dict[tuple[str, str], ClientCredentials] = {}
+
+
+def live_config() -> dict | None:
+    """The owner's Shopify settings, if complete (values never leave this process)."""
+    domain = (os.environ.get("SHOPIFY_STORE_DOMAIN") or "").strip().lower()
+    token = os.environ.get("SHOPIFY_ADMIN_API_TOKEN")
+    cid, secret = os.environ.get("SHOPIFY_CLIENT_ID"), os.environ.get("SHOPIFY_CLIENT_SECRET")
+    if not domain or not (token or (cid and secret)):
+        return None
+    return {"domain": domain, "auth": "token" if token else "client_credentials"}
+
+
 def backend_for(grant_config: dict, db_session, tenant_id):
-    mode = (grant_config or {}).get("mode", "mock")
+    """Mock unless the owner configured Shopify. A grant may force mock; it can't point
+    Jackson at a different store than the one the owner configured."""
+    cfg = grant_config or {}
+    live = live_config()
+    mode = cfg.get("mode") or ("shopify" if live else "mock")
     if mode == "mock":
         return MockShopify(db_session, tenant_id)
     if mode != "shopify":
         raise NonRetryableError(f"unknown Shopify mode '{mode}'")
-    if not grant_config.get("dev_store"):
-        raise NonRetryableError("live Shopify access is for a development store only: the "
-                                "grant must set dev_store=true")
-    token = os.environ.get("SHOPIFY_ADMIN_API_TOKEN")
-    if not token:
-        raise NonRetryableError("SHOPIFY_ADMIN_API_TOKEN is not configured")
-    return ShopifyAdmin(grant_config.get("store_domain", ""), token)
+    if live is None:
+        raise NonRetryableError("Shopify isn't configured: set SHOPIFY_STORE_DOMAIN and "
+                                "SHOPIFY_CLIENT_ID + SHOPIFY_CLIENT_SECRET (or "
+                                "SHOPIFY_ADMIN_API_TOKEN)")
+    domain = live["domain"]
+    if cfg.get("store_domain") and cfg["store_domain"].strip().lower() != domain:
+        raise NonRetryableError("the grant names a different store than SHOPIFY_STORE_DOMAIN")
+    if not STORE_RE.fullmatch(domain):
+        raise NonRetryableError("SHOPIFY_STORE_DOMAIN must be a <name>.myshopify.com domain")
+    if live["auth"] == "token":
+        return ShopifyAdmin(domain, os.environ["SHOPIFY_ADMIN_API_TOKEN"])
+    key = (domain, os.environ["SHOPIFY_CLIENT_ID"])
+    if key not in _providers:  # one cached token per store/app across tasks
+        _providers[key] = ClientCredentials(domain, os.environ["SHOPIFY_CLIENT_ID"],
+                                            os.environ["SHOPIFY_CLIENT_SECRET"])
+    return ShopifyAdmin(domain, _providers[key])

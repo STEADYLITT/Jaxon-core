@@ -93,7 +93,7 @@ If the service won't start, open **Deploy Logs**. A `FAIL` line names the missin
 | `ANTHROPIC_API_KEY` | console.anthropic.com → **Settings → API keys** (add billing there) | research, copy, content drafts, agents | 08 (used by 12–18) |
 | `MODEL_MONTHLY_BUDGET_USD` | you choose (default 20) | AI spending cap | 08 |
 | `OWNER_EMAIL`, `OWNER_AUTH_SUBJECT` | your email; Clerk → **Users** → User ID | making you the owner | 03 |
-| `SHOPIFY_ADMIN_API_TOKEN` | a Shopify **development** store → Settings → Apps → Develop apps → create an app with product read/write → install → Admin API token | real draft products | 15 |
+| `SHOPIFY_STORE_DOMAIN`, `SHOPIFY_CLIENT_ID`, `SHOPIFY_CLIENT_SECRET` | your store + a Dev Dashboard app created from the store admin: see [`CONNECTORS.md`](CONNECTORS.md) | real draft products (drafts only) | 15 |
 | `SITE_DOMAIN_VERIFY` | set to `dns` when you launch a website on your own domain | real domain checks | 17 |
 | `CLERK_SECRET_KEY`, `S3_*`, `OPENAI_API_KEY` | **not needed now** | — | — |
 

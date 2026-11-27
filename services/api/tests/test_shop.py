@@ -110,17 +110,96 @@ def test_real_backend_errors():
         admin(FakeShopify(status=429)).find_by_handle("x")
 
 
-def test_live_mode_needs_dev_store_token_and_real_domain(monkeypatch):
-    monkeypatch.delenv("SHOPIFY_ADMIN_API_TOKEN", raising=False)
-    with pytest.raises(NonRetryableError, match="development store"):
-        backend_for({"mode": "shopify", "store_domain": "x.myshopify.com"}, None, None)
-    with pytest.raises(NonRetryableError, match="not configured"):
-        backend_for({"mode": "shopify", "store_domain": "x.myshopify.com", "dev_store": True},
-                    None, None)
+@pytest.fixture()
+def no_shopify_env(monkeypatch):
+    for v in ("SHOPIFY_ADMIN_API_TOKEN", "SHOPIFY_STORE_DOMAIN", "SHOPIFY_CLIENT_ID",
+              "SHOPIFY_CLIENT_SECRET"):
+        monkeypatch.delenv(v, raising=False)
+    shop_mod._providers.clear()
+
+
+def test_mock_until_the_owner_configures_shopify(no_shopify_env, monkeypatch):
+    assert backend_for({}, None, None).backend == "mock"
+    with pytest.raises(NonRetryableError, match="isn't configured"):
+        backend_for({"mode": "shopify"}, None, None)
+    monkeypatch.setenv("SHOPIFY_STORE_DOMAIN", "cha6cs-6c.myshopify.com")
+    assert backend_for({}, None, None).backend == "mock"  # domain alone isn't enough
+    monkeypatch.setenv("SHOPIFY_CLIENT_ID", "client-id-1")
+    monkeypatch.setenv("SHOPIFY_CLIENT_SECRET", "s" * 32)
+    live = backend_for({}, None, None)
+    assert live.backend == "shopify" and live.store_domain == "cha6cs-6c.myshopify.com"
+    assert backend_for({"mode": "mock"}, None, None).backend == "mock"  # owner can force mock
+
+
+def test_grants_cannot_point_at_another_store(no_shopify_env, monkeypatch):
+    monkeypatch.setenv("SHOPIFY_STORE_DOMAIN", "cha6cs-6c.myshopify.com")
     monkeypatch.setenv("SHOPIFY_ADMIN_API_TOKEN", FAKE_TOKEN)
+    with pytest.raises(NonRetryableError, match="different store"):
+        backend_for({"mode": "shopify", "store_domain": "evil.myshopify.com"}, None, None)
+    monkeypatch.setenv("SHOPIFY_STORE_DOMAIN", "evil.com")
     with pytest.raises(NonRetryableError, match="myshopify.com"):
-        backend_for({"mode": "shopify", "store_domain": "evil.com", "dev_store": True},
-                    None, None)
+        backend_for({}, None, None)
+
+
+class TokenEndpoint:
+    """Fake Shopify: the client credentials token endpoint + the GraphQL API."""
+
+    def __init__(self, graphql: FakeShopify, error=None, expire_first=False):
+        self.graphql, self.error, self.expire_first = graphql, error, expire_first
+        self.token_calls, self.n = [], 0
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/admin/oauth/access_token":
+            self.token_calls.append(dict(httpx.QueryParams(request.content.decode())))
+            if self.error:
+                return httpx.Response(400, json={"error": self.error})
+            self.n += 1
+            return httpx.Response(200, json={"access_token": f"tok-{self.n}",
+                                             "scope": "read_products,write_products",
+                                             "expires_in": 86399})
+        tok = request.headers["X-Shopify-Access-Token"]
+        if self.expire_first and tok == "tok-1":
+            return httpx.Response(401, json={"errors": "expired"})
+        return self.graphql(request)
+
+
+def creds(endpoint, clock=None):
+    client = httpx.Client(transport=httpx.MockTransport(endpoint))
+    kw = {"clock": clock} if clock else {}
+    return shop_mod.ClientCredentials("cha6cs-6c.myshopify.com", "client-id-1", "s" * 32,
+                                      client=client, **kw), client
+
+
+def test_client_credentials_grant_gets_and_reuses_a_token():
+    ep = TokenEndpoint(FakeShopify())
+    provider, client = creds(ep)
+    api = ShopifyAdmin("cha6cs-6c.myshopify.com", provider, client=client)
+    api.create_draft(DraftProductIn(title="Mag Grip", price=24.99))
+    assert ep.token_calls == [{"grant_type": "client_credentials", "client_id": "client-id-1",
+                               "client_secret": "s" * 32}]
+    graphql_calls = ep.graphql.calls
+    assert all(c[0].headers["X-Shopify-Access-Token"] == "tok-1" for c in graphql_calls)
+    assert len(ep.token_calls) == 1  # one token for all three calls
+
+
+def test_token_is_renewed_before_it_expires_and_after_a_401():
+    now = [0.0]
+    ep = TokenEndpoint(FakeShopify())
+    provider, client = creds(ep, clock=lambda: now[0])
+    assert provider.token() == "tok-1"
+    now[0] = 86399 - 599  # within 10 minutes of expiry: renew
+    assert provider.token() == "tok-2"
+    ep2 = TokenEndpoint(FakeShopify(), expire_first=True)
+    provider2, client2 = creds(ep2)
+    ShopifyAdmin("cha6cs-6c.myshopify.com", provider2, client=client2).find_by_handle("x")
+    assert len(ep2.token_calls) == 2  # 401 -> fresh token -> retried once
+
+
+def test_wrong_organization_gives_clear_instructions():
+    provider, _ = creds(TokenEndpoint(FakeShopify(), error="shop_not_permitted"))
+    with pytest.raises(NonRetryableError, match="Build apps in Dev Dashboard"):
+        provider.token()
+
 
 
 # --- First vertical slice: opportunity -> economics -> draft -> QA -----------------------------
@@ -240,8 +319,8 @@ def test_live_backend_end_to_end_keeps_token_out_of_storage(client, world, alice
     real_client = httpx.Client
     monkeypatch.setattr(shop_mod.httpx, "Client",
                         lambda **kw: real_client(transport=httpx.MockTransport(fake)))
-    opp = setup(client, world, alice, mode="shopify", store_domain="jackson-dev.myshopify.com",
-                dev_store=True)
+    monkeypatch.setenv("SHOPIFY_STORE_DOMAIN", "jackson-dev.myshopify.com")
+    opp = setup(client, world, alice, mode="shopify")
     run_id = build(client, world, alice, opp["id"], maker)
     run, tasks = run_state(owner_db, run_id)
     assert run.status == "succeeded", tasks[0].error
@@ -296,8 +375,8 @@ def test_verification_catches_a_store_that_does_not_match(client, world, alice, 
     real_client = httpx.Client
     monkeypatch.setattr(shop_mod.httpx, "Client",
                         lambda **kw: real_client(transport=httpx.MockTransport(fake)))
-    opp = setup(client, world, alice, mode="shopify", store_domain="jackson-dev.myshopify.com",
-                dev_store=True)
+    monkeypatch.setenv("SHOPIFY_STORE_DOMAIN", "jackson-dev.myshopify.com")
+    opp = setup(client, world, alice, mode="shopify")
     run_id = build(client, world, alice, opp["id"], maker)
     run, tasks = run_state(owner_db, run_id)
     assert run.status == "failed" and "QA failed" in tasks[0].error

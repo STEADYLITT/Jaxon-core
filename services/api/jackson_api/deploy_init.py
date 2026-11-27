@@ -36,6 +36,38 @@ def set_role_passwords(owner_url: str, passwords: dict[str, str]) -> None:
         eng.dispose()
 
 
+def ensure_connector_grants(session, tenant_id: str, owner_subject: str) -> list[str]:
+    """When the owner has configured Shopify on the host, give the owner's workspace the
+    `shopify.drafts` grant once (drafts only; publishing still needs an approval or a
+    Launch approval). Recorded in the audit log as the owner's configuration."""
+    import uuid as _uuid
+
+    from sqlalchemy import select
+
+    from .connectors.shopify import live_config
+    from .db import bind_tenant
+    from .models import AuditEvent, ToolGrant, User
+
+    added = []
+    tid = _uuid.UUID(tenant_id)
+    bind_tenant(session, tid)
+    owner = session.scalar(select(User).where(User.auth_subject == owner_subject))
+    if live_config() and session.scalar(select(ToolGrant.id).where(
+            ToolGrant.tenant_id == tid, ToolGrant.tool_name == "shopify.drafts",
+            ToolGrant.status == "active")) is None:
+        g = ToolGrant(tenant_id=tid, tool_name="shopify.drafts", status="active", config={},
+                      granted_by=owner.id)
+        session.add(g)
+        session.flush()
+        session.add(AuditEvent(tenant_id=tid, actor_user_id=owner.id, action="tool.granted",
+                               entity_type="ToolGrant", entity_id=g.id,
+                               data={"tool": "shopify.drafts",
+                                     "via": "host configuration (SHOPIFY_* variables)"}))
+        added.append("shopify.drafts")
+    session.commit()
+    return added
+
+
 def run(env=os.environ) -> dict:
     owner = env.get("MIGRATION_DATABASE_URL")
     if not owner:
@@ -62,7 +94,10 @@ def run(env=os.environ) -> dict:
             {"MIGRATION_DATABASE_URL": owner}, secrets_)["DATABASE_URL"]
         with make_sessionmaker(app_url)() as s:
             done["owner"] = str(seed_owner(s, email, subject))
+            done["grants"] = ensure_connector_grants(s, done["owner"], subject)
         print(f"owner: ready (tenant {done['owner']})")
+        for g in done["grants"]:
+            print(f"connector: {g} enabled for the owner's workspace (drafts only)")
     else:
         print("owner: not set up yet (set OWNER_EMAIL and OWNER_AUTH_SUBJECT, see DEPLOY.md)")
     return done

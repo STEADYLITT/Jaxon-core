@@ -25,7 +25,7 @@ class ShopHandle:
             self.business_id = run.business_id
             db.rollback()
         self.backend = backend_for(grant_config, worker.maker, self.tenant_id)
-        self.store = grant_config.get("store_domain")
+        self.store = getattr(self.backend, "store_domain", None)
 
     def _event(self, db, type_, **data):
         db.add(RunEvent(tenant_id=self.tenant_id, run_id=self.run_id, type=type_,
