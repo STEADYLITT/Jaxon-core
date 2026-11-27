@@ -39,6 +39,7 @@
         <th scope="col">Estimated revenue (not actual)</th></tr></thead><tbody></tbody></table>
     </section>
     <section aria-labelledby="ap-h"><h2 id="ap-h">Approvals inbox</h2><ul id="approvals"></ul></section>
+    <section aria-labelledby="la-h"><h2 id="la-h">Launches</h2><ul id="launches"></ul></section>
     <section aria-labelledby="m-h"><h2 id="m-h">Metrics (30 days)</h2><dl id="metrics"></dl></section>
     <section aria-labelledby="runs-h"><h2 id="runs-h">Workflow timeline</h2><ul id="runs"></ul></section>
     <section aria-labelledby="opp-h"><h2 id="opp-h">Opportunity board</h2><ul id="opps"></ul></section>
@@ -48,6 +49,40 @@
     <section aria-labelledby="c-h"><h2 id="c-h">Connectors</h2><ul id="connectors"></ul></section>
     <section aria-labelledby="au-h"><h2 id="au-h">Audit log</h2><ul id="audit"></ul></section>
   </div>
+  <dialog id="launchdlg" aria-labelledby="ld-h">
+    <form id="launchform" method="dialog">
+      <h2 id="ld-h">Launch approval</h2>
+      <p>One approval for the whole launch. Inside this scope Jackson acts on his own;
+        anything outside it still comes to your approvals inbox.</p>
+      <label for="lf-title">Name</label><input id="lf-title" required minlength="3">
+      <label for="lf-business">Business</label><select id="lf-business" required></select>
+      <label for="lf-budget">Total budget ($)</label>
+      <input id="lf-budget" type="number" min="0" step="1" required>
+      <label for="lf-cap">Daily spend cap ($)</label>
+      <input id="lf-cap" type="number" min="0" step="1" required>
+      <label for="lf-days">Duration</label>
+      <select id="lf-days"><option value="14">14 days</option>
+        <option value="30" selected>30 days</option><option value="60">60 days</option></select>
+      <fieldset><legend>Allowed channels</legend>
+        <label><input id="lf-shopify" type="checkbox"> Publish Shopify products</label>
+        <label><input id="lf-ads" type="checkbox"> Ad spend</label>
+        <label for="lf-social">Social accounts (comma-separated, e.g. instagram, tiktok)</label>
+        <input id="lf-social">
+        <label for="lf-email">Email lists (comma-separated list names)</label>
+        <input id="lf-email">
+      </fieldset>
+      <fieldset><legend>Kill rules</legend>
+        <label for="lf-cac">Stop if cost per sale is above ($)</label>
+        <input id="lf-cac" type="number" min="1" step="1">
+        <label for="lf-zero">Stop if no sales after (days)</label>
+        <input id="lf-zero" type="number" min="1" max="90" step="1">
+      </fieldset>
+      <label for="lf-plan">Plan</label><textarea id="lf-plan" rows="3"></textarea>
+      <p id="lf-err" role="alert"></p>
+      <button id="lf-go" type="submit" value="go">Approve launch</button>
+      <button type="submit" value="cancel" class="secondary" formnovalidate>Cancel</button>
+    </form>
+  </dialog>
 </main>
 </body>
 </html>

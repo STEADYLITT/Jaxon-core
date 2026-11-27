@@ -248,9 +248,12 @@ class CampaignIn(BaseModel):
     postal_address: str = Field(default="", max_length=500)
     subject_template: str = Field(default="", max_length=300)
     body_template: str = Field(min_length=10, max_length=20_000)
-    audience: dict = Field(default_factory=dict, description="{stages: [], min_score: 0}")
+    audience: dict = Field(default_factory=dict,
+                           description="{stages: [], min_score: 0, list: 'name'}")
     daily_limit: int = Field(default=50, ge=1, le=500)
     business_id: uuid.UUID | None = None
+    launch_id: uuid.UUID | None = Field(
+        default=None, description="send under this Launch approval if it names the list")
 
 
 class CampaignOut(BaseModel):
@@ -294,6 +297,12 @@ def _cout(db, k) -> CampaignOut:
 
 @router.post("/tenants/{tenant_id}/campaigns", status_code=201, response_model=CampaignOut)
 def create_campaign(tenant_id: uuid.UUID, body: CampaignIn, writer: TenantWriter, db: DB):
+    if body.launch_id is not None:
+        from .models import Launch
+
+        la = db.get(Launch, body.launch_id)
+        if la is None or la.tenant_id != tenant_id or la.business_id != body.business_id:
+            raise HTTPException(422, "launch not found for this business")
     k = OutreachCampaign(tenant_id=tenant_id, status="draft", **body.model_dump())
     db.add(k)
     db.flush()

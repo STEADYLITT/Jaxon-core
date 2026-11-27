@@ -257,11 +257,16 @@ def send_handler(ctx):
         k = db.get(OutreachCampaign, cid)
         if k is None or k.tenant_id != ctx.tenant_id:
             raise NonRetryableError("campaign not found")
-        if k.status not in ("approved", "sending") or k.approved_by is None:
+        person_approved = k.status in ("approved", "sending") and k.approved_by is not None
+        # Phase 21: a prepared campaign inside a Launch approval that names its list may be
+        # sent without a per-campaign approval (policy + DB trigger check the scope).
+        launch_ok = k.launch_id is not None and k.status in ("prepared", "approved", "sending")
+        if not (person_approved or launch_ok):
             raise NonRetryableError(f"campaign is {k.status}, not approved")
-        channel, limit = k.channel, k.daily_limit
+        channel, limit, target = k.channel, k.daily_limit, (k.audience or {}).get("list")
         db.rollback()
-    ctx.authorize(Action(Category.OUTBOUND_CAMPAIGN, f"send campaign {cid}"))
+    ctx.authorize(Action(Category.OUTBOUND_CAMPAIGN, f"send campaign {cid}", channel="email",
+                         target=target))
     sender = MockSender()
     out = {"sent": 0, "suppressed": 0, "deferred_quiet_hours": 0, "deferred_daily_limit": 0,
            "stopped": False}

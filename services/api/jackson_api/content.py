@@ -90,6 +90,8 @@ def generate_handler(ctx):
     """Draft content in a persona's voice. Every item is reviewed; nothing is approved."""
     import uuid
 
+    from sqlalchemy import select
+
     from .models import ContentItem, Persona
     from .worker import TaskResult
 
@@ -116,6 +118,9 @@ def generate_handler(ctx):
     items = json.loads(resp.text).get("items", [])
     created = []
     with ctx.db_session() as db:
+        from .models import WorkflowRun
+
+        launch_id = db.scalar(select(WorkflowRun.launch_id).where(WorkflowRun.id == ctx.run_id))
         for it in items[: int(inp.get("count", 3))]:
             body = it["body"]
             if persona and persona["kind"] == "virtual_influencer" and \
@@ -127,7 +132,8 @@ def generate_handler(ctx):
             rv = review(row, persona)
             c = ContentItem(tenant_id=ctx.tenant_id, business_id=ctx.business_id,
                             persona_id=uuid.UUID(persona["id"]) if persona else None,
-                            run_id=ctx.run_id, status="in_review" if rv["passed"] else "draft",
+                            run_id=ctx.run_id, launch_id=launch_id,
+                            status="in_review" if rv["passed"] else "draft",
                             review=rv, **row)
             db.add(c)
             db.flush()
@@ -152,11 +158,18 @@ def publish_handler(ctx):
         c = db.scalar(select(ContentItem).where(ContentItem.id == cid))
         if c is None or c.tenant_id != ctx.tenant_id:
             raise NonRetryableError("content not found")
-        if c.approved_by is None or c.status not in ("approved", "scheduled"):
+        person_approved = c.approved_by is not None and c.status in ("approved", "scheduled")
+        # Phase 21: inside a Launch approval, reviewed content may go out without a
+        # per-post approval; the policy check below and a DB trigger verify the scope.
+        launch_ok = (c.launch_id is not None and c.status in ("in_review", "approved",
+                                                              "scheduled")
+                     and (c.review or {}).get("passed") is True)
+        if not (person_approved or launch_ok):
             raise NonRetryableError(f"content is {c.status}, not approved")
         channel = c.channel
         db.rollback()
-    ctx.authorize(Action(Category.PUBLIC_POST, f"publish content {cid}"))
+    ctx.authorize(Action(Category.PUBLIC_POST, f"publish content {cid}", channel="social",
+                         target=channel))
     post_id = f"mock-post-{uuid.uuid4().hex[:10]}"  # MOCK social connector (ADR-007)
     with ctx.db_session() as db:
         c = db.get(ContentItem, cid)

@@ -175,6 +175,9 @@ class WorkflowRun(Base):
     request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="queued")
     paused: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Set when the run works under an owner's Launch approval (phase 21). Fixed at insert.
+    launch_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("launches.id", use_alter=True, name="fk_runs_launch"))
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _created()
@@ -667,8 +670,8 @@ class ContentItem(Base):
     __table_args__ = (
         CheckConstraint(f"status IN {CONTENT_STATUSES}", name="ck_content_status"),
         CheckConstraint(f"channel IN {CHANNELS}", name="ck_content_channel"),
-        CheckConstraint("status NOT IN ('approved','scheduled','published') "
-                        "OR approved_by IS NOT NULL", name="ck_content_needs_approval"),
+        # "Needs approval" is enforced by a trigger (ck_content_needs_approval): a person's
+        # approval, or an active Launch approval that covers this channel (phase 21).
     )
     id: Mapped[uuid.UUID] = _pk()
     tenant_id: Mapped[uuid.UUID] = mapped_column(
@@ -677,6 +680,7 @@ class ContentItem(Base):
     business_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("businesses.id"))
     persona_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("personas.id"))
     run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("workflow_runs.id"))
+    launch_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("launches.id"))
     channel: Mapped[str] = mapped_column(String(32), nullable=False)
     kind: Mapped[str] = mapped_column(String(32), nullable=False)
     title: Mapped[str] = mapped_column(String(300), nullable=False, default="")
@@ -817,8 +821,7 @@ class OutreachCampaign(Base):
         CheckConstraint(f"channel IN {OUTREACH_CHANNELS}", name="ck_campaign_channel"),
         CheckConstraint("status IN ('draft','prepared','approved','sending','completed',"
                         "'cancelled')", name="ck_campaign_status"),
-        CheckConstraint("status NOT IN ('approved','sending','completed') "
-                        "OR approved_by IS NOT NULL", name="ck_campaign_needs_approval"),
+        # ck_campaign_needs_approval is a trigger: a person, or a covering Launch approval.
         CheckConstraint("daily_limit BETWEEN 1 AND 500", name="ck_campaign_daily_limit"),
     )
     id: Mapped[uuid.UUID] = _pk()
@@ -826,6 +829,7 @@ class OutreachCampaign(Base):
         ForeignKey("tenants.id"), nullable=False, index=True
     )
     business_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("businesses.id"))
+    launch_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("launches.id"))
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     channel: Mapped[str] = mapped_column(String(8), nullable=False)
     sender_name: Mapped[str] = mapped_column(String(200), nullable=False)
@@ -897,4 +901,73 @@ class RevenueEntry(Base):
     source: Mapped[str] = mapped_column(String(16), nullable=False, default="manual")
     reference: Mapped[str] = mapped_column(String(300), nullable=False, default="")
     recorded_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = _created()
+
+
+LAUNCH_STATUSES = ("proposed", "active", "paused", "revoked", "completed", "killed", "expired",
+                   "rejected")
+
+
+class Launch(Base):
+    """A standing approval (phase 21, ADR-032): the owner approves a launch ONCE with a
+    budget, a daily cap, a time window, the channels allowed and kill rules. Inside that
+    scope Jackson acts without per-action approvals; anything outside it still goes to
+    the approvals inbox. Only the owner can approve, widen, resume or revoke it."""
+
+    __tablename__ = "launches"
+    __table_args__ = (
+        CheckConstraint(f"status IN {LAUNCH_STATUSES}", name="ck_launch_status"),
+        CheckConstraint("status IN ('proposed','rejected') OR (approved_by IS NOT NULL "
+                        "AND starts_at IS NOT NULL AND ends_at > starts_at)",
+                        name="ck_launch_approved"),
+        CheckConstraint("total_budget_cents >= 0 AND daily_cap_cents >= 0 "
+                        "AND daily_cap_cents <= total_budget_cents", name="ck_launch_budget"),
+    )
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    business_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("businesses.id"), nullable=False)
+    opportunity_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("opportunities.id"))
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    plan: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    proposed_by: Mapped[str] = mapped_column(String(16), nullable=False, default="owner")
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="proposed")
+    status_reason: Mapped[str | None] = mapped_column(Text)
+    total_budget_cents: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    daily_cap_cents: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    channels: Mapped[dict] = mapped_column(JSON().with_variant(JSONB(), "postgresql"),
+                                           nullable=False, default=dict)
+    kill_rules: Mapped[dict] = mapped_column(JSON().with_variant(JSONB(), "postgresql"),
+                                             nullable=False, default=dict)
+    starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    approved_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = _created()
+    updated_at: Mapped[datetime] = _updated()
+
+
+class LaunchSignal(Base):
+    """Outcome signals for a launch's kill rules and anomaly checks: sales, refunds,
+    sends, bounces, complaints, platform errors. Append-only."""
+
+    __tablename__ = "launch_signals"
+    __table_args__ = (
+        CheckConstraint("kind IN ('sale','refund','send','bounce','complaint',"
+                        "'platform_error')", name="ck_launch_signal_kind"),
+        CheckConstraint("quantity >= 0 AND amount_cents >= 0", name="ck_launch_signal_values"),
+        UniqueConstraint("launch_id", "kind", "external_ref"),
+    )
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    launch_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("launches.id"), nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    amount_cents: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    external_ref: Mapped[str | None] = mapped_column(String(300))
     created_at: Mapped[datetime] = _created()

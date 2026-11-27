@@ -63,12 +63,33 @@ def _approved(db: Session, task: Task, action: Action) -> bool:
 
 
 def decide(db: Session, task: Task, run: WorkflowRun, action: Action) -> Decision:
-    return evaluate(
+    d = evaluate(
         action,
         autonomy_level=_autonomy(db, run),
         budget_remaining_cents=budget_summary(db, run)["remaining_cents"],
         approved=_approved(db, task, action),
     )
+    if run.launch_id is None or d.outcome == Outcome.DENY:
+        return d
+    # Phase 21: inside an owner's Launch approval, in-scope actions run without asking
+    # (level 3 by the owner's decision). Out of scope still goes to the inbox, and spend
+    # always has to fit the launch's caps, whatever the business autonomy level.
+    from .launches import check_health, covers
+    from .models import Launch
+
+    launch = db.get(Launch, run.launch_id)
+    if launch is not None:
+        check_health(db, launch)  # anomalies / kill rules stop it before it acts
+    ok, why = covers(db, run.launch_id, run.business_id, action,
+                     lock=action.category == Category.SPEND)
+    if ok:
+        return Decision(Outcome.ALLOW, why)
+    if d.outcome == Outcome.ALLOW and action.category == Category.SPEND and \
+            not _approved(db, task, action):
+        return Decision(Outcome.REQUIRE_APPROVAL, f"outside the launch: {why}")
+    if d.outcome == Outcome.REQUIRE_APPROVAL:
+        return Decision(Outcome.REQUIRE_APPROVAL, f"{d.reason}; outside the launch: {why}")
+    return d
 
 
 def enforce(db: Session, task: Task, run: WorkflowRun, action: Action) -> None:

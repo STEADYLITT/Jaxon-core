@@ -59,6 +59,11 @@ class Action:
     category: Category
     description: str
     amount_cents: int = 0
+    # Which launch channel this belongs to (shopify_publish, social, email, ads) and its
+    # target (social account, email list). Used to match a Launch approval's scope. Not part
+    # of the fingerprint: a per-action approval stays bound to the description.
+    channel: str | None = None
+    target: str | None = None
 
     def fingerprint(self, task_id: uuid.UUID) -> str:
         raw = f"{task_id}|{self.category}|{self.amount_cents}|{self.description}"

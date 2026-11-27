@@ -57,6 +57,7 @@ from .models import (
     AgentSpec,
     AuditEvent,
     Business,
+    Launch,
     ModelUsage,
     RunEvent,
     Task,
@@ -143,6 +144,7 @@ def default_handlers() -> dict[str, Handler]:
     from .dashboard import report_handler
     from .planner import plan_handler  # lazy: planner imports TaskResult from here
     from .research import research_handler
+    from .routes_launches import propose_handler as launch_propose
     from .sites import build_handler as site_build
     from .sites import launch_handler as site_launch
     from .store_builder import publish_handler, store_build_handler
@@ -153,7 +155,7 @@ def default_handlers() -> dict[str, Handler]:
             "content_generate": content_generate, "content_publish": content_publish,
             "site_build": site_build, "site_launch": site_launch,
             "outreach_prepare": outreach_prepare, "outreach_send": outreach_send,
-            "daily_report": report_handler}
+            "daily_report": report_handler, "launch_propose": launch_propose}
 
 
 class ModelBudgetExhausted(NonRetryableError):
@@ -223,8 +225,11 @@ class Worker:
                 select(Task)
                 .join(WorkflowRun, WorkflowRun.id == Task.run_id)
                 .join(Tenant, Tenant.id == Task.tenant_id)
+                .outerjoin(Launch, Launch.id == WorkflowRun.launch_id)
                 .where(
                     Tenant.stopped_at.is_(None),  # global stop (also enforced by trigger)
+                    # a paused/stopped launch holds its runs' work until the owner acts
+                    (WorkflowRun.launch_id.is_(None)) | (Launch.status == "active"),
                     Task.status == TaskState.QUEUED.value,
                     (Task.next_attempt_at.is_(None)) | (Task.next_attempt_at <= func.now()),
                     WorkflowRun.paused.is_(False),
@@ -717,9 +722,28 @@ class Worker:
     def stop(self, *_args) -> None:
         self._stop.set()
 
+    def sweep_launches(self) -> list:
+        """Auto-pause / kill / expire launches whose rules fire (phase 21)."""
+        from .launches import sweep
+
+        with self.maker() as db:
+            changed = sweep(db)
+            db.commit()
+        for lid, status in changed:
+            log.warning("launch %s -> %s", lid, status)
+        return changed
+
     def serve(self, idle_sleep: float = 1.0) -> None:
         log.info("worker %s started", self.worker_id)
+        every = float(os.environ.get("LAUNCH_SWEEP_SECONDS", "60"))
+        last_sweep = 0.0
         while not self._stop.is_set():
+            if time.monotonic() - last_sweep >= every:
+                last_sweep = time.monotonic()
+                try:
+                    self.sweep_launches()
+                except Exception:  # noqa: BLE001 - never let the sweep stop the worker
+                    log.exception("launch sweep error")
             try:
                 worked = self.run_once()
             except Exception:  # noqa: BLE001 - keep serving; the DB holds the truth

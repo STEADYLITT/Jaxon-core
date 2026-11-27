@@ -96,7 +96,7 @@ def request_hash(payload: dict) -> str:
 
 def create_run(
     db: Session, tenant_id: uuid.UUID, user_id: uuid.UUID, payload: dict,
-    first_task: dict | None = None,
+    first_task: dict | None = None, launch_id: uuid.UUID | None = None,
 ) -> tuple[WorkflowRun, bool]:
     """Returns (run, created). created=False means an idempotent replay."""
     ctype = CommandType(payload["type"])
@@ -134,7 +134,7 @@ def create_run(
         budget_cents=payload.get("budget_cents"), deadline=payload.get("deadline"),
         constraints=payload.get("constraints") or [],
         success_criteria=payload.get("success_criteria") or [],
-        idempotency_key=key, request_hash=digest,
+        idempotency_key=key, request_hash=digest, launch_id=launch_id,
     )
     db.add(run)
     try:

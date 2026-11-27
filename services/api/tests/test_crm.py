@@ -383,10 +383,10 @@ def test_database_refuses_to_send_to_opted_out_or_unapproved(client, world, alic
     with maker() as db, pytest.raises(DBAPIError, match="permission denied"):
         db.execute(update(OutreachCampaign).where(OutreachCampaign.id == kid)
                    .values(approved_by=None))
-    with maker() as db:  # ...or skip approval: the row isn't updatable from 'prepared'
-        r = db.execute(update(OutreachCampaign).where(OutreachCampaign.id == kid)
-                       .values(status="sending"))
-        assert r.rowcount == 0
+    # ...or skip approval: no person and no covering launch approval -> refused
+    with maker() as db, pytest.raises(DBAPIError, match="ck_campaign_needs_approval"):
+        db.execute(update(OutreachCampaign).where(OutreachCampaign.id == kid)
+                   .values(status="sending"))
     # even an approved campaign can't send to an opted-out address
     approve(client, world, alice, k["id"])
     client.post(f"/tenants/{world.tenant_a}/suppressions", headers=alice,

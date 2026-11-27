@@ -96,7 +96,34 @@ function render(d) {
 
   const op = $("opps"); clear(op);
   Object.entries(d.opportunities.by_status).forEach(([s, n]) => li(op, `${s}: ${n}`));
-  d.opportunities.top.forEach((o) => li(op, `★ ${o.title} — score ${o.score}`));
+  d.opportunities.top.forEach((o) => {
+    const el = li(op, `★ ${o.title} — score ${o.score} `);
+    const b = document.createElement("button");
+    b.textContent = "Launch"; b.className = "launch";
+    b.addEventListener("click", () => openLaunch(o, d.portfolio.businesses));
+    el.appendChild(b);
+  });
+  if (!d.opportunities.top.length) li(op, "No opportunities yet.");
+
+  const la = $("launches"); clear(la);
+  if (!d.launches.length) li(la, "No launches yet. Use Launch on an opportunity.");
+  d.launches.forEach((x) => {
+    const el = li(la, `${x.title} · ${x.status}` +
+      (x.status_reason ? ` (${x.status_reason})` : "") +
+      ` · spent ${money(x.spend_cents)} of ${money(x.total_budget_cents)}` +
+      ` · cap ${money(x.daily_cap_cents)}/day · ${x.sales} sale(s) `,
+      ["paused", "killed"].includes(x.status) ? "warning" : "");
+    const acts = x.status === "active" ? ["pause", "revoke"]
+      : ["paused", "killed", "completed"].includes(x.status) ? ["resume", "revoke"] : [];
+    acts.forEach((a) => {
+      const b = document.createElement("button");
+      b.textContent = a[0].toUpperCase() + a.slice(1); b.className = "secondary";
+      b.addEventListener("click", async () => {
+        await api(`/launches/${x.id}/${a}`, { method: "POST" }); load();
+      });
+      el.appendChild(b);
+    });
+  });
 
   const ag = $("agents"); clear(ag);
   if (!d.agents.length) li(ag, "No agents yet.");
@@ -117,6 +144,46 @@ function render(d) {
 
   const au = $("audit"); clear(au);
   d.audit.forEach((e) => li(au, `${e.at.slice(0, 16).replace("T", " ")} · ${e.action}`));
+}
+
+function openLaunch(opp, businesses) {
+  const sel = $("lf-business"); clear(sel);
+  businesses.filter((b) => b.business_id).forEach((b) => {
+    const o = document.createElement("option");
+    o.value = b.business_id; o.textContent = b.business;
+    if (b.business_id === opp.business_id) o.selected = true;
+    sel.appendChild(o);
+  });
+  $("lf-title").value = `Launch: ${opp.title}`.slice(0, 200);
+  $("lf-err").textContent = "";
+  $("launchform").dataset.opportunity = opp.id;
+  $("launchdlg").showModal();
+}
+
+const dollars = (id) => Math.round(Number($(id).value || 0) * 100);
+const list = (id) => $(id).value.split(",").map((x) => x.trim()).filter(Boolean);
+
+async function submitLaunch(ev) {
+  if (ev.submitter && ev.submitter.value === "cancel") return;
+  ev.preventDefault();
+  const body = {
+    title: $("lf-title").value, business_id: $("lf-business").value,
+    opportunity_id: $("launchform").dataset.opportunity || null, plan: $("lf-plan").value,
+    total_budget_cents: dollars("lf-budget"), daily_cap_cents: dollars("lf-cap"),
+    duration_days: Number($("lf-days").value),
+    channels: { shopify_publish: $("lf-shopify").checked, ads: $("lf-ads").checked,
+      social_accounts: list("lf-social"), email_lists: list("lf-email") },
+    kill_rules: {
+      max_cac_cents: $("lf-cac").value ? dollars("lf-cac") : null,
+      zero_sales_after_days: $("lf-zero").value ? Number($("lf-zero").value) : null },
+  };
+  try {
+    await api("/launches", { method: "POST", body: JSON.stringify(body) });
+    $("launchdlg").close();
+    load();
+  } catch (e) {
+    $("lf-err").textContent = `Couldn't approve the launch (${e.message}).`;
+  }
 }
 
 async function load() {
@@ -178,6 +245,7 @@ async function startWithClerk(key) {
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
+  $("launchform").addEventListener("submit", submitLaunch);
   $("stop").addEventListener("click", async () => {
     const reason = window.prompt("GLOBAL STOP: all running work is cancelled and nothing new " +
       "starts until you resume. Why are you stopping?");
