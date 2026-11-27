@@ -93,7 +93,16 @@ def plan_handler(ctx):
     supplied = {m["memory_id"]: m["citation"] for m in memories}
     used = [i for i in plan.get("memory_used", []) if i in supplied]
     plan["memory_used"] = used
-    return TaskResult(output={
+    follow_ups, route = [], None
+    if (ctx.input or {}).get("route"):  # a command Steady typed: Jaxon routes it
+        from .router import route as pick
+
+        r = pick(ctx, ctx.objective)
+        route = {k: r[k] for k in ("kind", "reason", "via")}
+        if r.get("kind"):
+            follow_ups.append((r["kind"], r["title"], r["input"]))
+    return TaskResult(follow_ups=follow_ups, output={
+        "route": route,
         "mode": resp.mode,
         "provider": resp.provider,
         "model": resp.model,

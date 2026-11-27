@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { parseSse } from "../src/lib/api";
-import { MAX_ENVELOPES, admit, effectsFor, type Effect } from "../src/lib/effects";
+import { MAX_ENVELOPES, admit, describe as describeEvent, effectsFor, type Effect } from "../src/lib/effects";
 import { CEO_TOP, ORB, STATUS_COLOR, anchor, buildingPos, windowColor, windows } from "../src/lib/layout";
 import { seeded } from "../src/lib/rand";
 import { useCity } from "../src/lib/store";
@@ -48,6 +48,11 @@ describe("envelopes and beams come only from events", () => {
     expect(done.map((e) => e.kind)).toEqual(["envelope", "beam"]);
     expect(done[1]).toMatchObject({ color: "#39ff88" });
     expect(effectsFor(ev(14, "revenue.recorded"), s, 0)[0]).toMatchObject({ kind: "beam", color: "#ffd166" });
+  });
+  it("routing reads as Jaxon's decision with its reason", () => {
+    const e = ev(30, "command.routed", { payload: { agent: "Content Writer", reason: "the command mentions 'post'" } });
+    expect(describeEvent(e)).toBe("Jaxon → Content Writer: the command mentions 'post'");
+    expect(effectsFor(e, s, 0)).toEqual([]); // the task's own letter does the flying
   });
   it("logs and heartbeats only pulse the orb", () => {
     for (const t of ["agent.log", "tool.called", "agent.heartbeat", "cost.recorded"]) {

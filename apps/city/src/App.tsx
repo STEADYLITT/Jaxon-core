@@ -6,6 +6,7 @@ import { pickMode, type Mode } from "./lib/mode";
 import { useCity } from "./lib/store";
 import { Hud } from "./ui/Hud";
 import { ListView } from "./ui/ListView";
+import { CommandBar } from "./ui/CommandBar";
 import { Panels } from "./ui/Panels";
 import { Ticker } from "./ui/Ticker";
 
@@ -104,6 +105,7 @@ export function App() {
       )}
       {!showList && <a className="nav-console" href="/console">Classic console</a>}
       <Panels />
+      <CommandBar />
       <Ticker />
     </div>
   );

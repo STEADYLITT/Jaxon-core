@@ -37,6 +37,9 @@ class CommandIn(BaseModel):
     constraints: list[str] = Field(default_factory=list, max_length=50)
     success_criteria: list[str] = Field(default_factory=list, max_length=50)
     target_run_id: uuid.UUID | None = None  # PAUSE / RESUME / STOP only
+    # Phase 23: from the City's command bar. After planning, Jaxon routes the command to the
+    # department agent that can do it and records why (command.routed).
+    route: bool = False
 
 
 class TaskOut(BaseModel):
@@ -99,7 +102,8 @@ def post_command(tenant_id: uuid.UUID, body: CommandIn, writer: TenantWriter, db
                               writer.user_id)
             status = 200
         else:
-            payload = body.model_dump(exclude={"target_run_id"})
+            payload = body.model_dump(exclude={"target_run_id"} | (
+                set() if body.route else {"route"}))  # unchanged idempotency hashes
             run, created = create_run(db, tenant_id, writer.user_id, payload, announce=True)
             status = 201 if created else 200
     except CommandError as e:
