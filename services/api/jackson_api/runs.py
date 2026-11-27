@@ -86,6 +86,9 @@ def add_task(db: Session, run: WorkflowRun, kind: str, title: str, **extra) -> T
     db.add(task)
     db.flush()
     _event(db, run, "task.created", task_id=str(task.id), sequence=seq, kind=kind)
+    from .city import on_task
+
+    on_task(db, task, "task.created", sequence=seq)
     return task
 
 
@@ -97,6 +100,7 @@ def request_hash(payload: dict) -> str:
 def create_run(
     db: Session, tenant_id: uuid.UUID, user_id: uuid.UUID, payload: dict,
     first_task: dict | None = None, launch_id: uuid.UUID | None = None,
+    announce: bool = False,
 ) -> tuple[WorkflowRun, bool]:
     """Returns (run, created). created=False means an idempotent replay."""
     ctype = CommandType(payload["type"])
@@ -149,6 +153,12 @@ def create_run(
         return _replay(existing, digest), False
 
     _event(db, run, "run.created", command_type=ctype.value)
+    if announce:  # a command Steady typed: the letter from the CEO tower to Jaxon
+        from .city import emit
+
+        emit(db, tenant_id, "command.issued", from_=("ceo", "steady"), to=("jaxon", "jaxon"),
+             run_id=run.id, payload={"text": run.objective[:500], "type": ctype.value,
+                                     "issued_by": str(user_id)})
     first = first_task or {"kind": "plan", "title": f"Plan: {run.objective[:280]}"}
     add_task(db, run, **first)
     db.add(AuditEvent(
