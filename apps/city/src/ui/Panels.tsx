@@ -1,0 +1,238 @@
+// Side panels: a building's floors, one agent (with real controls), Jaxon's routing brain,
+// and Steady's inbox in the CEO tower. Everything is fetched from the API; buttons call the
+// real endpoints and the panel refreshes from the database afterwards.
+import { useEffect, useMemo, useState } from "react";
+
+import { api, post } from "../lib/api";
+import { describe } from "../lib/effects";
+import { windowState } from "../lib/layout";
+import { useCity, type Focus } from "../lib/store";
+import type { AgentDetail, JaxonView } from "../lib/types";
+
+const money = (c: number) => `$${(c / 100).toFixed(2)}`;
+const STATE: Record<string, string> = {
+  working: "working", just_done: "just finished", done: "done", waiting: "waiting for approval",
+  failed: "failed", offline: "offline", paused: "paused", killed: "killed", idle: "idle",
+};
+
+function useEvery<T>(load: () => Promise<T>, deps: unknown[], ms = 2500): [T | null, () => void] {
+  const [data, setData] = useState<T | null>(null);
+  const lastEvent = useCity((st) => st.lastEventId);
+  const reload = () => { load().then(setData).catch(() => undefined); };
+  useEffect(() => {
+    reload();
+    const t = window.setInterval(reload, ms);
+    return () => window.clearInterval(t);
+  }, deps); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { reload(); }, [lastEvent]); // eslint-disable-line react-hooks/exhaustive-deps
+  return [data, reload];
+}
+
+function Shell({ title, onClose, children, label }: {
+  title: string; onClose: () => void; children: React.ReactNode; label: string;
+}) {
+  return (
+    <aside className="panel-side" aria-label={label} data-panel={label}>
+      <header>
+        <h2>{title}</h2>
+        <button className="close" onClick={onClose} aria-label="Close">×</button>
+      </header>
+      <div className="panel-body">{children}</div>
+    </aside>
+  );
+}
+
+function BuildingPanel({ id }: { id: string }) {
+  const s = useCity((st) => st.snapshot);
+  const setFocus = useCity((st) => st.setFocus);
+  const d = s?.departments.find((x) => x.id === id);
+  if (!s || !d) return null;
+  return (
+    <Shell title={d.name} label="building" onClose={() => setFocus(null)}>
+      {!d.staffed && <p className="muted">Not staffed: no agent does this work yet.</p>}
+      <ol className="floors">
+        {d.floors.map((f) => {
+          const agents = f.agents.map((aid) => s.agents.find((a) => a.id === aid)).filter((a) => !!a);
+          return (
+            <li key={f.id}>
+              <button className="floor" disabled={!agents.length}
+                onClick={() => setFocus({ kind: "floor", deptId: d.id, floorId: f.id })}>
+                <span>Floor {f.level} · {f.name}</span>
+                <span className="muted">{agents.length ? `${agents.length} agent${agents.length > 1 ? "s" : ""}` : "empty"}</span>
+              </button>
+              <ul className="mini">{agents.map((a) => (
+                <li key={a!.id} data-state={windowState(a!)}><span className="dot" />{a!.name} · {STATE[windowState(a!)]}</li>
+              ))}</ul>
+            </li>
+          );
+        })}
+      </ol>
+    </Shell>
+  );
+}
+
+export function AgentPanel({ id }: { id: string }) {
+  const setFocus = useCity((st) => st.setFocus);
+  const focus = useCity((st) => st.focus);
+  const all = useCity((st) => st.snapshot?.agents); // stable reference; derive below
+  const others = useMemo(() => (all ?? []).filter((a) => a.key.startsWith("spec:") && a.id !== id),
+    [all, id]);
+  const [d, reload] = useEvery(() => api<AgentDetail>(`/city/agents/${id}`), [id]);
+  const [busy, setBusy] = useState("");
+  const [msg, setMsg] = useState("");
+  const [to, setTo] = useState("");
+  const back = focus && focus.kind === "agent" ? (focus.from ?? null) : null;
+  async function act(action: string, body?: unknown) {
+    if (action === "kill" && !window.confirm("Kill this agent? Its running task is stopped now.")) return;
+    setBusy(action); setMsg("");
+    try {
+      const r = await post<{ status: string; pending_stop: boolean }>(`/city/agents/${id}/${action}`, body);
+      setMsg(r.pending_stop ? "Stopping its process…" : `Now ${r.status}.`);
+    } catch (e) { setMsg((e as Error).message); }
+    setBusy(""); reload();
+  }
+  if (!d) return <Shell title="Agent" label="agent" onClose={() => setFocus(back)}><p className="muted">Loading…</p></Shell>;
+  const st = windowState(d);
+  return (
+    <Shell title={d.name} label="agent" onClose={() => setFocus(back)}>
+      <p className="role">{d.role}</p>
+      <p data-state={st} className="state"><span className="dot" />{STATE[st]}{d.model ? ` · ${d.model}` : ""}</p>
+      <dl className="stats">
+        <div><dt>Cost today</dt><dd>${d.cost_today_usd.toFixed(4)}</dd></div>
+        <div><dt>Done today</dt><dd>{d.done_today}</dd></div>
+        <div><dt>Failed today</dt><dd>{d.failed_today}</dd></div>
+        <div><dt>Success (7d)</dt><dd>{d.success_rate_7d === null ? "no data" : `${Math.round(d.success_rate_7d * 100)}%`}</dd></div>
+      </dl>
+      <section>
+        <h3>Current task</h3>
+        {d.current_task ? (
+          <>
+            <p>{d.current_task.title}</p>
+            {d.time_on_task_s !== null && <p className="muted">on it for {d.time_on_task_s}s</p>}
+            <ol className="trace" aria-label="Trace back to Steady's command">
+              {d.trace.map((t, i) => <li key={i}>{t.command ? `Steady: “${t.command}”` : `${t.title} (${t.status})`}</li>)}
+            </ol>
+          </>
+        ) : <p className="muted">No task right now.</p>}
+      </section>
+      <div className="controls">
+        <button disabled={!d.controls.pause || !!busy} onClick={() => act("pause")}>Pause</button>
+        <button disabled={!d.controls.resume || !!busy} onClick={() => act("resume")}>Resume</button>
+        <button className="danger" disabled={!d.controls.kill || !!busy} onClick={() => act("kill")}>Kill</button>
+      </div>
+      {d.controls.reassign && (
+        <div className="controls">
+          <select value={to} onChange={(e) => setTo(e.target.value)} aria-label="Reassign to">
+            <option value="">Reassign to…</option>
+            {others.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+          </select>
+          <button disabled={!to || !!busy} onClick={() => act("reassign", { to_agent_id: to })}>Reassign</button>
+        </div>
+      )}
+      {msg && <p className="msg" role="status">{msg}</p>}
+      <section>
+        <h3>Live log</h3>
+        {d.log.length ? <ol className="log">{d.log.map((e) => <li key={e.id}>{String(e.payload["line"] ?? "")}</li>)}</ol>
+          : <p className="muted">No log lines yet.</p>}
+      </section>
+      <section>
+        <h3>Tools called</h3>
+        {d.tools.length ? <ul className="log">{d.tools.map((e) => <li key={e.id}>{describe(e)}</li>)}</ul>
+          : <p className="muted">None yet.</p>}
+      </section>
+    </Shell>
+  );
+}
+
+function JaxonPanel() {
+  const setFocus = useCity((st) => st.setFocus);
+  const [v] = useEvery(() => api<JaxonView>("/city/jaxon"), []);
+  return (
+    <Shell title="Jaxon · routing" label="jaxon" onClose={() => setFocus(null)}>
+      {!v ? <p className="muted">Loading…</p> : !v.commands.length
+        ? <p className="muted">No commands yet. Type one in the command bar.</p> : (
+        <ol className="commands">{v.commands.map((c) => (
+          <li key={c.run_id}>
+            <p><strong>“{c.command}”</strong> <span className="muted">· {c.status}</span></p>
+            <ul>{c.routed_to.map((r, i) => (
+              <li key={i}><button className="link" onClick={() => setFocus({ kind: "agent", id: r.agent_id, from: { kind: "jaxon" } })}>
+                {r.department} → {r.agent}</button>: {r.task} <span className="muted">({r.status})</span></li>
+            ))}</ul>
+            {c.routing_reasons.map((e) => <p key={e.id} className="muted">why: {String(e.payload["reason"] ?? "")}</p>)}
+            {c.memory.filter((m) => m.offered !== null).map((m, i) => (
+              <p key={i} className="muted">memory: {m.offered} looked up, {(m.cited ?? []).length} cited</p>
+            ))}
+          </li>
+        ))}</ol>
+      )}
+    </Shell>
+  );
+}
+
+export function InboxPanel() {
+  const s = useCity((st) => st.snapshot);
+  const setFocus = useCity((st) => st.setFocus);
+  const [msg, setMsg] = useState("");
+  async function decide(id: string, decision: "approve" | "reject") {
+    setMsg("");
+    try {
+      await post(`/approvals/${id}/decision`, { decision });
+      setMsg(decision === "approve" ? "Approved: the agent continues." : "Denied: the task stops.");
+    } catch (e) { setMsg((e as Error).message); }
+  }
+  if (!s) return null;
+  return (
+    <Shell title="Steady's inbox" label="inbox" onClose={() => setFocus(null)}>
+      <section>
+        <h3>Approvals</h3>
+        {!s.inbox.approvals.length ? <p className="muted">Nothing waiting for you.</p> : (
+          <ul className="approvals">{s.inbox.approvals.map((a) => (
+            <li key={a.id} className="sealed" data-approval={a.id}>
+              <p>{a.question}{a.amount_cents ? <strong> {money(a.amount_cents)}</strong> : null}</p>
+              <p className="muted">{a.reason}</p>
+              <div className="controls">
+                <button onClick={() => decide(a.id, "approve")}>Approve</button>
+                <button className="danger" onClick={() => decide(a.id, "reject")}>Deny</button>
+              </div>
+            </li>
+          ))}</ul>
+        )}
+      </section>
+      {msg && <p className="msg" role="status">{msg}</p>}
+      <section>
+        <h3>Alerts</h3>
+        {!s.inbox.alerts.length ? <p className="muted">No alerts.</p> : (
+          <ul>{s.inbox.alerts.map((a, i) => <li key={i} data-level={a.level}>{a.message ?? a.kind}</li>)}</ul>
+        )}
+      </section>
+    </Shell>
+  );
+}
+
+function FloorPanel({ deptId, floorId }: { deptId: string; floorId: string }) {
+  const s = useCity((st) => st.snapshot);
+  const setFocus = useCity((st) => st.setFocus);
+  const d = s?.departments.find((x) => x.id === deptId);
+  const f = d?.floors.find((x) => x.id === floorId);
+  if (!d || !f) return null;
+  return (
+    <div className="floor-bar">
+      <button className="link" onClick={() => setFocus({ kind: "building", id: deptId })}>← {d.name}</button>
+      <span>Floor {f.level} · {f.name}</span>
+      <span className="muted">tap a robot for its controls</span>
+    </div>
+  );
+}
+
+export function Panels() {
+  const focus: Focus = useCity((st) => st.focus);
+  if (!focus) return null;
+  switch (focus.kind) {
+    case "building": return <BuildingPanel id={focus.id} />;
+    case "floor": return <FloorPanel deptId={focus.deptId} floorId={focus.floorId} />;
+    case "agent": return <AgentPanel id={focus.id} />;
+    case "jaxon": return <JaxonPanel />;
+    case "ceo": return <InboxPanel />;
+    default: return null;
+  }
+}

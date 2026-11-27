@@ -26,7 +26,7 @@ from sqlalchemy.orm import Session
 from . import city
 from .contracts import TaskState
 from .db import bind_tenant, make_sessionmaker
-from .deps import DB, TenantMember
+from .deps import DB, TenantMember, TenantWriter
 from .models import (
     Agent,
     Approval,
@@ -264,6 +264,169 @@ def city_stream(tenant_id: uuid.UUID, member: TenantMember,
         after = max(after, int(last_event_id))
     return StreamingResponse(_stream(tenant_id, after, timeout), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+# --- Inside the buildings: one agent's live monitor, Jaxon's routing view (phase 4) -----------
+
+def _get_agent(db: Session, tenant_id: uuid.UUID, agent_id: uuid.UUID) -> Agent:
+    a = db.scalar(select(Agent).where(Agent.id == agent_id, Agent.tenant_id == tenant_id))
+    if a is None:
+        raise HTTPException(404, "agent not found")
+    return a
+
+
+@router.get("/tenants/{tenant_id}/city/agents/{agent_id}")
+def agent_detail(tenant_id: uuid.UUID, agent_id: uuid.UUID, member: TenantMember,
+                 db: DB) -> dict:
+    """What the agent's desk monitor shows: current task traced back to Steady's command,
+    the last 8 log lines, recent tool calls, time on task, today's numbers."""
+    a = _get_agent(db, tenant_id, agent_id)
+    snap = {x["id"]: x for x in snapshot(db, tenant_id)["agents"]}
+    me = snap[str(a.id)]
+    task = db.get(Task, a.current_task_id) if a.current_task_id else None
+    trace = []
+    if task is not None:
+        run = db.get(WorkflowRun, task.run_id)
+        chain, t = [], task
+        while t is not None and len(chain) < 10:
+            chain.append({"id": str(t.id), "title": t.title, "kind": t.kind, "status": t.status})
+            t = db.get(Task, t.parent_task_id) if t.parent_task_id else None
+        trace = [{"command": run.objective, "run_id": str(run.id), "type": run.command_type,
+                  "issued_at": _iso(run.created_at)}, *reversed(chain)]
+    def last(types, n):
+        return [event_dict(e) for e in db.scalars(select(Event).where(
+            Event.tenant_id == tenant_id, Event.agent_id == a.id, Event.type.in_(types))
+            .order_by(Event.id.desc()).limit(n))]
+    started = task.started_at if task else None
+    return {**me, "trace": trace,
+            "time_on_task_s": int((datetime.now(UTC) - started).total_seconds())
+            if started else None,
+            "log": last(("agent.log",), 8), "tools": last(("tool.called",), 8),
+            "recent": last(("task.completed", "task.failed", "agent.killed",
+                            "approval.requested"), 10),
+            "controls": {"pause": a.status not in ("paused", "killed"),
+                         "resume": a.status in ("paused", "killed"),
+                         "kill": a.status != "killed",
+                         "reassign": a.key.startswith("spec:") and task is not None
+                         and task.status in ("queued", "waiting_approval")}}
+
+
+@router.get("/tenants/{tenant_id}/city/jaxon")
+def jaxon_view(tenant_id: uuid.UUID, member: TenantMember, db: DB) -> dict:
+    """The routing brain: recent commands from Steady, where each one's tasks went, and the
+    memory Jaxon looked up for it. All from runs, tasks and events."""
+    runs = db.scalars(select(WorkflowRun).where(WorkflowRun.tenant_id == tenant_id)
+                      .order_by(WorkflowRun.created_at.desc()).limit(10)).all()
+    depts = {d.id: d.name for d in db.scalars(select(Department).where(
+        Department.tenant_id == tenant_id))}
+    out = []
+    for r in runs:
+        tasks = db.scalars(select(Task).where(Task.run_id == r.id).order_by(Task.sequence)).all()
+        routed = []
+        for t in tasks:
+            a = city.agent_for_task(db, t)
+            routed.append({"task": t.title, "status": t.status, "agent": a.name,
+                           "agent_id": str(a.id),
+                           "department": depts.get(a.department_id, "Jaxon")})
+        reasons = [event_dict(e) for e in db.scalars(select(Event).where(
+            Event.run_id == r.id, Event.type == "command.routed").order_by(Event.id))]
+        memory = [{"offered": (t.output or {}).get("memory_offered"),
+                   "cited": (t.output or {}).get("memory_citations")}
+                  for t in tasks if t.kind == "plan" and t.output]
+        out.append({"run_id": str(r.id), "command": r.objective, "type": r.command_type,
+                    "status": r.status, "at": _iso(r.created_at), "routed_to": routed,
+                    "routing_reasons": reasons, "memory": memory})
+    db.commit()
+    return {"commands": out}
+
+
+# --- Controls: they act first, and only then is the event emitted --------------------------
+
+def _admin(m) -> None:
+    if m.role not in ("owner", "admin"):
+        raise HTTPException(403, "only the owner or an admin can control agents")
+
+
+@router.post("/tenants/{tenant_id}/city/agents/{agent_id}/{action}")
+def control_agent(tenant_id: uuid.UUID, agent_id: uuid.UUID, action: str,
+                  writer: TenantWriter, db: DB, body: dict | None = None) -> dict:
+    """pause: no new work, and its current run is paused (the worker stops at its next
+    check). resume: lifts a pause or kill. kill: the worker terminates the task's process,
+    records it, then emits agent.killed. reassign: moves a waiting task of an AgentSpec
+    agent to another active AgentSpec agent."""
+    from .governance import audit
+    from .models import AgentSpec
+
+    _admin(writer)
+    a = _get_agent(db, tenant_id, agent_id)
+    task = db.get(Task, a.current_task_id) if a.current_task_id else None
+    running = task is not None and task.status == TaskState.RUNNING.value
+    now = datetime.now(UTC)
+    if action == "pause":
+        if a.status in ("paused", "killed"):
+            raise HTTPException(409, f"agent is already {a.status}")
+        a.status, a.status_changed_at = "paused", now
+        paused_run = None
+        if task is not None and task.status not in ("succeeded", "failed", "canceled"):
+            run = db.get(WorkflowRun, task.run_id)
+            if not run.paused and run.status not in ("succeeded", "failed", "canceled"):
+                run.paused, paused_run = True, str(run.id)
+        db.flush()  # the hold is in place before anyone hears about it
+        city.emit(db, tenant_id, "agent.paused", from_=("ceo", "steady"), agent_id=a.id,
+                  task_id=task.id if task else None,
+                  payload={"paused_run": paused_run, "by": str(writer.user_id)})
+    elif action == "resume":
+        if a.status not in ("paused", "killed"):
+            raise HTTPException(409, f"agent is {a.status}, not paused or killed")
+        was = a.status
+        a.status, a.status_changed_at = "idle", now
+        if task is not None and was == "paused":
+            run = db.get(WorkflowRun, task.run_id)
+            if run.paused:
+                run.paused = False
+        db.flush()
+        city.emit(db, tenant_id, "agent.resumed", from_=("ceo", "steady"), agent_id=a.id,
+                  payload={"was": was, "by": str(writer.user_id)})
+    elif action == "kill":
+        if a.status == "killed":
+            raise HTTPException(409, "agent is already killed")
+        a.status, a.status_changed_at = "killed", now
+        if not running:  # nothing is executing: the hold itself is the stop
+            db.flush()
+            city.emit(db, tenant_id, "agent.killed", from_=("ceo", "steady"), agent_id=a.id,
+                      payload={"stopped": "no task was running", "by": str(writer.user_id)})
+        # running: the worker sees the hold, terminates the process, then emits agent.killed
+    elif action == "reassign":
+        to = (body or {}).get("to_agent_id")
+        if not a.key.startswith("spec:"):
+            raise HTTPException(409, "built-in workers each do one kind of job; there is "
+                                     "nobody to reassign this task to")
+        if task is None or task.status not in ("queued", "waiting_approval"):
+            raise HTTPException(409, "only a waiting or queued task can be reassigned")
+        target = _get_agent(db, tenant_id, uuid.UUID(str(to))) if to else None
+        if target is None or not target.key.startswith("spec:") or target.id == a.id:
+            raise HTTPException(422, "pick another AgentSpec agent")
+        spec = db.scalar(select(AgentSpec).where(AgentSpec.tenant_id == tenant_id,
+                                                 AgentSpec.name == target.key[5:],
+                                                 AgentSpec.status == "active"))
+        if spec is None:
+            raise HTTPException(409, "that agent has no active spec")
+        task.agent_spec_id = spec.id
+        a.current_task_id = None
+        db.flush()
+        city.emit(db, tenant_id, "agent.log", agent_id=a.id, task_id=task.id,
+                  payload={"line": f"task reassigned to {target.name} by Steady"})
+        city.emit(db, tenant_id, "task.created", from_=("jaxon", "jaxon"),
+                  to=city.address(target), task_id=task.id, run_id=task.run_id,
+                  agent_id=target.id, payload={"title": task.title[:200], "reassigned": True})
+    else:
+        raise HTTPException(404, "unknown control")
+    audit(db, tenant_id, writer.user_id, f"agent.{action}", "Agent", a.id,
+          running=running, task_id=str(task.id) if task else None)
+    out = {"agent_id": str(a.id), "action": action, "status": a.status,
+           "pending_stop": action == "kill" and running}
+    db.commit()
+    return out
 
 
 # --- The City page (built from apps/city; static, no data in it) ------------------------------
