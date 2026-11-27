@@ -64,6 +64,9 @@ class Action:
     # of the fingerprint: a per-action approval stays bound to the description.
     channel: str | None = None
     target: str | None = None
+    # Ask the owner whatever the autonomy level (e.g. paid video generation). An active
+    # Launch approval with budget left still counts as that approval.
+    always_ask: bool = False
 
     def fingerprint(self, task_id: uuid.UUID) -> str:
         raw = f"{task_id}|{self.category}|{self.amount_cents}|{self.description}"
@@ -91,6 +94,8 @@ def evaluate(
         return Decision(Outcome.ALLOW, "approved by an owner/admin")
     if action.category in ALWAYS_APPROVE:
         return Decision(Outcome.REQUIRE_APPROVAL, f"{action.category} always needs approval")
+    if action.always_ask:
+        return Decision(Outcome.REQUIRE_APPROVAL, "this always needs the owner's approval")
     needed = MIN_LEVEL[action.category]
     if autonomy_level < needed:
         return Decision(

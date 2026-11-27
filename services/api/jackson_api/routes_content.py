@@ -262,3 +262,61 @@ def generate(tenant_id: uuid.UUID, body: GenerateIn, writer: TenantWriter, db: D
     run_id = run.id
     db.commit()
     return {"run_id": str(run_id)}
+
+
+# --- UGC video clips (ADR-036) ---------------------------------------------------------------
+
+class VideoIn(BaseModel):
+    prompt: str = Field(default="", max_length=4000)
+    duration_s: Literal[4, 6, 8] = 8
+    aspect_ratio: Literal["9:16", "16:9"] = "9:16"
+    resolution: Literal["720p", "1080p", "4k"] = "1080p"
+    audio: bool = True
+    idempotency_key: str = Field(min_length=8, max_length=200)
+
+
+def _estimate(duration_s: int, resolution: str, audio: bool) -> dict:
+    from .connectors import video
+    from .worker_errors import NonRetryableError
+
+    try:
+        cents = video.estimate_cents(duration_s, resolution, audio)
+    except NonRetryableError as e:
+        raise HTTPException(422, str(e)) from None
+    live = video.configured()
+    return {"estimate_cents": cents, "estimate_usd": f"{cents / 100:.2f}",
+            "model": video.model() if live else "mock", "connector": "fal" if live else "mock",
+            "note": "fal.ai charges per second of video; nothing is generated until you "
+                    "approve this amount (or an active Launch approval covers it)."}
+
+
+@router.get("/tenants/{tenant_id}/video/estimate")
+def video_estimate(tenant_id: uuid.UUID, member: TenantMember, duration_s: int = 8,
+                   resolution: Literal["720p", "1080p", "4k"] = "1080p",
+                   audio: bool = True) -> dict:
+    return _estimate(duration_s, resolution, audio)
+
+
+@router.post("/tenants/{tenant_id}/content/{cid}/video", status_code=202)
+def request_video(tenant_id: uuid.UUID, cid: uuid.UUID, body: VideoIn, writer: TenantWriter,
+                  db: DB) -> dict:
+    """Ask for a clip. Shows the cost now; the run waits for the owner's approval of that
+    amount in the inbox (or runs inside an active Launch approval's budget)."""
+    est = _estimate(body.duration_s, body.resolution, body.audio)
+    c = db.get(ContentItem, cid)
+    if c is None or c.tenant_id != tenant_id:
+        raise HTTPException(404, "content not found")
+    try:
+        run, _ = create_run(db, tenant_id, writer.user_id, {
+            "type": "BUILD", "objective": f"UGC video: {c.title[:150]}",
+            "idempotency_key": f"video-{body.idempotency_key}", "business_id": c.business_id},
+            first_task={"kind": "content_video", "title": "Generate video clip",
+                        "tool_scope": [], "input": {"content_id": str(cid),
+                                                    **body.model_dump(exclude={"idempotency_key"})}},
+            launch_id=c.launch_id)
+    except CommandError as e:
+        db.rollback()
+        raise HTTPException(e.status, {"code": e.code, "message": e.message}) from None
+    run_id = run.id
+    db.commit()
+    return {"run_id": str(run_id), **est}

@@ -165,12 +165,14 @@ def connectors(db: Session, tenant_id) -> list[dict]:
 
     social_live = social.configured()
     from .connectors import email as email_conn
+    from .connectors import video as video_conn
     rows = [
         ("models", "Claude (model gateway)", model_live, "ANTHROPIC_API_KEY"),
         ("shopify", "Shopify drafts", shop_live,
          "SHOPIFY_STORE_DOMAIN + SHOPIFY_CLIENT_ID + SHOPIFY_CLIENT_SECRET"),
         ("social", "Social posting (Upload-Post)", social_live,
          "UPLOADPOST_API_KEY + UPLOADPOST_USER"),
+        ("video", "UGC video (fal.ai)", video_conn.configured(), "FAL_KEY"),
         ("hosting", "Website hosting", False, "hosting account token"),
         ("dns", "Domain verification", os.environ.get("SITE_DOMAIN_VERIFY") == "dns",
          "SITE_DOMAIN_VERIFY=dns"),
@@ -355,6 +357,13 @@ def build(db: Session, tenant_id) -> dict:
                        "size_bytes": a.size_bytes, "type": (a.meta or {}).get("type"),
                        "created_at": _iso(a.created_at)} for a in arts],
         "connectors": connectors(db, tenant_id),
+        "content": [{"id": str(c.id), "title": c.title, "channel": c.channel,
+                     "status": c.status, "kind": c.kind,
+                     "has_video": any(a.get("kind") == "video" for a in c.assets or [])}
+                    for c in db.scalars(select(ContentItem).where(
+                        ContentItem.tenant_id == tenant_id,
+                        ContentItem.status.in_(("draft", "in_review", "approved")))
+                        .order_by(ContentItem.created_at.desc()).limit(10))],
         "audit": [{"action": e.action, "entity": e.entity_type,
                    "entity_id": str(e.entity_id) if e.entity_id else None,
                    "at": _iso(e.created_at)} for e in audit_rows],

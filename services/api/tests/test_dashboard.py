@@ -49,7 +49,7 @@ def test_empty_dashboard_is_honest(client, world, alice):
     assert d["metrics"]["conversion_rate"] is None and "conversion_rate" in \
         d["metrics"]["not_measured"]
     assert {c["id"]: c["mode"] for c in d["connectors"]} == {
-        "models": "mock", "shopify": "mock", "social": "mock", "hosting": "mock",
+        "models": "mock", "shopify": "mock", "social": "mock", "video": "mock", "hosting": "mock",
         "dns": "mock", "outreach": "mock", "artifacts": "mock"}
     assert all(c["needs"] for c in d["connectors"])
 

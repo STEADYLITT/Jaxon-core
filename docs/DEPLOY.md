@@ -96,10 +96,11 @@ If the service won't start, open **Deploy Logs**. A `FAIL` line names the missin
 | `SHOPIFY_STORE_DOMAIN`, `SHOPIFY_CLIENT_ID`, `SHOPIFY_CLIENT_SECRET` | your store + a Dev Dashboard app created from the store admin: see [`CONNECTORS.md`](CONNECTORS.md) | real draft products (drafts only) | 15 |
 | `UPLOADPOST_API_KEY`, `UPLOADPOST_USER` | upload-post.com → **API Keys** / **Manage Users**: see [`CONNECTORS.md`](CONNECTORS.md) | posting approved content | 16 |
 | `RESEND_API_KEY`, `RESEND_FROM`, `RESEND_WEBHOOK_SECRET` | resend.com → **API Keys** / **Webhooks**: see [`CONNECTORS.md`](CONNECTORS.md) | sending approved email, bounce handling | 18 |
+| `FAL_KEY` | fal.ai → **Dashboard → Keys**: see [`CONNECTORS.md`](CONNECTORS.md) | short UGC video clips (cost approved first) | 16 |
 | `SITE_DOMAIN_VERIFY` | set to `dns` when you launch a website on your own domain | real domain checks | 17 |
 | `CLERK_SECRET_KEY`, `S3_*`, `OPENAI_API_KEY` | **not needed now** | — | — |
 
-The posting, email and video connectors are built as labeled stand-ins. When you have those accounts (list below), give me the key **through Railway's Variables page, not in chat**. I'll check the provider's current docs and switch that connector on behind the existing approval gates.
+Every connector stays a labeled stand-in until its variables are set. Paste keys **only in Railway's Variables page, never in chat**. Step-by-step instructions for each: [`CONNECTORS.md`](CONNECTORS.md).
 
 ---
 
@@ -119,12 +120,12 @@ The costs that grow with real launches are listed next.
 ## Accounts for the first real launch, biggest money impact first
 | # | Account | What it does in Jackson | Phase | Typical cost (checked 2026-11-26) | Status in the code |
 |---|---|---|---|---|---|
-| 1 | **AI video for UGC** (e.g. fal.ai with Veo or Kling) | short product/UGC videos for the content pipeline | 16 | pay per second of video: about $0.10–0.40/s, so a 5-second clip is roughly $0.50–2. 50 clips a month is about $25–100. | connector **not built yet**; content drafts are text today. Needs `FAL_API_KEY` plus a small build. |
-| 2 | **Shopify store** | draft products now; a real store when you sell | 15 | **development store: free** (Shopify Partners). Basic plan when you go live: about $29–39/month plus card fees (~2.9% + 30¢). | **built**: drafts and read-back are tested. Add the token to turn it on. |
-| 3 | **Social posting** (Upload-Post) | posts approved content to your accounts | 16 | free: 10 uploads/month. Basic: about $16–24/month for unlimited uploads across 5 profiles. | stand-in now. Wiring needs the key plus a docs check. |
+| 1 | **AI video for UGC** (e.g. fal.ai with Veo or Kling) | short product/UGC videos for the content pipeline | 16 | pay per second of video: about $0.10–0.40/s, so a 5-second clip is roughly $0.50–2. 50 clips a month is about $25–100. | **built**: Veo 3.1 Fast clips, cost approved first. Add `FAL_KEY` to turn it on. |
+| 2 | **Shopify store** | draft products now; a real store when you sell | 15 | **development store: free** (Shopify Partners). Basic plan when you go live: about $29–39/month plus card fees (~2.9% + 30¢). | **built**: drafts and read-back are tested. Add the three Shopify variables to turn it on. |
+| 3 | **Social posting** (Upload-Post) | posts approved content to your accounts | 16 | free: 10 uploads/month. Basic: about $16–24/month for unlimited uploads across 5 profiles. | **built**: add `UPLOADPOST_API_KEY` + `UPLOADPOST_USER`. |
 | 4 | **Claude** (Anthropic) | the thinking: research, copy, drafts | 08 | capped by you (default $20/month) | **built**: switches on with the key. |
 | 5 | **Railway** | hosting | go-live | about $10–15/month | **ready** (this guide) |
-| 6 | **Email sending** (e.g. Resend) | outreach and notifications | 18 | free: 3,000/month (100/day). Pro: $20/month for 50,000. | stand-in now. Needs the key, a sending domain and a docs check. |
+| 6 | **Email sending** (e.g. Resend) | outreach and notifications | 18 | free: 3,000/month (100/day). Pro: $20/month for 50,000. | **built**: add `RESEND_API_KEY`, `RESEND_FROM`, `RESEND_WEBHOOK_SECRET`. |
 | 7 | **Clerk** | sign-in | 03, 19 | free | **built** |
 
 **Order to do it in:**
