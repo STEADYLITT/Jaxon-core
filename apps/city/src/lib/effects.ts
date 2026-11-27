@@ -13,7 +13,7 @@ export const ENVELOPE_COLOR: Record<string, string> = {
 
 export interface Envelope {
   kind: "envelope"; eventId: number; from: Vec3; to: Vec3; color: string;
-  sealed: boolean; start: number; label: string;
+  sealed: boolean; start: number; label: string; runId?: string | null;
 }
 export interface Beam { kind: "beam"; eventId: number; at: Vec3; color: string; start: number }
 export type Effect = Envelope | Beam;
@@ -24,7 +24,7 @@ export function effectsFor(ev: CityEvent, s: Snapshot, now: number): Effect[] {
     const to = anchor(s, ev.to?.kind, ev.to?.id, ev.agent_id);
     if (!from || !to) return null;
     return { kind: "envelope", eventId: ev.id, from, to, color: ENVELOPE_COLOR[style] ?? "#fff",
-      sealed, start: now, label: ev.type };
+      sealed, start: now, label: ev.type, runId: ev.run_id };
   };
   const agent = s.agents.find((a) => a.id === ev.agent_id);
   // Beams rise from a department's roof; Jaxon's own tasks show as the orb's pulse.
@@ -44,6 +44,7 @@ export function effectsFor(ev: CityEvent, s: Snapshot, now: number): Effect[] {
       out.push(beam("#ff3355"));
       break;
     case "approval.requested": out.push(env("approval", true)); break;
+    case "alert.raised": out.push(env("approval", true)); break; // a red letter to Steady
     case "approval.decided": out.push(env("decision")); break;
     case "revenue.recorded":
       out.push({ kind: "beam", eventId: ev.id, at: CEO_TOP, color: "#ffd166", start: now });
@@ -84,6 +85,10 @@ export function describe(ev: CityEvent): string {
     case "cost.recorded": return `Cost $${Number(p["usd"] ?? 0).toFixed(4)}`;
     case "revenue.recorded": return `Revenue $${(Number(p["amount_cents"] ?? 0) / 100).toFixed(2)}`;
     case "agent.offline": return "Agent went offline";
+    case "alert.raised": return `⚠ ${t("message")}`;
+    case "agent.paused": return p["reason"] ? `Paused by the ${t("reason")}` : "Agent paused";
+    case "agent.resumed": return "Agent resumed";
+    case "agent.killed": return `Agent killed (${t("stopped")})`;
     case "agent.heartbeat": return p["back_online"] ? "Agent back online" : `Working: ${t("task")}`;
     default: return ev.type;
   }

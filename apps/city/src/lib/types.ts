@@ -35,7 +35,7 @@ export interface Agent {
   status: AgentStatus; online: boolean; model: string | null;
   last_heartbeat_at: string | null; status_changed_at: string | null;
   current_task: CurrentTask | null;
-  cost_today_usd: number; done_today: number; failed_today: number;
+  cost_today_usd: number; daily_limit_usd?: number; done_today: number; failed_today: number;
   success_rate_7d: number | null;
 }
 
@@ -56,7 +56,10 @@ export interface Snapshot {
     done_today: number; failed_today: number; spend_today_usd: number;
     revenue_today_usd: number | null;
   };
-  inbox: { approvals: InboxApproval[]; alerts: { level: string; kind: string; message?: string }[] };
+  inbox: { approvals: InboxApproval[]; alerts: { level: string; kind: string; message?: string }[];
+           letters?: CityEvent[] };
+  sirens?: string[];
+  client?: { business: string; read_only: boolean; label?: string; expires_at?: string | null };
   ticker: CityEvent[];
 }
 
@@ -75,4 +78,15 @@ export interface JaxonView {
     routing_reasons: CityEvent[];
     memory: { offered: number | null; cited: unknown[] | null }[];
   }[];
+}
+
+export interface TraceView {
+  command: { run_id: string; text: string; type: string; status: string; issued_at: string | null };
+  routing: CityEvent[];
+  tasks: { task_id: string; title: string; kind: string; status: string; agent: string;
+           agent_id: string; started_at: string | null; finished_at: string | null;
+           result: Record<string, unknown> | null; error: string | null }[];
+  cost_usd: number;
+  approvals: CityEvent[];
+  events: CityEvent[];
 }

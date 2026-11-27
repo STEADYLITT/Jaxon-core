@@ -190,3 +190,35 @@ button { font: inherit; }
   .toggle { bottom: calc(106px + env(safe-area-inset-bottom)); }
   .command-bar { left: 8px; right: 8px; }
 }
+
+/* --- Phase 6: replay, client view, letters ---------------------------------------------- */
+.replay-open {
+  position: absolute; z-index: 4; right: 16px; bottom: calc(106px + env(safe-area-inset-bottom));
+  min-height: 36px; padding: 4px 14px; border-radius: 999px; border: 1px solid var(--cyan);
+  background: rgba(10, 6, 30, 0.85); color: var(--text); cursor: pointer;
+}
+.replay-bar {
+  position: absolute; z-index: 5; left: 16px; right: 16px; bottom: calc(44px + env(safe-area-inset-bottom));
+  max-width: 860px; margin: 0 auto; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  padding: 8px 12px; border-radius: 14px; background: rgba(12, 7, 34, 0.94); border: 1px solid var(--cyan);
+}
+.replay-bar input[type=range] { flex: 1; min-width: 120px; accent-color: var(--cyan); }
+.replay-bar button, .replay-bar select {
+  min-height: 36px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--line); background: #0d0826; color: var(--text);
+}
+.replay-tag { color: var(--cyan); font-weight: 800; letter-spacing: 0.12em; }
+.replay-banner, .client-banner {
+  position: absolute; z-index: 9; top: 0; left: 50%; transform: translateX(-50%); padding: 4px 14px;
+  border-radius: 0 0 10px 10px; font-weight: 800; letter-spacing: 0.08em; font-size: 0.78rem;
+}
+.replay-banner { background: #00e5ff; color: #04121a; }
+.client-banner { background: #ffd166; color: #1a1200; }
+.ticker .traceable { color: var(--text); text-decoration: none; border-bottom: 1px dotted var(--muted); }
+.letter { border-color: #ff2244; }
+.limit input { width: 90px; min-height: 36px; margin-left: 4px; border-radius: 8px; border: 1px solid var(--line); background: #0d0826; color: var(--text); padding: 4px 8px; }
+.share-url input { width: 100%; min-height: 36px; border-radius: 8px; border: 1px solid var(--line); background: #0d0826; color: var(--text); padding: 4px 8px; }
+.trace-steps { padding-left: 18px; }
+.trace-steps > li { margin: 8px 0; }
+@media (max-width: 599px) {
+  .replay-open { bottom: auto; top: max(64px, calc(env(safe-area-inset-top) + 56px)); right: 12px; }
+}

@@ -16,14 +16,16 @@ const DESK_GAP = 6;
 function useDetail(id: string): AgentDetail | null {
   const [d, setD] = useState<AgentDetail | null>(null);
   const last = useCity((st) => st.lastEventId);
+  const share = useCity((st) => st.shareToken);
   useEffect(() => {
+    if (share) return; // client view: monitors show only the task from the scoped snapshot
     let live = true;
     const load = () => api<AgentDetail>(`/city/agents/${id}`).then((x) => { if (live) setD(x); })
       .catch(() => undefined);
     load();
     const t = window.setInterval(load, 3000);
     return () => { live = false; window.clearInterval(t); };
-  }, [id, last]);
+  }, [id, last, share]);
   return d;
 }
 
@@ -56,7 +58,10 @@ function Desk({ agent, x, layer }: { agent: Agent; x: number; layer: RefObject<H
   const tools = (d?.tools ?? []).slice(0, 3);
   return (
     <group position={[x, 0, 0]} name={`desk-${agent.id}`}
-      onClick={(e) => { e.stopPropagation(); setFocus({ kind: "agent", id: agent.id, from: focus }); }}>
+      onClick={(e) => {
+        e.stopPropagation();
+        if (!useCity.getState().shareToken) setFocus({ kind: "agent", id: agent.id, from: focus });
+      }}>
       <mesh position-y={1.0}><boxGeometry args={[4.2, 0.15, 1.8]} /><meshStandardMaterial color="#17123a" /></mesh>
       {[-1.9, 1.9].map((lx) => (
         <mesh key={lx} position={[lx, 0.5, 0]}><boxGeometry args={[0.15, 1, 1.6]} /><meshStandardMaterial color="#120e2c" /></mesh>

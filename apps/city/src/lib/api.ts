@@ -136,3 +136,10 @@ export async function follow(after: () => number, onEvent: (e: CityEvent) => voi
 
 export const post = <T>(path: string, body?: unknown) =>
   api<T>(path, { method: "POST", body: body === undefined ? undefined : JSON.stringify(body) });
+
+/** Client view: the signed link is the only credential; read-only, no stream. */
+export async function getSharedState(token: string): Promise<Snapshot> {
+  const r = await fetch(`/city/share/${encodeURIComponent(token)}/state`);
+  if (!r.ok) throw new Error(r.status === 404 ? "This link is not valid or has expired." : String(r.status));
+  return r.json() as Promise<Snapshot>;
+}

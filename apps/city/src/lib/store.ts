@@ -9,9 +9,21 @@ export type Focus =
   | { kind: "agent"; id: string; from?: Focus | null }
   | { kind: "jaxon" }
   | { kind: "ceo" }
+  | { kind: "trace"; runId: string }
   | null;
 
+export interface Replay {
+  events: CityEvent[];
+  index: number;       // last event applied
+  playing: boolean;
+  speed: number;       // event-time ms per real ms
+  clock: number;       // replay time (ms since epoch)
+}
+
 export interface CityState {
+  replay: Replay | null;
+  setReplay(r: Replay | null): void;
+  shareToken: string | null;
   focus: Focus;
   setFocus(f: Focus): void;
   snapshot: Snapshot | null;
@@ -26,10 +38,14 @@ export interface CityState {
   setSnapshot(s: Snapshot): void;
   onEvent(e: CityEvent, now?: number): void;
   step(now: number): void;
+  replayEvent(e: CityEvent, now?: number): void;
   toggleList(): void;
 }
 
 export const useCity = create<CityState>((set, get) => ({
+  replay: null,
+  setReplay(r) { set({ replay: r, active: [], queue: [] }); },
+  shareToken: null,
   focus: null,
   setFocus(f) { set({ focus: f }); },
   snapshot: null,
@@ -68,6 +84,13 @@ export const useCity = create<CityState>((set, get) => ({
     const same = next.queue.length === st.queue.length && next.active.length === st.active.length &&
       next.active.every((e, i) => e === st.active[i]);
     if (!same) set(next);
+  },
+  replayEvent(e, now = performance.now()) {
+    // Replay only animates: the live stream cursor and ticker are left alone.
+    const st = get();
+    const fx = st.snapshot ? effectsFor(e, st.snapshot, now) : [];
+    set({ queue: [...st.queue, ...fx], pulseAt: now,
+      pulses: [...st.pulses.filter((t) => now - t < 60_000), now] });
   },
   toggleList() { set((st) => ({ listView: !st.listView })); },
 }));

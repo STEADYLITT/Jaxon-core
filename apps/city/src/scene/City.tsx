@@ -11,6 +11,7 @@ import {
 } from "../lib/layout";
 import type { Mode } from "../lib/mode";
 import { seeded } from "../lib/rand";
+import { statusesAt, type PastStatus } from "../lib/replay";
 import { useCity, type Focus } from "../lib/store";
 import { Office } from "./Office";
 import type { Department, Snapshot } from "../lib/types";
@@ -88,6 +89,27 @@ function ScreenProbe() {
       };
   });
   return null;
+}
+
+/** The building's skin; flashes red while its failure siren is sounding. */
+function SirenMaterial({ id, color }: { id: string; color: string }) {
+  const mat = useRef<THREE.MeshStandardMaterial>(null);
+  const red = useMemo(() => new THREE.Color("#ff2244"), []);
+  const base = useMemo(() => new THREE.Color(color), [color]);
+  useFrame(({ clock }) => {
+    const on = (useCity.getState().snapshot?.sirens ?? []).includes(id);
+    if (!mat.current) return;
+    if (on) {
+      const k = (Math.sin(clock.elapsedTime * 8) + 1) / 2;
+      mat.current.emissive.copy(red);
+      mat.current.emissiveIntensity = 0.2 + k * 0.9;
+    } else {
+      mat.current.emissive.copy(base);
+      mat.current.emissiveIntensity = 0.05;
+    }
+  });
+  return <meshStandardMaterial ref={mat} color="#0d0826" emissive={color} emissiveIntensity={0.05}
+    metalness={0.2} roughness={0.6} />;
 }
 
 function pointer(on: boolean) {
@@ -212,8 +234,7 @@ function Building({ d, n }: { d: Department; n: number }) {
       onPointerOver={() => pointer(true)} onPointerOut={() => pointer(false)}>
       <mesh position-y={h / 2}>
         <boxGeometry args={[BUILDING_W, h, BUILDING_W]} />
-        <meshStandardMaterial color="#0d0826" emissive={d.color} emissiveIntensity={0.05}
-          metalness={0.2} roughness={0.6} />
+        <SirenMaterial id={d.id} color={d.color} />
       </mesh>
       <lineSegments position-y={h / 2}>
         <edgesGeometry args={[new THREE.BoxGeometry(BUILDING_W, h, BUILDING_W)]} />
@@ -236,16 +257,31 @@ function Windows({ s }: { s: Snapshot }) {
   const tmp = useMemo(() => new THREE.Object3D(), []);
   const col = useMemo(() => new THREE.Color(), []);
   const byId = useMemo(() => new Map(s.agents.map((a) => [a.id, a])), [s]);
+  const past = useRef<{ index: number; map: Map<string, PastStatus> } | null>(null);
   useFrame(() => {
     const m = ref.current;
     if (!m) return;
-    const now = Date.now();
+    const r = useCity.getState().replay;
+    let now = Date.now();
+    let map: Map<string, PastStatus> | null = null;
+    if (r) {  // replay: statuses rebuilt from the events up to the replay clock
+      if (!past.current || past.current.index !== r.index) {
+        past.current = { index: r.index, map: statusesAt(r.events, r.index) };
+      }
+      map = past.current.map;
+      now = r.clock;
+    }
     spots.forEach((w, i) => {
       tmp.position.set(...w.pos);
       tmp.rotation.set(0, w.rotY, 0);
       tmp.updateMatrix();
       m.setMatrixAt(i, tmp.matrix);
-      const a = byId.get(w.agentId);
+      let a = byId.get(w.agentId);
+      if (a && map) {
+        const p = map.get(a.id);
+        a = { ...a, status: p?.status ?? "idle", online: p?.status !== "offline",
+              status_changed_at: p?.at ?? null };
+      }
       col.set(a ? windowColor(a, now) : "#000");
       m.setColorAt(i, col);
     });
@@ -282,7 +318,9 @@ function EnvelopeMesh({ e }: { e: Envelope }) {
     ref.current.quaternion.copy(camera.quaternion); // always face the viewer
   });
   return (
-    <mesh ref={ref} name="envelope" position={e.from}>
+    <mesh ref={ref} name="envelope" position={e.from}
+      onClick={(ev) => { ev.stopPropagation(); if (e.runId) useCity.getState().setFocus({ kind: "trace", runId: e.runId }); }}
+      onPointerOver={() => pointer(!!e.runId)} onPointerOut={() => pointer(false)}>
       <planeGeometry args={[2.4, 1.6]} />
       <meshBasicMaterial color={e.color} toneMapped={false} side={THREE.DoubleSide} />
       {e.sealed && (

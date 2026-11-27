@@ -131,3 +131,27 @@ describe("rule zero", () => {
     expect([a(), a(), a()]).toEqual([b(), b(), b()]);
   });
 });
+
+describe("replay", () => {
+  it("rebuilds statuses from events in order, and finds the moment", async () => {
+    const { statusesAt, indexAt } = await import("../src/lib/replay");
+    const evs = [
+      ev(1, "task.started", { agent_id: "a1", ts: "2026-11-27T10:00:00Z" }),
+      ev(2, "approval.requested", { agent_id: "a1", ts: "2026-11-27T10:01:00Z" }),
+      ev(3, "task.completed", { agent_id: "a1", ts: "2026-11-27T10:05:00Z" }),
+      ev(4, "agent.offline", { agent_id: "a2", ts: "2026-11-27T10:06:00Z" }),
+    ];
+    expect(statusesAt(evs, 0).get("a1")?.status).toBe("working");
+    expect(statusesAt(evs, 1).get("a1")?.status).toBe("waiting");
+    expect(statusesAt(evs, 3).get("a1")).toEqual({ status: "done", at: "2026-11-27T10:05:00Z" });
+    expect(statusesAt(evs, 3).get("a2")?.status).toBe("offline");
+    expect(indexAt(evs, Date.parse("2026-11-27T10:02:00Z"))).toBe(1);
+    expect(indexAt(evs, Date.parse("2026-11-27T09:00:00Z"))).toBe(-1);
+  });
+  it("alerts fly as red sealed letters to the CEO tower", () => {
+    const e = ev(40, "alert.raised", { from: { kind: "department", id: "d-mkt" },
+      to: { kind: "ceo", id: "steady" }, agent_id: "a1", payload: { message: "over limit" } });
+    expect(effectsFor(e, snapshot(), 0)[0]).toMatchObject({ sealed: true, to: CEO_TOP });
+    expect(describeEvent(e)).toBe("⚠ over limit");
+  });
+});

@@ -26,6 +26,8 @@ PUBLIC = {
     "/u/{token}": "unsubscribe page; the HMAC-signed token is the credential",
     "/city": "static City page, no data; it calls the authenticated API",
     "/city/assets/{name}": "static City bundle (hashed js/css only)",
+    "/city/share/{token}/state": "read-only client view; the HMAC-signed, revocable token "
+                                 "is the credential",
     "/webhooks/resend/{tenant_id}": "Resend bounce/complaint events; Svix-signed",
 }
 

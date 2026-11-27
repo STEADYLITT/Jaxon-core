@@ -10,7 +10,7 @@ The City replaces the phase 22 console redesign as the main dashboard. It is bui
 | 3 | 3D exterior: buildings, windows, orb, envelopes, beams, HUD, ticker, phone list | done |
 | 4 | Interiors, agent panel with Pause/Resume/Reassign/Kill, CEO inbox | done |
 | 5 | Command bar → Jaxon routing, shown end to end | done |
-| 6 | Replay, cost guard, failure siren, trace view, client view | next |
+| 6 | Replay, cost guard, failure siren, trace view, client view | done |
 
 ## Phase 3: what's on screen
 - **CEO tower** (Steady) in the middle. Each pending approval is a red letter on its roof, and the count shows on its label.
@@ -113,3 +113,37 @@ The other agents need records first (a product, a campaign, an opportunity), so 
 - The ticker shows "Jaxon → agent: reason".
 
 Routing is opt-in per command (`route`, default false), so the console's commands behave exactly as before.
+
+## Phase 6: replay, cost guard, failure siren, trace, client view
+- **Cost guard:**
+  - Every agent has a daily spend limit: `CITY_AGENT_DAILY_LIMIT_USD`, default $5. The owner can change it per agent in the agent panel (`PATCH /tenants/{t}/city/agents/{id}`).
+  - When the agent's recorded cost today goes over the limit, the worker pauses the agent and its current run.
+  - **Then** it emits `agent.paused` (reason "cost guard") and an `alert.raised` red letter to the CEO inbox.
+  - The agent takes no new work until Steady resumes it.
+- **Failure siren:** 3 failures in a row sound the siren once per streak. It sends an `alert.raised` letter, and the building flashes red for 10 minutes (`snapshot.sirens`).
+- **Trace view:**
+  - Click any flying envelope, or any ticker line, to open it.
+  - It walks from Steady's command, through Jaxon's routing and reason, to every task: agent, status, result or error, approvals, and the command's cost.
+  - Endpoint: `GET /tenants/{t}/city/trace/{run_id}`.
+- **Replay:**
+  - **Replay 24h** loads the last day from the `events` table, paged.
+  - A scrubber and play controls run at 30× to 3600×.
+  - Window colours are rebuilt from the events up to the replay clock, and letters and beams fly again.
+  - The live stream keeps running underneath. **Live** returns to now, and the command bar is hidden while replaying.
+- **Client view:**
+  - The owner creates a link per client (business): `POST /tenants/{t}/city/shares`. It's HMAC-signed, expires in 1–90 days, and can be revoked.
+  - `/city?share=<token>` shows a read-only city with only that client's commands, tasks and statuses.
+  - It never shows spend, the inbox, other clients, controls, the command bar or trace.
+  - A revoked or expired link shows a plain refusal.
+- **Fixed:** the HUD's spend total used Postgres `SUM` (a Decimal), which would have failed once any real spend existed.
+
+## Acceptance tests (all in CI)
+| # | Test | Where |
+|---|---|---|
+| 1 | Stopped worker turns gray within 60s, no UI touch | `test_stream_turns_a_dead_worker_gray_without_ui_action`, `test_offline_worker_turns_windows_gray` |
+| 2 | Command → row + events → letter flies → real agent starts | `test_typing_a_command_flies_to_jaxon_and_a_real_agent_starts` |
+| 3 | Hard refresh rebuilds the same state | `test_a_hard_refresh_rebuilds_the_same_state` |
+| 4 | Kill stops the process, then gray | `test_kill_terminates_the_process_then_emits` |
+| 5 | Approve from the CEO inbox → the agent continues | `test_ceo_tower_inbox_approves_and_the_agent_continues` |
+| 6 | No mock/faker/random activity in the production bundle | `test_production_bundle_has_no_fake_activity` + source test |
+| 7 | iPhone | emulated iPhone 15 in Chromium (layout, low mode, list, panels). **A real iPhone Safari check is still to do on Steady's phone.** |
