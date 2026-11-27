@@ -230,6 +230,13 @@ def fast_worker(maker, handlers, **kw):
 
 
 @pytest.fixture(autouse=True)
+def _short_console_streams(monkeypatch):
+    """Browser tests pass every request through the synchronous TestClient, so the console's
+    live-feed stream must return quickly instead of holding the request open."""
+    monkeypatch.setenv("CONSOLE_EVENTS_TIMEOUT", "0.3")
+
+
+@pytest.fixture(autouse=True)
 def _no_live_model_calls(monkeypatch):
     """Tests must never reach a real model provider, whatever the developer's shell has."""
     for var in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "OPENAI_MODEL",

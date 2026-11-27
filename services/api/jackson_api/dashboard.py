@@ -247,6 +247,33 @@ def build(db: Session, tenant_id) -> dict:
                                      .where(Task.agent_spec_id.in_([a.id for a in agent_rows]))
                                      .group_by(Task.agent_spec_id, Task.status)):
             agent_tasks.setdefault(sid, {})[st] = n
+    agent_now, agent_cost = {}, {}
+    if agent_rows:
+        ids = [a.id for a in agent_rows]
+        for task in db.scalars(select(Task).where(Task.agent_spec_id.in_(ids))
+                               .order_by(Task.updated_at.desc()).limit(500)):
+            agent_now.setdefault(task.agent_spec_id, task)  # most recent task per agent
+        day = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+        for sid, micros in db.execute(
+                select(Task.agent_spec_id, func.sum(ModelUsage.cost_usd_micros))
+                .join(Task, Task.id == ModelUsage.task_id)
+                .where(Task.agent_spec_id.in_(ids), ModelUsage.created_at >= day)
+                .group_by(Task.agent_spec_id)):
+            agent_cost[sid] = round(int(micros or 0) / 1e6, 6)
+
+    def agent_state(a) -> str:
+        last = agent_now.get(a.id)
+        if last is None or last.status in ("succeeded", "canceled"):
+            return "idle"
+        return {"running": "running", "queued": "running", "waiting_approval":
+                "waiting_approval", "failed": "error"}.get(last.status, "idle")
+    from .models import RunEvent
+
+    last_event_id = db.scalar(select(func.max(RunEvent.id)).where(
+        RunEvent.tenant_id == tenant_id)) or 0
+    active_runs = db.scalar(select(func.count()).where(
+        WorkflowRun.tenant_id == tenant_id,
+        WorkflowRun.status.in_(["queued", "running"]))) or 0
     opp_counts = dict(db.execute(select(Opportunity.status, func.count()).where(
         Opportunity.tenant_id == tenant_id).group_by(Opportunity.status)).all())
     top = db.scalars(select(Opportunity).where(Opportunity.tenant_id == tenant_id,
@@ -290,7 +317,11 @@ def build(db: Session, tenant_id) -> dict:
              "business_id": str(o.business_id) if o.business_id else None,
              "has_economics": bool(o.economics)} for o in top]},
         "agents": [{"id": str(a.id), "name": a.name, "version": a.version, "status": a.status,
+                    "role": a.role, "state": agent_state(a),
+                    "current_task": agent_now[a.id].title if a.id in agent_now else None,
+                    "cost_today_usd": agent_cost.get(a.id, 0.0),
                     "tasks": agent_tasks.get(a.id, {})} for a in agent_rows],
+        "activity": {"active_runs": active_runs, "last_event_id": last_event_id},
         "runs": [{"id": str(r.id), "objective": r.objective, "type": r.command_type,
                   "status": r.status, "paused": r.paused, "cost_cents": cost[r.id],
                   "model_cost_usd": round(micros[r.id] / 1e6, 6),

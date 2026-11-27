@@ -166,7 +166,24 @@ def console_config() -> dict:
     """Public values only: the Clerk publishable key is designed to be shown to browsers."""
     import os
 
-    return {"clerk_publishable_key": os.environ.get("CLERK_PUBLISHABLE_KEY") or None}
+    try:
+        events_timeout = min(max(float(os.environ.get("CONSOLE_EVENTS_TIMEOUT", "25")), 0.1), 60)
+    except ValueError:
+        events_timeout = 25.0
+    return {"clerk_publishable_key": os.environ.get("CLERK_PUBLISHABLE_KEY") or None,
+            "events_timeout": events_timeout}
+
+
+VENDOR = {"three.module.min.js", "three.core.min.js"}  # pinned three.js r180 (MIT)
+
+
+@router.get("/console/vendor/{name}", include_in_schema=False)
+def console_vendor(name: str) -> Response:
+    if name not in VENDOR:
+        raise HTTPException(404, "not found")
+    r = _static(f"vendor/{name}", "text/javascript")
+    r.headers["Cache-Control"] = "public, max-age=86400, immutable"
+    return r
 
 
 @router.get("/console/{name}", include_in_schema=False)

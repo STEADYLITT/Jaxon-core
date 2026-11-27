@@ -3,19 +3,27 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Jackson OS — Owner console</title>
+<meta name="color-scheme" content="dark">
+<title>Jackson OS — Command Center</title>
 <link rel="stylesheet" href="/console/app.css">
 <script src="/console/app.js" defer></script>
 </head>
-<body>
-<header>
-  <h1>Jackson OS</h1>
-  <button id="stop" class="danger" hidden>Global stop</button>
-  <button id="resume" hidden>Resume work</button>
-  <div id="userbtn"></div>
+<body data-mode="2d">
+<div class="grid-bg" aria-hidden="true"></div>
+<header class="topbar">
+  <div class="brand"><span class="brand-mark" aria-hidden="true"></span>
+    <span>JACKSON<span class="dim">&nbsp;OS</span></span></div>
+  <p id="greeting" class="greeting" aria-live="polite"></p>
+  <div class="top-actions">
+    <div id="userbtn"></div>
+    <button id="resume" class="btn" hidden>Resume work</button>
+    <button id="stop" class="btn btn-stop" hidden>
+      <span class="stop-dot" aria-hidden="true"></span>GLOBAL STOP</button>
+  </div>
 </header>
+
 <main>
-  <section id="signin" aria-labelledby="signin-h">
+  <section id="signin" class="panel signin" aria-labelledby="signin-h">
     <h2 id="signin-h">Sign in</h2>
     <div id="clerk"></div>
     <div id="manual">
@@ -25,30 +33,88 @@
       <input id="token" type="password" autocomplete="off">
       <label for="tenant">Tenant ID</label>
       <input id="tenant" autocomplete="off">
-      <button id="go">Open dashboard</button>
+      <button id="go" class="btn btn-primary">Open dashboard</button>
     </div>
     <p id="err" role="alert"></p>
   </section>
+
   <div id="dash" hidden>
     <p id="banner" role="status"></p>
-    <section aria-labelledby="alerts-h"><h2 id="alerts-h">Alerts</h2><ul id="alerts"></ul></section>
-    <section aria-labelledby="pnl-h"><h2 id="pnl-h">Portfolio</h2>
-      <table id="pnl"><thead><tr><th scope="col">Business</th><th scope="col">Actual revenue</th>
-        <th scope="col">Refunds</th><th scope="col">Spend</th><th scope="col">Model cost</th>
-        <th scope="col">Actual profit</th><th scope="col">Held</th>
-        <th scope="col">Estimated revenue (not actual)</th></tr></thead><tbody></tbody></table>
+
+    <div class="hud">
+      <!-- Left column: what needs Steady -->
+      <div class="col col-left">
+        <section class="panel glow-gold" aria-labelledby="ap-h">
+          <h2 id="ap-h">Approvals inbox</h2><ul id="approvals" class="rows"></ul></section>
+        <section class="panel" aria-labelledby="la-h">
+          <h2 id="la-h">Launches</h2><ul id="launches" class="rows"></ul></section>
+        <section class="panel" aria-labelledby="alerts-h">
+          <h2 id="alerts-h">Alerts</h2><ul id="alerts" class="rows"></ul></section>
+      </div>
+
+      <!-- Center: Jackson's core and his agents -->
+      <div class="col col-center">
+        <section class="core-stage panel" aria-labelledby="core-h">
+          <h2 id="core-h" class="sr-only">Jackson's core</h2>
+          <canvas id="core3d" aria-hidden="true"></canvas>
+          <div id="corelabels" class="core-labels" aria-hidden="true"></div>
+          <div class="core-2d" aria-hidden="true">
+            <div class="ring r1"></div><div class="ring r2"></div><div class="ring r3"></div>
+            <div class="nucleus"></div>
+          </div>
+          <p id="corestatus" class="core-status" aria-live="polite"></p>
+        </section>
+        <section class="panel" aria-labelledby="ag-h">
+          <h2 id="ag-h">Agents</h2><ul id="agents" class="agent-list"></ul>
+          <div id="agentdetail" class="agent-detail" hidden tabindex="-1"
+               aria-labelledby="ad-name">
+            <h3 id="ad-name"></h3>
+            <dl><dt>Status</dt><dd id="ad-state"></dd><dt>Working on</dt><dd id="ad-task"></dd>
+              <dt>Cost today</dt><dd id="ad-cost"></dd><dt>Role</dt><dd id="ad-role"></dd>
+              <dt>Tasks</dt><dd id="ad-tasks"></dd></dl>
+            <button id="ad-close" class="btn">Close</button>
+          </div>
+        </section>
+      </div>
+
+      <!-- Right column: live feed -->
+      <div class="col col-right">
+        <section class="panel feed-panel" aria-labelledby="feed-h">
+          <h2 id="feed-h">Live feed <span id="feedstate" class="pill">connecting</span></h2>
+          <ol id="feed" class="feed" aria-live="polite"></ol></section>
+        <section class="panel" aria-labelledby="runs-h">
+          <h2 id="runs-h">Workflow timeline</h2><ul id="runs" class="rows"></ul></section>
+      </div>
+    </div>
+
+    <section class="panel" aria-labelledby="biz-h">
+      <h2 id="biz-h">Businesses</h2>
+      <div id="biz" class="biz-cards"></div>
+      <details><summary>Full portfolio table</summary>
+        <table id="pnl"><thead><tr><th scope="col">Business</th>
+          <th scope="col">Actual revenue</th><th scope="col">Refunds</th>
+          <th scope="col">Spend</th><th scope="col">Model cost</th>
+          <th scope="col">Actual profit</th><th scope="col">Held</th>
+          <th scope="col">Estimated revenue (not actual)</th></tr></thead><tbody></tbody></table>
+      </details>
     </section>
-    <section aria-labelledby="ap-h"><h2 id="ap-h">Approvals inbox</h2><ul id="approvals"></ul></section>
-    <section aria-labelledby="la-h"><h2 id="la-h">Launches</h2><ul id="launches"></ul></section>
-    <section aria-labelledby="m-h"><h2 id="m-h">Metrics (30 days)</h2><dl id="metrics"></dl></section>
-    <section aria-labelledby="runs-h"><h2 id="runs-h">Workflow timeline</h2><ul id="runs"></ul></section>
-    <section aria-labelledby="opp-h"><h2 id="opp-h">Opportunity board</h2><ul id="opps"></ul></section>
-    <section aria-labelledby="ag-h"><h2 id="ag-h">Agents</h2><ul id="agents"></ul></section>
-    <section aria-labelledby="lv-h"><h2 id="lv-h">Live visual work</h2><ul id="live"></ul></section>
-    <section aria-labelledby="art-h"><h2 id="art-h">Artifacts</h2><ul id="artifacts"></ul></section>
-    <section aria-labelledby="c-h"><h2 id="c-h">Connectors</h2><ul id="connectors"></ul></section>
-    <section aria-labelledby="au-h"><h2 id="au-h">Audit log</h2><ul id="audit"></ul></section>
+
+    <div class="cards">
+      <section class="panel" aria-labelledby="opp-h">
+        <h2 id="opp-h">Opportunity board</h2><ul id="opps" class="rows"></ul></section>
+      <section class="panel" aria-labelledby="m-h">
+        <h2 id="m-h">Metrics (30 days)</h2><dl id="metrics" class="metrics"></dl></section>
+      <section class="panel" aria-labelledby="lv-h">
+        <h2 id="lv-h">Live visual work</h2><ul id="live" class="rows"></ul></section>
+      <section class="panel" aria-labelledby="art-h">
+        <h2 id="art-h">Artifacts</h2><ul id="artifacts" class="rows"></ul></section>
+      <section class="panel" aria-labelledby="c-h">
+        <h2 id="c-h">Connectors</h2><ul id="connectors" class="rows"></ul></section>
+      <section class="panel" aria-labelledby="au-h">
+        <h2 id="au-h">Audit log</h2><ul id="audit" class="rows"></ul></section>
+    </div>
   </div>
+
   <dialog id="launchdlg" aria-labelledby="ld-h">
     <form id="launchform" method="dialog">
       <h2 id="ld-h">Launch approval</h2>
@@ -79,8 +145,8 @@
       </fieldset>
       <label for="lf-plan">Plan</label><textarea id="lf-plan" rows="3"></textarea>
       <p id="lf-err" role="alert"></p>
-      <button id="lf-go" type="submit" value="go">Approve launch</button>
-      <button type="submit" value="cancel" class="secondary" formnovalidate>Cancel</button>
+      <button id="lf-go" type="submit" value="go" class="btn btn-primary">Approve launch</button>
+      <button type="submit" value="cancel" class="btn" formnovalidate>Cancel</button>
     </form>
   </dialog>
 </main>
