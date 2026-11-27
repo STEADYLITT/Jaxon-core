@@ -139,6 +139,7 @@ def default_handlers() -> dict[str, Handler]:
     from .agent_handlers import agent_handler, eval_handler, factory_handler
     from .content import generate_handler as content_generate
     from .content import publish_handler as content_publish
+    from .content import video_handler as content_video
     from .crm import prepare_handler as outreach_prepare
     from .crm import send_handler as outreach_send
     from .dashboard import report_handler
@@ -153,6 +154,7 @@ def default_handlers() -> dict[str, Handler]:
             "agent_factory": factory_handler, "opportunity_research": research_handler,
             "store_build": store_build_handler, "shopify_publish": publish_handler,
             "content_generate": content_generate, "content_publish": content_publish,
+            "content_video": content_video,
             "site_build": site_build, "site_launch": site_launch,
             "outreach_prepare": outreach_prepare, "outreach_send": outreach_send,
             "daily_report": report_handler, "launch_propose": launch_propose}

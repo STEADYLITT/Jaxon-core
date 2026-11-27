@@ -99,3 +99,26 @@ SMS and calls stay labeled stand-ins.
 | `RESEND_WEBHOOK_SECRET` | the `whsec_...` signing secret from step 3. Seal it. |
 
 **In campaigns,** set the sender email to `steady@steadytradesuniversity.com`, or any address on that domain.
+
+---
+
+## UGC video via fal.ai
+
+**What Jackson does:** makes a short clip (4, 6 or 8 seconds, vertical 9:16 by default, 1080p, with sound) for a content draft, using Google Veo 3.1 Fast on fal.ai.
+- **Cost first:** in the console's **Content** panel, each draft has a **Make 8s video ($1.20)** button. Clicking it sends a request to **Approvals** with the exact amount. Nothing is generated or paid for until you press **Approve**. Inside an active Launch approval, the launch's budget and daily cap count as your approval instead.
+- **Prices** (fal.ai, Veo 3.1 Fast): $0.15 a second with sound, or $0.10 without, at 720p/1080p. At 4K it's $0.35 or $0.30. An 8-second clip with sound costs **$1.20**.
+- **The clip becomes a new draft** with the video attached and marked AI-generated, so posting it needs its own approval. Your approved original is never changed.
+- If fal is slow, Jackson checks back on the same request; it never pays twice.
+
+### Click steps
+1. Sign in at **fal.ai**. Your Growth OS app already uses this account. Make sure billing has credit.
+2. Go to **Dashboard → Keys → Add key**. Name it "Jackson", choose scope **API**, and copy the key. It's shown only once.
+3. In **Railway → Jaxon-core → Variables**, add `FAL_KEY` and **Seal** it.
+
+### Variables
+| Name | What to paste |
+|---|---|
+| `FAL_KEY` | the fal.ai key from step 2. Seal it. |
+| `FAL_VIDEO_MODEL` | optional. Leave it unset to use `fal-ai/veo3.1/fast`. If you set another model, also set `FAL_VIDEO_CENTS_PER_SECOND`, so Jackson knows the price. |
+
+fal.ai keeps generated files on its own servers. Post a clip within a few days of making it, or ask me to add permanent storage.

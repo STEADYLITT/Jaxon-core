@@ -37,6 +37,32 @@ async function api(path, opts = {}) {
   return r.json();
 }
 
+// Content: ask for a short UGC clip. The button shows the cost; the request then waits in
+// Approvals for that amount (or runs inside an active Launch approval's budget).
+async function renderContent(d) {
+  const ct = $("content"); clear(ct);
+  if (!(d.content || []).length) li(ct, "No drafts yet.");
+  let est = null;
+  try { est = await api("/video/estimate?duration_s=8&resolution=1080p&audio=true"); }
+  catch (e) { est = null; }
+  (d.content || []).forEach((c) => {
+    const el = li(ct, `${c.channel} · ${c.title || "(untitled)"} · ${c.status}` +
+      (c.has_video ? " · has video" : "") + " ");
+    if (c.has_video || !est) return;
+    const b = document.createElement("button");
+    b.className = "secondary video";
+    b.textContent = `Make 8s video (${money(est.estimate_cents)}` +
+      (est.connector === "mock" ? ", MOCK)" : ")");
+    b.addEventListener("click", async () => {
+      b.disabled = true;
+      await api(`/content/${c.id}/video`, { method: "POST", body: JSON.stringify({
+        idempotency_key: `${c.id}-${Date.now()}` }) });
+      load();
+    });
+    el.appendChild(b);
+  });
+}
+
 function render(d) {
   $("signin").hidden = true;
   $("dash").hidden = false;
@@ -166,6 +192,8 @@ function render(d) {
   const ar = $("artifacts"); clear(ar);
   if (!d.artifacts.length) li(ar, "No artifacts yet.");
   d.artifacts.forEach((a) => li(ar, `${a.type || a.kind} · ${a.content_type} · ${a.size_bytes} bytes`));
+
+  renderContent(d);
 
   const co = $("connectors"); clear(co);
   d.connectors.forEach((c) => li(co, `${c.name}: ${c.mode.toUpperCase()}` +

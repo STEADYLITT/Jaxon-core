@@ -194,3 +194,73 @@ def publish_handler(ctx):
         db.commit()
     return TaskResult({"content_id": str(cid), "post_id": res["post_id"], "url": res.get("url"),
                        "connector": res["connector"], "channel": channel})
+
+
+def video_handler(ctx):
+    """Generate one short UGC/product clip for a content item (ADR-036). The estimate is a
+    SPEND the owner approves (or an active Launch with budget left covers) BEFORE fal.ai is
+    called. The clip lands on a NEW content item in review, so posting it needs its own
+    approval; the approved original is never changed."""
+    import os
+    import uuid
+
+    from sqlalchemy import select
+
+    from .connectors import video
+    from .models import ContentItem, Persona, RunEvent, WorkflowRun
+    from .policy import Action, Category
+    from .worker import TaskResult
+
+    inp = ctx.input or {}
+    d, ar = int(inp.get("duration_s", 8)), inp.get("aspect_ratio", "9:16")
+    res, audio = inp.get("resolution", "1080p"), bool(inp.get("audio", True))
+    with ctx.db_session() as db:
+        src = db.get(ContentItem, uuid.UUID(inp["content_id"]))
+        if src is None or src.tenant_id != ctx.tenant_id:
+            raise NonRetryableError("content not found")
+        p = db.get(Persona, src.persona_id) if src.persona_id else None
+        persona = ({"kind": p.kind, "disclosure": p.disclosure} if p else None)
+        row = {"channel": src.channel, "kind": "video", "title": src.title[:300],
+               "body": src.body, "hashtags": list(src.hashtags), "sponsored": src.sponsored}
+        src_id, persona_id = src.id, src.persona_id
+        launch_id = db.scalar(select(WorkflowRun.launch_id).where(WorkflowRun.id == ctx.run_id))
+        job = db.scalar(select(RunEvent.data).where(
+            RunEvent.run_id == ctx.run_id, RunEvent.type == "video.submitted")
+            .order_by(RunEvent.created_at.desc()).limit(1))
+        db.rollback()
+    prompt = (inp.get("prompt") or f"{row['title']}. {row['body']}")[:4000]
+    est = video.estimate_cents(d, res, audio)
+    backend = video.video_backend()
+    desc = (f"UGC video for '{row['title'][:80]}': {d}s {ar} {res}"
+            f"{' with audio' if audio else ''} via {backend.model} - est. ${est / 100:.2f}")
+    resuming = bool(job) and job.get("connector") == backend.backend
+    if not resuming:  # a resumed job was already approved and reserved (reserve is idempotent)
+        ctx.authorize(Action(Category.SPEND, desc, est, channel="ugc_video", always_ask=True))
+    reservation = ctx.reserve_budget(est, desc)
+    if not resuming:
+        job = {**backend.submit(prompt, d, ar, res, audio), "connector": backend.backend}
+        with ctx.db_session() as db:
+            db.add(RunEvent(tenant_id=ctx.tenant_id, run_id=ctx.run_id, type="video.submitted",
+                            data=job))
+            db.commit()
+    url = backend.wait(job, timeout_s=float(os.environ.get("VIDEO_WAIT_SECONDS", "600")))
+    paid = est if backend.backend == "fal" else 0
+    ctx.settle_spend(reservation, paid, desc)
+    asset = {"ref": job["request_id"], "url": url, "kind": "video", "rights": "generated",
+             "proof": f"{backend.backend} {backend.model} request {job['request_id']}",
+             "mock": backend.backend == "mock"}
+    row["assets"] = [asset]
+    rv = review(row, persona)
+    with ctx.db_session() as db:
+        c = ContentItem(tenant_id=ctx.tenant_id, business_id=ctx.business_id,
+                        persona_id=persona_id, run_id=ctx.run_id, launch_id=launch_id,
+                        status="in_review" if rv["passed"] else "draft", review=rv, **row)
+        db.add(c)
+        db.flush()
+        out = {"content_id": str(c.id), "source_content_id": str(src_id), "video_url": url,
+               "cost_cents": paid, "estimate_cents": est, "connector": backend.backend,
+               "model": backend.model}
+        db.add(RunEvent(tenant_id=ctx.tenant_id, run_id=ctx.run_id, type="video.generated",
+                        data=out))
+        db.commit()
+    return TaskResult(out)
