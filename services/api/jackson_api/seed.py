@@ -20,15 +20,25 @@ from .settings import load_settings
 OWNER_TENANT_NAME = "Steady (owner)"
 
 # source_system="seed" + source_id makes re-runs idempotent via the unique constraint.
-OWNER_BUSINESSES = [
+OWNER_BUSINESSES = [  # (source_id, name, kind, description, business line — ADR-039)
     ("steady-trades-university", "Steady Trades University", "education",
-     "Trading education; checkout via Whop."),
-    ("csw-trades", "CSW Trades", "education", None),
+     "Trading education: Replay Trainer ($19.99/mo), One-on-One, Self-Paced, Live Group, "
+     "indicators. Checkout via Whop.", "stu"),
+    ("csw-trades", "CSW Trades", "education", None, "stu"),
     ("steady-ventures", "Steady Ventures", "agency",
-     "AI automation agency. Client work runs in separate client tenants (ADR-010)."),
+     "Marketing agency for other companies. Client work runs in separate client tenants "
+     "(ADR-010).", "agency"),
     ("apex-7", "APEX-7", "trading_research",
-     "Simulated futures bot. Research and paper trading only; no live trades (ADR-011)."),
-    ("shopify-store", "Shopify Store", "ecommerce", None),
+     "Simulated futures bot. Research and paper trading only; no live trades (ADR-011).",
+     "rnd"),
+    ("shopify-store", "Shopify Store", "ecommerce", None, "ecommerce"),
+    ("clip-farming", "Clip Farming", "clip_farming",
+     "Clips from creators who allow clipping, posted to TikTok/Shorts/Reels.", "clips"),
+    ("creator-agency", "Creator Agency", "creator_agency",
+     "Manages creators who signed with Steady. SFW promo only; drafts wait for approval.",
+     "creators"),
+    ("ai-influencers", "AI Influencers", "ai_influencer",
+     "SFW brand/lifestyle AI accounts, labeled as AI per platform rules.", "influencers"),
 ]
 
 
@@ -58,12 +68,17 @@ def seed_owner(session: Session, email: str, auth_subject: str) -> uuid.UUID:
             )
         )
     )
-    for source_id, name, kind, description in OWNER_BUSINESSES:
+    for source_id, name, kind, description, line in OWNER_BUSINESSES:
         if source_id in existing:
+            b = session.scalar(select(Business).where(
+                Business.tenant_id == tenant.id, Business.source_system == "seed",
+                Business.source_id == source_id))
+            if b is not None and b.line is None:  # place it in its line once; owner may move it
+                b.line = line
             continue
         b = Business(
             tenant_id=tenant.id, name=name, kind=kind, description=description,
-            source_system="seed", source_id=source_id,
+            source_system="seed", source_id=source_id, line=line,
         )
         session.add(b)
         session.flush()
@@ -71,8 +86,39 @@ def seed_owner(session: Session, email: str, auth_subject: str) -> uuid.UUID:
             tenant_id=tenant.id, actor_user_id=user.id, action="business.seeded",
             entity_type="Business", entity_id=b.id, data={"name": name},
         ))
+    session.flush()
+    propose_line_agents(session, tenant.id, user.id)
     session.commit()
     return tenant.id
+
+
+def propose_line_agents(session: Session, tenant_id, user_id) -> int:
+    """Missing roles in each business line become PROPOSED agents (AgentSpec drafts). They
+    do nothing until Steady validates, evaluates and activates them (agents API)."""
+    from .lines import LINES
+    from .models import AgentSpec
+
+    made = 0
+    for ln in LINES:
+        biz = session.scalar(select(Business.id).where(Business.tenant_id == tenant_id,
+                                                       Business.line == ln.key)
+                             .order_by(Business.created_at).limit(1))
+        for p in ln.proposed:
+            if session.scalar(select(AgentSpec.id).where(AgentSpec.tenant_id == tenant_id,
+                                                         AgentSpec.name == p["name"])):
+                continue
+            spec = AgentSpec(tenant_id=tenant_id, business_id=biz, name=p["name"], version=1,
+                             role=p["role"], objective=p["objective"],
+                             instructions=p["instructions"], status="draft",
+                             created_by="factory", owner_user_id=user_id,
+                             source_ref=f"line:{ln.key}")
+            session.add(spec)
+            session.flush()
+            session.add(AuditEvent(tenant_id=tenant_id, actor_user_id=None,
+                                   action="agent.proposed", entity_type="AgentSpec",
+                                   entity_id=spec.id, data={"line": ln.key, "name": p["name"]}))
+            made += 1
+    return made
 
 
 def main() -> None:

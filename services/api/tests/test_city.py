@@ -62,7 +62,7 @@ def test_a_department_agent_gets_envelopes_both_ways(client, world, make_token, 
     Worker(maker, retry_base_seconds=0).run_once()
     evs = {e.type: e for e in city_events(owner_db, run_id)}
     marketing = owner_db.scalar(select(Department.id).where(
-        Department.tenant_id == world.tenant_a, Department.key == "marketing"))
+        Department.tenant_id == world.tenant_a, Department.key == "stu"))
     assert (evs["task.created"].from_kind, evs["task.created"].to_id) == ("jaxon",
                                                                          str(marketing))
     assert (evs["task.completed"].from_id, evs["task.completed"].to_kind) == (
@@ -152,8 +152,9 @@ def test_only_real_agents_are_registered(client, world, maker, owner_db):
     staffed = {a.department_id for a in agents}
     depts = {d.key: d.id for d in owner_db.scalars(select(Department).where(
         Department.tenant_id == world.tenant_a))}
-    assert depts["fulfillment"] not in staffed and depts["support"] not in staffed
-    assert depts["marketing"] in staffed
+    # lines with no active agent yet (only proposed ones) are not staffed: dark lots
+    assert depts["clips"] not in staffed and depts["creators"] not in staffed
+    assert depts["stu"] in staffed and depts["ecommerce"] in staffed
 
 
 def test_worker_cannot_lift_an_owner_hold_and_events_are_append_only(world, maker, owner_db,
@@ -210,8 +211,9 @@ def test_snapshot_is_built_only_from_real_rows(client, world, make_token, maker,
     s = client.get(f"/tenants/{world.tenant_a}/city/state", headers=alice).json()
     assert s["demo"] is False
     depts = {d["key"]: d for d in s["departments"]}
-    assert depts["support"]["staffed"] is False and depts["marketing"]["staffed"] is True
-    assert [f["name"] for f in depts["marketing"]["floors"]][:2] == ["Content", "Social"]
+    assert depts["clips"]["staffed"] is False and depts["stu"]["staffed"] is True
+    assert [f["name"] for f in depts["stu"]["floors"]][:2] == ["Content", "Email & Funnels"]
+    assert len(s["departments"]) == 8  # one building per business line
     planner = next(a for a in s["agents"] if a["key"] == "kind:plan")
     assert planner["id"] in s["jaxon"]["agents"]
     assert planner["status"] == "done" and planner["online"] is True

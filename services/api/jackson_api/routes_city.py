@@ -67,7 +67,9 @@ def snapshot(db: Session, tenant_id: uuid.UUID) -> dict:
     city.sweep_offline(db)
     db.flush()
     now, today = datetime.now(UTC), _day_start()
-    depts = db.scalars(select(Department).where(Department.tenant_id == tenant_id)
+    line_keys = [d[0] for d in city.DEPARTMENTS]
+    depts = db.scalars(select(Department).where(Department.tenant_id == tenant_id,
+                                                Department.key.in_(line_keys))
                        .order_by(Department.slot)).all()
     floors = db.scalars(select(Floor).where(Floor.tenant_id == tenant_id)
                         .order_by(Floor.level)).all()

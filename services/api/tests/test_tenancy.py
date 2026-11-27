@@ -151,7 +151,7 @@ def test_seed_is_idempotent(app_session):
     assert t1 == t2
     bind_tenant(app_session, t1)
     names = set(app_session.scalars(select(Business.name).where(Business.tenant_id == t1)))
-    assert {n for _, n, _, _ in OWNER_BUSINESSES} <= names
+    assert {n for _, n, _, _, _ in OWNER_BUSINESSES} <= names
     seeded = app_session.scalar(
         select(func.count()).select_from(AuditEvent)
         .where(AuditEvent.tenant_id == t1, AuditEvent.action == "business.seeded")

@@ -21,6 +21,7 @@ from .routes_content import router as content_router
 from .routes_crm import router as crm_router
 from .routes_dashboard import router as dashboard_router
 from .routes_launches import router as launches_router
+from .routes_lines import router as lines_router
 from .routes_memory import router as memory_router
 from .routes_opportunities import router as opportunities_router
 from .routes_policy import router as policy_router
@@ -49,6 +50,7 @@ app.include_router(content_router)
 app.include_router(crm_router)
 app.include_router(dashboard_router)
 app.include_router(launches_router)
+app.include_router(lines_router)
 app.include_router(sites_router)
 app.include_router(city_router)
 app.include_router(connections_router)

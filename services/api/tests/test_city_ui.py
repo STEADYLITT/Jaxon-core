@@ -87,10 +87,10 @@ def test_desktop_draws_the_real_city_in_3d(client, world, make_token, maker, own
         assert s["mode"] == "high"
         assert sorted(s["staffed"]) == sorted(d["key"] for d in snap["departments"]
                                               if d["staffed"])
-        assert "fulfillment" not in s["staffed"] and "support" not in s["staffed"]
+        assert "clips" not in s["staffed"] and "creators" not in s["staffed"]
         page.wait_for_selector(".label.ceo", state="attached", timeout=10_000)
         labels = page.locator(".label").all_text_contents()
-        assert any("not staffed" in x and "Support" in x for x in labels)
+        assert any("not staffed" in x and "Clip Farming" in x for x in labels)
         assert any("CEO · Steady" in x for x in labels), " | ".join(labels)
         hud = {k: page.text_content(f"[data-stat={k}] .v") for k in ("online", "flight")}
         assert hud["online"] == f"{snap['hud']['agents_online']}/{snap['hud']['agents_total']}"
@@ -137,7 +137,7 @@ def test_phone_gets_low_mode_and_a_list_with_the_same_data(client, world, make_t
         page.click("#list-toggle")
         page.wait_for_selector(".list")
         txt = page.text_content(".list")
-        assert "Support — not staffed" in txt and "Content Writer" in txt
+        assert "Clip Farming — not staffed" in txt and "Content Writer" in txt
         assert "Steady's inbox" in txt
         width = page.evaluate("document.documentElement.scrollWidth")
         assert width <= page.viewport_size["width"]  # no sideways scroll on the phone
@@ -228,8 +228,8 @@ def test_building_floor_office_agent_and_real_pause(client, world, make_token, m
     w.run_once()
     with city(client, world, make_token(world.alice)) as (page, problems):
         page.wait_for_selector(".label.ceo", state="attached", timeout=20_000)
-        click3d(page, "building-marketing")
-        page.wait_for_selector("[data-panel=building] h2:has-text('Marketing')")
+        click3d(page, "building-stu")
+        page.wait_for_selector("[data-panel=building] h2:has-text('Steady Trades University')")
         page.click("[data-panel=building] button.floor:has-text('Content')")
         page.wait_for_selector(".floor-bar:has-text('Floor 1 · Content')")
         page.wait_for_selector(".screen:has-text('Content Writer')", state="attached")
@@ -389,4 +389,27 @@ def test_replay_trace_and_red_letters(client, world, make_token, maker, owner_db
         assert page.locator(".command-bar").count() == 0  # no commands while replaying
         page.click(".replay-bar button:has-text('Live')")
         page.wait_for_selector(".command-bar")
+        assert problems == [], problems
+
+
+# --- Business lines (ADR-039) -------------------------------------------------------------------
+
+def test_a_building_shows_its_business_line(client, world, make_token, maker, owner_db, drain):
+    from jackson_api.models import Business as B
+    from jackson_api.seed import propose_line_agents
+
+    owner_db.add(B(tenant_id=world.tenant_a, name="Clip Farming", kind="clip_farming",
+                   line="clips"))
+    owner_db.flush()
+    propose_line_agents(owner_db, world.tenant_a, None)
+    owner_db.commit()
+    Worker(maker).city_heartbeat()
+    with city(client, world, make_token(world.alice)) as (page, problems):
+        page.wait_for_selector(".label.ceo", state="attached", timeout=20_000)
+        click3d(page, "lot-clips")
+        page.wait_for_selector("[data-panel=building] h2:has-text('Clip Farming')")
+        page.wait_for_selector("[data-line=clips] .proposed li:has-text('clip-scout')")
+        txt = page.text_content("[data-line=clips]")
+        assert "not measured" in txt and "YOUTUBE_API_KEY" in txt
+        assert "Only creators whose terms allow clipping" in txt
         assert problems == [], problems

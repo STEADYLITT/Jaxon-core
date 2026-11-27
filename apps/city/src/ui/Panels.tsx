@@ -7,7 +7,7 @@ import { api, post } from "../lib/api";
 import { describe } from "../lib/effects";
 import { windowState } from "../lib/layout";
 import { useCity, type Focus } from "../lib/store";
-import type { AgentDetail, JaxonView, TraceView } from "../lib/types";
+import type { AgentDetail, JaxonView, LineView, TraceView } from "../lib/types";
 
 const money = (c: number) => `$${(c / 100).toFixed(2)}`;
 const STATE: Record<string, string> = {
@@ -42,14 +42,54 @@ function Shell({ title, onClose, children, label }: {
   );
 }
 
+function fmtKpi(k: LineView["kpis"][number]): string {
+  if (k.value === null) return `not measured: ${k.note ?? "no data source yet"}`;
+  if (k.unit === "USD") return `$${k.value.toFixed(2)}`;
+  return k.unit ? `${k.value} ${k.unit}` : String(k.value);
+}
+
+/** The business line behind a building: real KPIs, connectors, agents, playbook, launch. */
+function LineDetail({ lineKey }: { lineKey: string }) {
+  const [v] = useEvery(() => api<LineView>(`/lines/${lineKey}`), [lineKey], 10_000);
+  if (!v) return <p className="muted">Loading the line...</p>;
+  return (
+    <div className="line-detail" data-line={v.key}>
+      <p>{v.summary}</p>
+      {v.businesses.length > 0 && <p className="muted">Business: {v.businesses.map((b) => b.name).join(", ")}</p>}
+      <h3>KPIs (real data only)</h3>
+      <dl className="kpis">{v.kpis.map((k) => (
+        <div key={k.name} data-measured={k.value !== null}><dt>{k.name}</dt><dd>{fmtKpi(k)}</dd></div>
+      ))}</dl>
+      <h3>Connections</h3>
+      <ul className="conn">{v.connectors.map((c) => (
+        <li key={c.id}><span className={`badge ${c.mode.toLowerCase()}`}>{c.mode}</span> {c.name}
+          {c.missing.length > 0 && <span className="muted"> (needs {c.missing.join(" + ")})</span>}</li>
+      ))}</ul>
+      {v.proposed_agents.length > 0 && (<>
+        <h3>Proposed agents (waiting for your approval)</h3>
+        <ul className="proposed">{v.proposed_agents.map((p) => <li key={p.id}><strong>{p.name}</strong>: {p.role}</li>)}</ul>
+      </>)}
+      <h3>Playbook v{v.playbook.version}</h3>
+      <ol>{(v.playbook.steps ?? []).map((x, i) => <li key={i}>{x}</li>)}</ol>
+      <ul className="rules">{(v.playbook.rules ?? []).map((x, i) => <li key={i}>{x}</li>)}</ul>
+      <h3>Budget</h3>
+      <p>${v.budget.spent_this_month_usd.toFixed(2)} spent this month of ${(v.budget.monthly_cents / 100).toFixed(2)}</p>
+      <h3>Launches</h3>
+      <p className="muted">{v.launch.how}</p>
+      <p>{v.launch.active} active</p>
+    </div>
+  );
+}
+
 function BuildingPanel({ id }: { id: string }) {
   const s = useCity((st) => st.snapshot);
+  const share = useCity((st) => st.shareToken);
   const setFocus = useCity((st) => st.setFocus);
   const d = s?.departments.find((x) => x.id === id);
   if (!s || !d) return null;
   return (
     <Shell title={d.name} label="building" onClose={() => setFocus(null)}>
-      {!d.staffed && <p className="muted">Not staffed: no agent does this work yet.</p>}
+      {!d.staffed && <p className="muted">Not staffed: no active agent does this work yet.</p>}
       <ol className="floors">
         {d.floors.map((f) => {
           const agents = f.agents.map((aid) => s.agents.find((a) => a.id === aid)).filter((a) => !!a);
@@ -67,6 +107,7 @@ function BuildingPanel({ id }: { id: string }) {
           );
         })}
       </ol>
+      {!share && <LineDetail lineKey={d.key} />}
     </Shell>
   );
 }

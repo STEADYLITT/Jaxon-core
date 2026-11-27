@@ -37,7 +37,7 @@ type Pose = { pos: Vec3; target: Vec3; key: string };
 function poseFor(focus: Focus, s: Snapshot, aspect: number, inOffice: boolean): Pose | null {
   const far = aspect < 0.8 ? 1.75 : aspect < 1.2 ? 1.3 : 1;
   if (inOffice) return { pos: [0, 7 * far, 15 * far], target: [0, 2.2, 0], key: "office" };
-  if (!focus) return { pos: [0, 32 * far, 62 * far], target: [0, 13, 0], key: "city" };
+  if (!focus) return { pos: [0, 40 * far, 74 * far], target: [0, 9, 0], key: "city" };
   if (focus.kind === "building") {
     const d = s.departments.find((x) => x.id === focus.id);
     if (!d) return null;
@@ -218,7 +218,14 @@ function Building({ d, n }: { d: Department; n: number }) {
   const rot = facing(d, n);
   if (!d.staffed) {
     return (
-      <group position={[x, 0, z]} rotation-y={rot} name={`lot-${d.key}`}>
+      <group position={[x, 0, z]} rotation-y={rot} name={`lot-${d.key}`}
+        onClick={(e) => { e.stopPropagation(); useCity.getState().setFocus({ kind: "building", id: d.id }); }}
+        onPointerOver={() => pointer(true)} onPointerOut={() => pointer(false)}>
+        {/* the lot itself is clickable: its line's playbook, proposed agents and keys */}
+        <mesh rotation-x={-Math.PI / 2} position-y={0.06}>
+          <planeGeometry args={[BUILDING_W, BUILDING_W]} />
+          <meshBasicMaterial color={d.color} transparent opacity={0.06} />
+        </mesh>
         <lineSegments position-y={0.05}>
           <edgesGeometry args={[new THREE.BoxGeometry(BUILDING_W, 0.1, BUILDING_W)]} />
           <lineBasicMaterial color="#3b3560" />

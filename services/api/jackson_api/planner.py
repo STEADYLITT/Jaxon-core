@@ -85,6 +85,15 @@ def build_request(ctx, memories: list[dict] | None = None) -> ModelRequest:
 def plan_handler(ctx):
     from .worker import TaskResult  # local import: worker imports this module lazily too
 
+    if (ctx.input or {}).get("route"):
+        from .router import refused
+
+        bad = refused(ctx.objective or "")
+        if bad:  # never planned, never drafted
+            return TaskResult(output={"route": {"kind": None, "reason": bad, "via": "rules",
+                                                "line": None, "refused": True},
+                                      "mode": "refused", "plan": None})
+
     memories = ctx.recall(ctx.objective, limit=8)
     resp = ctx.call_model("planning", build_request(ctx, memories))
     plan = json.loads(resp.text)
@@ -98,9 +107,11 @@ def plan_handler(ctx):
         from .router import route as pick
 
         r = pick(ctx, ctx.objective)
-        route = {k: r[k] for k in ("kind", "reason", "via")}
+        route = {k: r.get(k) for k in ("kind", "reason", "via", "line", "business_id",
+                                       "missing")}
         if r.get("kind"):
-            follow_ups.append((r["kind"], r["title"], r["input"]))
+            extra = {"agent_spec_id": r["agent_spec_id"]} if r.get("agent_spec_id") else {}
+            follow_ups.append((r["kind"], r["title"], r["input"], extra))
     return TaskResult(follow_ups=follow_ups, output={
         "route": route,
         "mode": resp.mode,

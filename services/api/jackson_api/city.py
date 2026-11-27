@@ -22,49 +22,40 @@ from .models import Agent, AgentSpec, Department, Event, Floor, Task
 HEARTBEAT_S = 15
 OFFLINE_AFTER_S = 60
 
+# Departments are Steady's business lines (lines.py, ADR-039):
 # (key, name, color, slot, [(floor key, floor name)])
-DEPARTMENTS = [
-    ("marketing", "Marketing", "#ff3df2", 0, [("content", "Content"), ("social", "Social"),
-                                              ("email", "Email/Funnels"), ("seo", "SEO"),
-                                              ("ads", "Paid Ads")]),
-    ("sales", "Sales", "#00e5ff", 1, [("outreach", "Outreach")]),
-    ("fulfillment", "Agency Fulfillment", "#7cff6b", 2, [("delivery", "Client Delivery")]),
-    ("engineering", "Engineering", "#8f7bff", 3, [("store", "Store"), ("web", "Web"),
-                                                  ("factory", "Agent Factory")]),
-    ("finance", "Finance", "#ffd166", 4, [("reporting", "Reporting")]),
-    ("research", "Research", "#4dd2ff", 5, [("market", "Market Research")]),
-    ("support", "Support", "#ff8fa3", 6, [("helpdesk", "Help Desk")]),
-]
+from .lines import LINES  # noqa: E402
 
-# The real workers: task kind -> (department or "jaxon", floor, name, role)
+DEPARTMENTS = [(ln.key, ln.name, ln.color, ln.slot, ln.floors) for ln in LINES]
+
+# The real workers: task kind -> (line or "jaxon", floor, name, role)
 BUILT_IN = {
-    "plan": ("jaxon", None, "Jaxon Planner", "turns Steady's commands into tasks"),
+    "plan": ("jaxon", None, "Jaxon Planner", "turns Steady's commands into plans"),
     "launch_propose": ("jaxon", None, "Launch Planner", "proposes launches for approval"),
-    "opportunity_research": ("research", "market", "Research Scout",
-                             "researches products and opportunities"),
-    "content_generate": ("marketing", "content", "Content Writer", "drafts posts in a voice"),
-    "content_video": ("marketing", "content", "Video Producer", "makes short UGC clips"),
-    "content_publish": ("marketing", "social", "Social Publisher",
-                        "posts approved content"),
-    "outreach_prepare": ("sales", "outreach", "Outreach Writer",
-                         "prepares and reviews campaigns"),
-    "outreach_send": ("sales", "outreach", "Outreach Sender", "sends approved email"),
-    "store_build": ("engineering", "store", "Store Builder", "builds Shopify drafts"),
-    "shopify_publish": ("engineering", "store", "Shop Publisher", "publishes products"),
-    "site_build": ("engineering", "web", "Site Builder", "builds websites"),
-    "site_launch": ("engineering", "web", "Site Launcher", "launches websites"),
-    "agent_factory": ("engineering", "factory", "Agent Factory", "drafts new agents"),
-    "agent_eval": ("engineering", "factory", "Agent Evaluator", "tests agents in a sandbox"),
-    "daily_report": ("finance", "reporting", "Daily Reporter", "writes Steady's report"),
+    "opportunity_research": ("rnd", "ideas", "Research Scout",
+                             "researches opportunities from cited sources"),
+    "content_generate": ("stu", "content", "Content Writer", "drafts posts in a voice"),
+    "content_publish": ("stu", "content", "Social Publisher", "posts approved content"),
+    "outreach_prepare": ("stu", "email", "Outreach Writer", "prepares and reviews campaigns"),
+    "outreach_send": ("stu", "email", "Outreach Sender", "sends approved email"),
+    "site_build": ("agency", "web", "Site Builder", "builds websites"),
+    "site_launch": ("agency", "web", "Site Launcher", "launches websites"),
+    "content_video": ("influencers", "studio", "Video Producer", "makes short clips (fal.ai)"),
+    "store_build": ("ecommerce", "store", "Store Builder", "builds Shopify drafts"),
+    "shopify_publish": ("ecommerce", "store", "Shop Publisher", "publishes products"),
+    "agent_factory": ("finance", "ops", "Agent Factory", "drafts new agents"),
+    "agent_eval": ("finance", "ops", "Agent Evaluator", "tests agents in a sandbox"),
+    "daily_report": ("finance", "briefing", "Daily Reporter", "writes Steady's CEO briefing"),
 }
 
-SPEC_DEPARTMENT = [  # keyword in an AgentSpec's name/role -> department
-    (("market", "content", "social", "seo", "ads", "brand", "copy"), "marketing"),
-    (("sales", "outreach", "lead", "prospect"), "sales"),
-    (("client", "fulfil", "delivery", "agency"), "fulfillment"),
-    (("code", "engineer", "site", "store", "build", "developer"), "engineering"),
-    (("finance", "account", "budget", "bookkeep", "invoice"), "finance"),
-    (("support", "ticket", "helpdesk", "customer service"), "support"),
+SPEC_DEPARTMENT = [  # keyword in an AgentSpec's name/role -> line (when it has no business)
+    (("clip",), "clips"),
+    (("creator", "caption-drafter"), "creators"),
+    (("persona", "influencer", "virtual"), "influencers"),
+    (("product", "shopify", "store", "ecommerce"), "ecommerce"),
+    (("client", "agency"), "agency"),
+    (("course", "funnel", "student", "trades"), "stu"),
+    (("finance", "budget", "invoice", "briefing"), "finance"),
 ]
 
 
@@ -102,7 +93,7 @@ def _upsert(db: Session, model, values: dict, conflict: list[str]):
 def ensure_departments(db: Session, tenant_id) -> dict[str, Department]:
     have = {d.key: d for d in db.scalars(select(Department).where(
         Department.tenant_id == tenant_id))}
-    if len(have) < len(DEPARTMENTS):
+    if not {d[0] for d in DEPARTMENTS} <= set(have):
         for key, name, color, slot, _floors in DEPARTMENTS:
             _upsert(db, Department, {"id": uuid.uuid4(), "tenant_id": tenant_id, "key": key,
                                      "name": name, "color": color, "slot": slot},
@@ -131,33 +122,45 @@ def spec_department(name: str, role: str) -> str:
     for words, dept in SPEC_DEPARTMENT:
         if any(w in hay for w in words):
             return dept
-    return "research"
+    return "rnd"
 
 
 def ensure_agent(db: Session, tenant_id, kind: str, spec_name: str | None = None,
-                 spec_role: str | None = None) -> Agent:
-    """The registry row for a real worker, created on first sight."""
+                 spec_role: str | None = None, spec_line: str | None = None) -> Agent:
+    """The registry row for a real worker, created on first sight and re-placed when the
+    line it belongs to changes (its status and history are untouched)."""
     key = f"spec:{spec_name}" if spec_name else f"kind:{kind}"
-    a = db.scalar(select(Agent).where(Agent.tenant_id == tenant_id, Agent.key == key))
-    if a is not None:
-        return a
-    depts = ensure_departments(db, tenant_id)
     if spec_name:
-        dkey, fkey = spec_department(spec_name, spec_role or ""), None
+        dkey, fkey = spec_line or spec_department(spec_name, spec_role or ""), None
         name, role = spec_name, spec_role or "custom agent"
     else:
-        dkey, fkey, name, role = BUILT_IN.get(kind, ("research", None, kind, kind))
+        dkey, fkey, name, role = BUILT_IN.get(kind, ("rnd", None, kind, kind))
+    a = db.scalar(select(Agent).where(Agent.tenant_id == tenant_id, Agent.key == key))
+    depts = ensure_departments(db, tenant_id)
     dept = depts.get(dkey)  # None for Jaxon's own agents (they live in the orb)
     floor = _floor(db, tenant_id, dept, fkey)
-    if dept is not None and floor is None:  # AgentSpec agents get the department's 1st floor
+    if dept is not None and floor is None:  # AgentSpec agents get the line's first floor
         floor = db.scalar(select(Floor.id).where(Floor.department_id == dept.id)
                           .order_by(Floor.level).limit(1))
+    dept_id = dept.id if dept else None
+    if a is not None:
+        if (a.department_id, a.floor_id) != (dept_id, floor):
+            a.department_id, a.floor_id = dept_id, floor
+            db.flush()
+        return a
     _upsert(db, Agent, {"id": uuid.uuid4(), "tenant_id": tenant_id, "key": key, "name": name,
-                        "role": role[:200], "task_kind": kind,
-                        "department_id": dept.id if dept else None, "floor_id": floor,
-                        "status": "idle"}, ["tenant_id", "key"])
+                        "role": role[:200], "task_kind": kind, "department_id": dept_id,
+                        "floor_id": floor, "status": "idle"}, ["tenant_id", "key"])
     db.flush()
     return db.scalar(select(Agent).where(Agent.tenant_id == tenant_id, Agent.key == key))
+
+
+def _spec_line(db: Session, spec: AgentSpec) -> str | None:
+    from .models import Business
+
+    if spec.business_id is None:
+        return None
+    return db.scalar(select(Business.line).where(Business.id == spec.business_id))
 
 
 def ensure_registry(db: Session, tenant_id) -> None:
@@ -166,14 +169,14 @@ def ensure_registry(db: Session, tenant_id) -> None:
         ensure_agent(db, tenant_id, kind)
     for s in db.scalars(select(AgentSpec).where(AgentSpec.tenant_id == tenant_id,
                                                 AgentSpec.status == "active")):
-        ensure_agent(db, tenant_id, "agent", s.name, s.role)
+        ensure_agent(db, tenant_id, "agent", s.name, s.role, _spec_line(db, s))
 
 
 def agent_for_task(db: Session, task: Task) -> Agent:
     if task.agent_spec_id is not None:
         s = db.get(AgentSpec, task.agent_spec_id)
         if s is not None:
-            return ensure_agent(db, task.tenant_id, "agent", s.name, s.role)
+            return ensure_agent(db, task.tenant_id, "agent", s.name, s.role, _spec_line(db, s))
     return ensure_agent(db, task.tenant_id, task.kind)
 
 

@@ -790,20 +790,31 @@ class Worker:
             _event(db, task, "task.succeeded", attempt=task.attempts)
             city.on_task(db, task, "task.completed", "done", attempt=task.attempts,
                          result_summary=_summary(result.output))
-            created = []
-            for kind, title, *inp in result.follow_ups:
-                created.append(add_task(db, run, kind=kind, title=title,
-                                        **({"input": inp[0]} if inp else {})))
             route = (result.output or {}).get("route") if isinstance(result.output, dict) else None
+            if route and route.get("business_id") and run.business_id is None:
+                run.business_id = uuid.UUID(route["business_id"])  # the line's business
+            created = []
+            for kind, title, *more in result.follow_ups:
+                extra = dict(more[1]) if len(more) > 1 else {}
+                if "agent_spec_id" in extra:
+                    extra["agent_spec_id"] = uuid.UUID(str(extra["agent_spec_id"]))
+                created.append(add_task(db, run, kind=kind, title=title,
+                                        **({"input": more[0]} if more else {}), **extra))
             if route:  # Jaxon's routing decision, with its reason, next to the task it made
                 to = city.agent_for_task(db, created[0]) if created else None
+                dest = city.address(to) if to else ("jaxon", "jaxon")
+                if to is None and route.get("line"):  # Jaxon keeps it, for this line
+                    d = city.ensure_departments(db, task.tenant_id).get(route["line"])
+                    dest = ("department", str(d.id)) if d else dest
                 city.emit(db, task.tenant_id, "command.routed", from_=("jaxon", "jaxon"),
-                          to=city.address(to) if to else ("jaxon", "jaxon"), run_id=run.id,
+                          to=dest, run_id=run.id,
                           task_id=created[0].id if created else None,
                           agent_id=to.id if to else None,
                           payload={"command": run.objective[:300], "reason": route["reason"],
                                    "via": route["via"], "agent": to.name if to else "Jaxon",
-                                   "kind": route.get("kind")})
+                                   "kind": route.get("kind"), "line": route.get("line"),
+                                   "missing": route.get("missing") or [],
+                                   "refused": bool(route.get("refused"))})
             db.flush()
             remaining = db.scalar(select(func.count()).select_from(Task).where(
                 Task.run_id == run.id,
