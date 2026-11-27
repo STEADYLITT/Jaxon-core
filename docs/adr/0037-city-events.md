@@ -51,3 +51,24 @@ Envelopes are `from_kind/from_id → to_kind/to_id`:
 ## Owner holds
 - `paused` and `killed` are owner states. A DB trigger (`agent_owner_holds`) refuses the worker role any change away from them.
 - `events` is append-only: neither role has UPDATE or DELETE.
+
+## API (phase 2)
+Paths follow this API's tenant-scoped style.
+
+| Spec | Jackson |
+|---|---|
+| `GET /api/city/state` | `GET /tenants/{t}/city/state` |
+| `/api/city/stream` | `GET /tenants/{t}/city/stream` |
+| `GET /api/events?since=&agent=&task=` | `GET /tenants/{t}/city/events?since=&agent=&task=&run=&since_ts=` |
+| `POST /api/commands` | `POST /tenants/{t}/commands` (existing) |
+| `POST /api/approvals/:id` | `POST /tenants/{t}/approvals/{id}/decision` (existing) |
+
+- **State** is the full snapshot the page rebuilds from on every load:
+  - departments, floors and agents, with live status, current task + parent command, cost, done/failed today, 7-day success rate
+  - Jaxon's events/minute
+  - HUD
+  - CEO inbox: approvals + alerts
+  - the last 20 events
+  - `last_event_id`
+- **Stream** is SSE that resumes with `Last-Event-ID`. While anyone watches, it runs the offline sweep every 15s, so a dead worker turns gray with no UI action.
+- **Revenue today** is `null` (hidden) unless a connected source (Shopify/Whop/Stripe/import) has written revenue. It is never estimated.

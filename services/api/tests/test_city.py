@@ -196,3 +196,124 @@ def test_tasks_are_mapped_to_existing_tables_not_duplicated(client, world, make_
     run_id = new_run(client, world, make_token)
     created = [e for e in city_events(owner_db, run_id) if e.type == "task.created"][0]
     assert owner_db.get(Task, created.task_id).run_id == uuid.UUID(run_id)
+
+
+# --- Phase 2: snapshot, events query, live stream ----------------------------------------------
+
+def test_snapshot_is_built_only_from_real_rows(client, world, make_token, maker, owner_db,
+                                               drain):
+    alice = auth(make_token, world.alice)
+    w = Worker(maker, retry_base_seconds=0)
+    w.city_heartbeat()
+    run_id = new_run(client, world, make_token, objective="Snapshot me")
+    w.run_once()
+    s = client.get(f"/tenants/{world.tenant_a}/city/state", headers=alice).json()
+    assert s["demo"] is False
+    depts = {d["key"]: d for d in s["departments"]}
+    assert depts["support"]["staffed"] is False and depts["marketing"]["staffed"] is True
+    assert [f["name"] for f in depts["marketing"]["floors"]][:2] == ["Content", "Social"]
+    planner = next(a for a in s["agents"] if a["key"] == "kind:plan")
+    assert planner["id"] in s["jaxon"]["agents"]
+    assert planner["status"] == "done" and planner["online"] is True
+    assert planner["done_today"] >= 1 and planner["success_rate_7d"] is not None
+    assert s["hud"]["revenue_today_usd"] is None  # no connected revenue source: hidden
+    assert s["hud"]["agents_online"] == s["hud"]["agents_total"]
+    assert s["ticker"][0]["id"] == s["last_event_id"]
+    assert any(t["run_id"] == run_id and t["type"] == "task.completed" for t in s["ticker"])
+
+
+def test_snapshot_shows_the_inbox_and_current_task_with_its_command(client, world, make_token,
+                                                                    maker, owner_db, drain):
+    seen = {}
+
+    def waits(ctx):
+        seen["state"] = client.get(f"/tenants/{world.tenant_a}/city/state",
+                                   headers=auth(make_token, world.alice)).json()
+        ctx.authorize(Action(Category.SPEND, "buy 3 samples", 4_200, always_ask=True))
+        return TaskResult({})
+
+    w = Worker(maker, handlers={"plan": waits}, retry_base_seconds=0)
+    w.city_heartbeat()
+    new_run(client, world, make_token, objective="Source samples")
+    w.run_once()
+    mid = next(a for a in seen["state"]["agents"] if a["key"] == "kind:plan")
+    assert mid["status"] == "working"
+    assert mid["current_task"]["command"] == "Source samples"  # trace back to Steady
+    s = client.get(f"/tenants/{world.tenant_a}/city/state",
+                   headers=auth(make_token, world.alice)).json()
+    ap = [a for a in s["inbox"]["approvals"] if a["question"] == "buy 3 samples"]
+    assert ap and ap[0]["amount_cents"] == 4_200 and ap[0]["agent_id"] == mid["id"]
+
+
+def test_a_hard_refresh_rebuilds_the_same_state(client, world, make_token, maker, owner_db,
+                                                drain):
+    alice = auth(make_token, world.alice)
+    Worker(maker).city_heartbeat()
+    a = client.get(f"/tenants/{world.tenant_a}/city/state", headers=alice).json()
+    b = client.get(f"/tenants/{world.tenant_a}/city/state", headers=alice).json()
+    strip = lambda s: {k: v for k, v in s.items() if k != "generated_at"}  # noqa: E731
+    assert strip(a) == strip(b)
+
+
+def test_events_query_filters(client, world, make_token, maker, owner_db, drain):
+    alice = auth(make_token, world.alice)
+    run_id = new_run(client, world, make_token)
+    Worker(maker, retry_base_seconds=0).run_once()
+    evs = client.get(f"/tenants/{world.tenant_a}/city/events?run={run_id}",
+                     headers=alice).json()
+    task_id = evs[1]["task_id"]
+    by_task = client.get(f"/tenants/{world.tenant_a}/city/events?task={task_id}",
+                         headers=alice).json()
+    assert {e["task_id"] for e in by_task} == {task_id}
+    after = client.get(f"/tenants/{world.tenant_a}/city/events?since={evs[-2]['id']}"
+                       f"&run={run_id}", headers=alice).json()
+    assert [e["id"] for e in after] == [evs[-1]["id"]]
+    agent_id = evs[2]["agent_id"]
+    by_agent = client.get(f"/tenants/{world.tenant_a}/city/events?agent={agent_id}",
+                          headers=alice).json()
+    assert by_agent and {e["agent_id"] for e in by_agent} == {agent_id}
+
+
+def test_stream_delivers_live_events_and_resumes(client, world, make_token, maker, owner_db,
+                                                 drain):
+    alice = auth(make_token, world.alice)
+    run_id = new_run(client, world, make_token, objective="Stream me")
+    Worker(maker, retry_base_seconds=0).run_once()
+    first = client.get(f"/tenants/{world.tenant_a}/city/events?run={run_id}",
+                       headers=alice).json()
+    start = first[0]["id"] - 1
+    with client.stream("GET", f"/tenants/{world.tenant_a}/city/stream?after={start}"
+                              f"&timeout=1", headers=alice) as r:
+        assert r.headers["content-type"].startswith("text/event-stream")
+        body = "".join(r.iter_text())
+    ids = [int(line[4:]) for line in body.splitlines() if line.startswith("id: ")]
+    assert ids[:len(first)] == [e["id"] for e in first]
+    assert "event: command.issued" in body and "event: task.completed" in body
+    with client.stream("GET", f"/tenants/{world.tenant_a}/city/stream?timeout=0.5",
+                       headers={**alice, "Last-Event-ID": str(ids[-1])}) as r:
+        rest = "".join(r.iter_text())
+    assert f"id: {ids[0]}\n" not in rest  # resumed after the last id, no repeats
+
+
+def test_stream_turns_a_dead_worker_gray_without_ui_action(client, world, make_token, maker,
+                                                          owner_db, drain, monkeypatch):
+    alice = auth(make_token, world.alice)
+    Worker(maker).city_heartbeat()
+    owner_db.execute(update(Agent).where(Agent.tenant_id == world.tenant_a)
+                     .values(last_heartbeat_at=text("now() - interval '2 minutes'")))
+    owner_db.commit()  # the worker died two minutes ago
+    monkeypatch.setattr(city, "HEARTBEAT_S", 0)
+    with client.stream("GET", f"/tenants/{world.tenant_a}/city/stream?timeout=1",
+                       headers=alice) as r:
+        body = "".join(r.iter_text())
+    assert "event: agent.offline" in body
+    owner_db.expire_all()
+    statuses = {a.status for a in owner_db.scalars(select(Agent).where(
+        Agent.tenant_id == world.tenant_a))}
+    assert statuses == {"offline"}
+
+
+def test_city_is_tenant_isolated(client, world, make_token):
+    r = client.get(f"/tenants/{world.tenant_b}/city/state",
+                   headers=auth(make_token, world.alice))
+    assert r.status_code in (403, 404)
