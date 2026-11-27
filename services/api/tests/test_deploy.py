@@ -222,3 +222,26 @@ def test_site_root_opens_the_console_and_keeps_the_clerk_handshake(client):
     plain = client.get("/", follow_redirects=False)
     assert plain.headers["location"] == "/console"
     assert client.get("/?__clerk_handshake=t").status_code == 200  # lands on the console
+
+
+def test_first_boot_enables_shopify_drafts_once_when_configured(empty_db, tmp_path, capsys,
+                                                                monkeypatch):
+    from jackson_api.deploy_init import run
+
+    monkeypatch.setenv("SHOPIFY_STORE_DOMAIN", "cha6cs-6c.myshopify.com")
+    monkeypatch.setenv("SHOPIFY_CLIENT_ID", "client-id-1")
+    monkeypatch.setenv("SHOPIFY_CLIENT_SECRET", "s" * 32)
+    env = {"MIGRATION_DATABASE_URL": empty_db, "DATA_DIR": str(tmp_path),
+           "APP_DB_PASSWORD": APP_PASSWORD, "WORKER_DB_PASSWORD": WORKER_PASSWORD,
+           "OWNER_EMAIL": "owner@example.com", "OWNER_AUTH_SUBJECT": "user_shop_test"}
+    assert run(env)["grants"] == ["shopify.drafts"]
+    assert run(env)["grants"] == []  # once only
+    eng = create_engine(empty_db)
+    with eng.connect() as c:
+        rows = c.execute(text("SELECT tool_name, config::text FROM tool_grants")).all()
+        assert rows == [("shopify.drafts", "{}")]  # no secret in the grant
+        assert c.scalar(text("SELECT count(*) FROM audit_events WHERE action='tool.granted'")
+                        ) == 1
+    eng.dispose()
+    out = capsys.readouterr().out
+    assert "s" * 32 not in out and "shopify.drafts enabled" in out

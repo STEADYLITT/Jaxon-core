@@ -158,10 +158,13 @@ def connectors(db: Session, tenant_id) -> list[dict]:
         select(ToolGrant).where(ToolGrant.tenant_id == tenant_id,
                                 ToolGrant.tool_name == "shopify.drafts",
                                 ToolGrant.status == "active"))}
-    shop_live = "shopify" in shop_modes and bool(os.environ.get("SHOPIFY_ADMIN_API_TOKEN"))
+    from .connectors.shopify import live_config
+
+    shop_live = live_config() is not None and shop_modes != {"mock"}
     rows = [
         ("models", "Claude (model gateway)", model_live, "ANTHROPIC_API_KEY"),
-        ("shopify", "Shopify drafts", shop_live, "dev store + SHOPIFY_ADMIN_API_TOKEN"),
+        ("shopify", "Shopify drafts", shop_live,
+         "SHOPIFY_STORE_DOMAIN + SHOPIFY_CLIENT_ID + SHOPIFY_CLIENT_SECRET"),
         ("social", "Social posting", False, "posting provider key (e.g. Upload-Post)"),
         ("hosting", "Website hosting", False, "hosting account token"),
         ("dns", "Domain verification", os.environ.get("SITE_DOMAIN_VERIFY") == "dns",

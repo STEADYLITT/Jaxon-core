@@ -31,7 +31,8 @@ def alice(make_token, world):
 @pytest.fixture(autouse=True)
 def _env(monkeypatch, tmp_path):
     monkeypatch.setenv("ARTIFACT_DIR", str(tmp_path))
-    for v in ("S3_BUCKET", "SITE_DOMAIN_VERIFY", "SHOPIFY_ADMIN_API_TOKEN"):
+    for v in ("S3_BUCKET", "SITE_DOMAIN_VERIFY", "SHOPIFY_ADMIN_API_TOKEN",
+              "SHOPIFY_STORE_DOMAIN", "SHOPIFY_CLIENT_ID", "SHOPIFY_CLIENT_SECRET"):
         monkeypatch.delenv(v, raising=False)
 
 
