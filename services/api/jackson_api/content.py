@@ -143,13 +143,14 @@ def generate_handler(ctx):
 
 
 def publish_handler(ctx):
-    """Post approved content through the social connector (MOCK). The schedule action
-    recorded the owner's posting approval; policy still checks it here."""
+    """Post approved content through the social connector (Upload-Post when configured,
+    a labeled MOCK otherwise). The schedule action recorded the owner's posting approval
+    (or the content is inside an active Launch approval); policy still checks it here."""
     import uuid
 
     from sqlalchemy import select
 
-    from .models import ContentItem, RunEvent
+    from .models import ContentItem, Persona, RunEvent
     from .policy import Action, Category
     from .worker import TaskResult
 
@@ -167,16 +168,29 @@ def publish_handler(ctx):
         if not (person_approved or launch_ok):
             raise NonRetryableError(f"content is {c.status}, not approved")
         channel = c.channel
+        tags = " ".join("#" + h.lstrip("#") for h in (c.hashtags or []))
+        text = f"{c.body}\n\n{tags}".strip()
+        assets = list(c.assets or [])
+        persona = db.get(Persona, c.persona_id) if c.persona_id else None
+        ai_made = bool(persona and persona.kind == "virtual_influencer") or any(
+            a.get("rights") == "generated" for a in assets)
         db.rollback()
     ctx.authorize(Action(Category.PUBLIC_POST, f"publish content {cid}", channel="social",
                          target=channel))
-    post_id = f"mock-post-{uuid.uuid4().hex[:10]}"  # MOCK social connector (ADR-007)
+    from .connectors.social import social_backend
+
+    sender = social_backend()
+    # The same key on every retry of this task: Upload-Post returns the existing job
+    # instead of posting twice.
+    res = sender.publish(channel, text, assets, idempotency_key=f"content-{cid}",
+                         ai_generated=ai_made)
     with ctx.db_session() as db:
         c = db.get(ContentItem, cid)
-        c.status, c.external_post_id = "published", post_id
+        c.status, c.external_post_id = "published", res["post_id"][:255]
         db.add(RunEvent(tenant_id=ctx.tenant_id, run_id=ctx.run_id, type="content.published",
-                        data={"content_id": str(cid), "channel": channel, "post_id": post_id,
-                              "connector": "mock"}))
+                        data={"content_id": str(cid), "channel": channel,
+                              "post_id": res["post_id"], "url": res.get("url"),
+                              "connector": res["connector"]}))
         db.commit()
-    return TaskResult({"content_id": str(cid), "post_id": post_id, "connector": "mock",
-                       "channel": channel})
+    return TaskResult({"content_id": str(cid), "post_id": res["post_id"], "url": res.get("url"),
+                       "connector": res["connector"], "channel": channel})
