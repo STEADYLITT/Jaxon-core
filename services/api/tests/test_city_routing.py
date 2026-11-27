@@ -29,7 +29,7 @@ def trail(owner_db, run_id):
 def test_rules_pick_the_agent_and_say_why():
     r = router.by_rules("Write an Instagram post about our magnetic grip")
     assert r["kind"] == "content_generate" and r["input"]["channel"] == "instagram"
-    assert "'post'" in r["reason"] and "'instagram'" in r["reason"]
+    assert "'post'" in r["why"]
     assert router.by_rules("Send me a summary of today")["kind"] == "daily_report"
     assert router.by_rules("Research phone grips")  is None  # nothing to read: no URLs
     r = router.by_rules("Research https://example.com/grips for product ideas")

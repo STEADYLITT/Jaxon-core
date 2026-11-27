@@ -90,3 +90,16 @@ export interface TraceView {
   approvals: CityEvent[];
   events: CityEvent[];
 }
+
+export interface LineView {
+  key: string; name: string; summary: string; staffed: boolean;
+  businesses: { id: string; name: string; kind: string }[];
+  agents: { id: string; name: string; role: string; status: string }[];
+  proposed_agents: { id: string; name: string; role: string }[];
+  playbook: { version: number; summary?: string; steps?: string[]; rules?: string[] };
+  kpis: { name: string; value: number | null; unit: string; source: string; note: string | null }[];
+  connectors: { id: string; name: string; mode: string; missing: string[]; built: boolean }[];
+  missing_variables: string[];
+  budget: { monthly_cents: number; spent_this_month_usd: number };
+  launch: { how: string; active: number; template: Record<string, unknown> };
+}

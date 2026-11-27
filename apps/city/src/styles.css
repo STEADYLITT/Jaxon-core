@@ -222,3 +222,22 @@ button { font: inherit; }
 @media (max-width: 599px) {
   .replay-open { bottom: auto; top: max(64px, calc(env(safe-area-inset-top) + 56px)); right: 12px; }
 }
+
+/* Business lines */
+.kpis { display: grid; grid-template-columns: 1fr; gap: 4px; margin: 4px 0; }
+.kpis div { display: flex; justify-content: space-between; gap: 8px; border-bottom: 1px solid var(--line); padding: 3px 0; }
+.kpis dt { color: var(--muted); }
+.kpis dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.kpis [data-measured="false"] dd { color: var(--muted); font-size: 0.8rem; }
+.conn { list-style: none; padding: 0; }
+.conn li { margin: 4px 0; }
+.badge { display: inline-block; min-width: 3.6em; text-align: center; font-size: 0.7rem; font-weight: 700;
+  padding: 0 6px; border-radius: 999px; border: 1px solid currentColor; }
+.badge.live { color: var(--green); }
+.badge.mock { color: var(--muted); }
+.badge.error { color: var(--red); }
+.rules { color: var(--amber); font-size: 0.85rem; }
+
+/* 15 departments: on a phone, unstaffed lots keep their outline but drop the label (the
+   List view names every department). */
+@media (max-width: 600px) { .label.lot { display: none; } }

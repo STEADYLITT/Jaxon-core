@@ -97,12 +97,19 @@ class Membership(Base):
     updated_at: Mapped[datetime] = _updated()
 
 
+# ADR-039: the 15 department keys (lines.LINE_KEYS; migration 0020 holds the same list).
+LINE_SQL = (
+    "('rnd','courses','marketing','agency','sales','factory','clips','creators',"
+    "'influencers','ecommerce','community','trading','realestate','legal','finance')")
+
+
 class Business(Base):
     __tablename__ = "businesses"
     __table_args__ = (
         # Idempotent imports (ADR-008): one row per external record per tenant.
         UniqueConstraint("tenant_id", "source_system", "source_id"),
         CheckConstraint("autonomy_level BETWEEN 0 AND 3", name="ck_business_autonomy"),
+        CheckConstraint("line IS NULL OR line IN " + LINE_SQL, name="ck_business_line"),
     )
     id: Mapped[uuid.UUID] = _pk()
     tenant_id: Mapped[uuid.UUID] = mapped_column(
@@ -116,6 +123,8 @@ class Business(Base):
     autonomy_level: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     source_system: Mapped[str | None] = mapped_column(String(64))
     source_id: Mapped[str | None] = mapped_column(String(255))
+    # ADR-039: which of Steady's business lines this belongs to (see lines.py).
+    line: Mapped[str | None] = mapped_column(String(32))
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = _updated()
 
@@ -1078,3 +1087,26 @@ class Event(Base):
     agent_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agents.id"))
     payload: Mapped[dict] = mapped_column(JSON().with_variant(JSONB(), "postgresql"),
                                           nullable=False, default=dict)
+
+
+class LinePlaybook(Base):
+    """A business line's playbook (steps + rules) and monthly budget; versioned."""
+
+    __tablename__ = "line_playbooks"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "line"),
+        CheckConstraint("line IN " + LINE_SQL, name="ck_playbook_line"),
+        CheckConstraint("budget_monthly_cents >= 0", name="ck_playbook_budget"),
+    )
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    line: Mapped[str] = mapped_column(String(32), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    body: Mapped[dict] = mapped_column(JSON().with_variant(JSONB(), "postgresql"),
+                                       nullable=False, default=dict)
+    budget_monthly_cents: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = _created()
+    updated_at: Mapped[datetime] = _updated()
