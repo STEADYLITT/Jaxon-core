@@ -918,6 +918,40 @@ LAUNCH_STATUSES = ("proposed", "active", "paused", "revoked", "completed", "kill
                    "rejected")
 
 
+class Course(Base):
+    """One Course Factory build (ADR-040): outline, lessons, the student platform and sales
+    page drafts, their check results and the proposed launch. Immutable: rebuild = new row."""
+
+    __tablename__ = "courses"
+    __table_args__ = (
+        CheckConstraint("status IN ('ready','needs_fixes')", name="ck_course_status"),
+        CheckConstraint("mode IN ('live','mock')", name="ck_course_mode"),
+    )
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    business_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("businesses.id"), nullable=False)
+    run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("workflow_runs.id"))
+    brief: Mapped[str] = mapped_column(Text, nullable=False)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    mode: Mapped[str] = mapped_column(String(8), nullable=False)
+    price: Mapped[str | None] = mapped_column(String(16))
+    outline: Mapped[dict] = mapped_column(JSON().with_variant(JSONB(), "postgresql"),
+                                          nullable=False)
+    lessons: Mapped[list] = mapped_column(JSON().with_variant(JSONB(), "postgresql"),
+                                          nullable=False)
+    platform_files: Mapped[dict] = mapped_column(JSON().with_variant(JSONB(), "postgresql"),
+                                                 nullable=False)
+    sales_files: Mapped[dict] = mapped_column(JSON().with_variant(JSONB(), "postgresql"),
+                                              nullable=False)
+    checks: Mapped[dict] = mapped_column(JSON().with_variant(JSONB(), "postgresql"),
+                                         nullable=False)
+    launch_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("launches.id"))
+    created_at: Mapped[datetime] = _created()
+
+
 class Launch(Base):
     """A standing approval (phase 21, ADR-032): the owner approves a launch ONCE with a
     budget, a daily cap, a time window, the channels allowed and kill rules. Inside that

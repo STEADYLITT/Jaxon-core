@@ -29,6 +29,7 @@ REFUSED = ("explicit", "nsfw", "nude", "nudes", "porn", "xxx", "sexual", "lewd")
 POST_WORDS = ("post", "posts", "caption", "content", "tweet", "reel", "hashtag", "thread")
 REPORT_WORDS = ("report", "summary", "briefing", "recap", "how are we", "how did we")
 RESEARCH_WORDS = ("research", "find", "idea", "opportunit", "scout")
+BUILD_WORDS = ("build", "create", "make", "launch", "turn", "write")
 
 ROUTABLE = ["daily_report", "content_generate", "opportunity_research"]
 ROUTE_SCHEMA = {
@@ -203,6 +204,12 @@ def route(ctx, text: str) -> dict:
                     "title": f"{name}: {text[:200]}", "agent_spec_id": str(sid),
                     "reason": f"{where}; its agent {name} matches the command{mock_note}",
                     "via": "rules"}
+    if ln is not None and ln.key == "courses" and _hits(text, BUILD_WORDS):
+        return {**base, "kind": "course_build", "input": {"brief": text[:2000]},
+                "title": f"Build course: {text[:200]}",
+                "reason": (f"{where}; it asks to build a course: Course Builder drafts the "
+                           "outline, lessons, student platform and sales page, then proposes a "
+                           f"Launch for your approval{mock_note}"), "via": "rules"}
     r = by_rules(text)
     if r is not None:
         return {**base, **{k: v for k, v in r.items() if k != "why"},

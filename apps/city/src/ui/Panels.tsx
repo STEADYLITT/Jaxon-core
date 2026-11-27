@@ -7,7 +7,7 @@ import { api, post } from "../lib/api";
 import { describe } from "../lib/effects";
 import { windowState } from "../lib/layout";
 import { useCity, type Focus } from "../lib/store";
-import type { AgentDetail, JaxonView, LineView, TraceView } from "../lib/types";
+import type { AgentDetail, CourseSummary, JaxonView, LineView, TraceView } from "../lib/types";
 
 const money = (c: number) => `$${(c / 100).toFixed(2)}`;
 const STATE: Record<string, string> = {
@@ -77,6 +77,32 @@ function LineDetail({ lineKey }: { lineKey: string }) {
       <h3>Launches</h3>
       <p className="muted">{v.launch.how}</p>
       <p>{v.launch.active} active</p>
+      {v.key === "courses" && <CourseList />}
+    </div>
+  );
+}
+
+function fmtPrice(p: string | null): string {
+  return p ? "$" + p : "not set";
+}
+
+/** Course Factory builds (ADR-040): what was drafted, whether its pages passed their checks,
+ *  and the launch waiting for Steady's approval. */
+function CourseList() {
+  const [list] = useEvery(() => api<CourseSummary[]>("/courses"), [], 10_000);
+  if (!list) return null;
+  return (
+    <div className="courses">
+      <h3>Courses built</h3>
+      {list.length === 0 && <p className="muted">None yet. Try: "AI trading course is trending, build it".</p>}
+      <ul>{list.map((c) => (
+        <li key={c.id} data-course={c.id}>
+          <strong>{c.title}</strong>{c.mode === "mock" && <span className="badge mock"> MOCK</span>}
+          <br /><span className="muted">{c.modules} modules · {c.lessons} lessons · price {fmtPrice(c.price)}</span>
+          <br />Student platform: {c.platform_passed ? "passed its checks" : "needs fixes"} · Sales page: {c.sales_passed ? "passed its checks" : "needs fixes"}
+          {c.launch && <><br />Launch: <strong>{c.launch.status === "proposed" ? "waiting for your approval" : c.launch.status}</strong></>}
+        </li>
+      ))}</ul>
     </div>
   );
 }

@@ -16,6 +16,9 @@ _RULES = [
      "health-cure claims are not allowed"),
     (r"\bguaranteed (results|income|profit|returns)\b|\bget rich\b|\brisk[- ]free\b",
      "guaranteed-results or risk-free claims are not allowed"),
+    (r"\b(make|earn)\s+\$\s?\d[\d,]*k?\s*(a|per|/)\s*(day|week|month)\b"
+     r"|\bguaranteed (to )?(win|profit)",
+     "income promises are not allowed"),
     (r"\b(buy|get) (followers|likes|views)\b|\bfake reviews?\b|\bengagement pods?\b",
      "fake engagement is not allowed"),
 ]

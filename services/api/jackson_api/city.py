@@ -32,6 +32,8 @@ DEPARTMENTS = [(ln.key, ln.name, ln.color, ln.slot, ln.floors) for ln in LINES]
 BUILT_IN = {
     "plan": ("jaxon", None, "Jaxon Planner", "turns Steady's commands into plans"),
     "launch_propose": ("jaxon", None, "Launch Planner", "proposes launches for approval"),
+    "course_build": ("courses", "design", "Course Builder",
+                     "builds course drafts: outline, lessons, student platform, sales page"),
     "opportunity_research": ("rnd", "board", "Research Scout",
                              "researches opportunities from cited sources"),
     "content_generate": ("marketing", "content", "Content Writer", "drafts posts in a voice"),
