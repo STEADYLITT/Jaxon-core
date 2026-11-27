@@ -148,8 +148,8 @@ def test_console_config_and_csp_follow_the_clerk_key(client, monkeypatch):
 FAKE_CLERK = """
 window.Clerk = {
   isSignedIn: true, user: { id: "%(sub)s" }, session: { getToken: async () => "%(token)s" },
-  load: async () => {}, mountUserButton: () => {}, mountSignIn: () => {},
-  addListener: () => {},
+  load: async (opts) => { window.__clerkLoadOpts = opts; },
+  mountUserButton: () => {}, mountSignIn: () => {}, addListener: () => {},
 };
 """
 
@@ -196,6 +196,10 @@ def test_console_signs_in_with_clerk_and_finds_the_workspace(client, world, make
         page.wait_for_selector("#dash:not([hidden])", timeout=15000)
         assert page.text_content("#banner") == "Running normally."
         assert page.is_hidden("#manual")
+        opts = page.evaluate("({...window.__clerkLoadOpts, ui: undefined})")
+        assert opts["signInForceRedirectUrl"] == "/console"
+        assert opts["signUpForceRedirectUrl"] == "/console"
+        assert opts["afterSignOutUrl"] == "/console"
 
 
 def test_console_tells_a_new_owner_which_id_to_register(client, world, make_token,
@@ -209,3 +213,12 @@ def test_console_tells_a_new_owner_which_id_to_register(client, world, make_toke
 def test_signed_in_user_without_access_gets_nothing(client, world, make_token):
     stranger = auth(make_token, "user_stranger")
     assert client.get("/me", headers=stranger).status_code == 403
+
+
+def test_site_root_opens_the_console_and_keeps_the_clerk_handshake(client):
+    r = client.get("/?__clerk_handshake=abc.def-ghi&x=1", follow_redirects=False)
+    assert r.status_code == 307
+    assert r.headers["location"] == "/console?__clerk_handshake=abc.def-ghi&x=1"
+    plain = client.get("/", follow_redirects=False)
+    assert plain.headers["location"] == "/console"
+    assert client.get("/?__clerk_handshake=t").status_code == 200  # lands on the console

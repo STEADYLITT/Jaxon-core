@@ -5,7 +5,8 @@ typed commands and the run API. No external service calls. Nothing executes
 runs yet: durable workers arrive in phase 06.
 """
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import RedirectResponse
 from sqlalchemy import text
 
 from . import __version__
@@ -45,6 +46,14 @@ app.include_router(content_router)
 app.include_router(crm_router)
 app.include_router(dashboard_router)
 app.include_router(sites_router)
+
+
+@app.get("/", include_in_schema=False)
+def root(request: Request) -> RedirectResponse:
+    """The site root opens the owner console. The query string is kept: Clerk returns
+    here with ?__clerk_handshake=... and the console must receive it to finish sign-in."""
+    q = request.url.query
+    return RedirectResponse("/console" + (f"?{q}" if q else ""), status_code=307)
 
 
 @app.get("/health")

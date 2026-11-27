@@ -146,11 +146,19 @@ async function startWithClerk(key) {
   await loadScript(`https://${host}/npm/@clerk/ui@1/dist/ui.browser.js`);
   await loadScript(`https://${host}/npm/@clerk/clerk-js@6/dist/clerk.browser.js`,
     { "data-clerk-publishable-key": key });
-  await window.Clerk.load({ ui: { ClerkUI: window.__internal_ClerkUICtor } });
+  // Always come back to the console after signing in, up or out (never the bare site root).
+  await window.Clerk.load({
+    ui: { ClerkUI: window.__internal_ClerkUICtor },
+    signInForceRedirectUrl: "/console",
+    signUpForceRedirectUrl: "/console",
+    afterSignOutUrl: "/console",
+  });
   state.clerk = window.Clerk;
   $("manual").hidden = true;
   if (!state.clerk.isSignedIn) {
-    state.clerk.mountSignIn($("clerk"));
+    state.clerk.mountSignIn($("clerk"), {
+      forceRedirectUrl: "/console", signUpForceRedirectUrl: "/console",
+    });
     state.clerk.addListener(({ session }) => { if (session) window.location.reload(); });
     return;
   }
