@@ -447,9 +447,9 @@ def test_cancelling_mid_send_stops_cleanly(client, world, alice, maker, owner_db
     run_id = approve(client, world, alice, k["id"])
     real_send = crm_mod.MockSender.send
 
-    def send_then_cancel(self, *a):
+    def send_then_cancel(self, *a, **kw):
         client.post(f"/tenants/{world.tenant_a}/campaigns/{k['id']}/cancel", headers=alice)
-        return real_send(self, *a)
+        return real_send(self, *a, **kw)
     monkeypatch.setattr(crm_mod.MockSender, "send", send_then_cancel)
     Worker(maker, retry_base_seconds=0).run_once()
     run, tasks = run_state(owner_db, run_id)

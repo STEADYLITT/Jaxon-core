@@ -169,7 +169,8 @@ function render(d) {
 
   const co = $("connectors"); clear(co);
   d.connectors.forEach((c) => li(co, `${c.name}: ${c.mode.toUpperCase()}` +
-    (c.needs ? ` — needs ${c.needs}` : ""), c.mode === "mock" ? "mock" : ""));
+    (c.needs ? ` — needs ${c.needs}` : "") + (c.setup ? ` — ${c.setup}` : ""),
+    c.mode === "mock" ? "mock" : ""));
 
   const au = $("audit"); clear(au);
   d.audit.forEach((e) => li(au, `${e.at.slice(0, 16).replace("T", " ")} · ${e.action}`));

@@ -238,8 +238,34 @@ class MockSender:
 
     backend = "mock"
 
-    def send(self, channel: str, to: str, subject: str, body: str) -> str:
+    def send(self, channel: str, to: str, subject: str, body: str, **_provider) -> str:
         return f"mock-{channel}-{uuid.uuid4().hex[:10]}"
+
+
+class _ResendAdapter:
+    """Email through Resend (ADR-035). Same call shape as MockSender; adds the one-click
+    unsubscribe headers and a per-message Idempotency-Key."""
+
+    backend = "resend"
+
+    def __init__(self, resend, from_addr: str):
+        self._r, self._from = resend, from_addr
+
+    def send(self, channel, to, subject, body, *, unsubscribe_url: str,
+             idempotency_key: str) -> str:
+        return self._r.send(to=to, subject=subject, text=body, from_addr=self._from,
+                            unsubscribe_url=unsubscribe_url, idempotency_key=idempotency_key)
+
+
+def sender_for(channel: str, sender_name: str, sender_email: str):
+    """The live provider when configured (email only so far), else the labeled mock."""
+    if channel == "email":
+        from .connectors import email
+
+        r = email.email_backend()
+        if r is not None:
+            return _ResendAdapter(r, r.sender_for(sender_name, sender_email))
+    return MockSender()
 
 
 def send_handler(ctx):
@@ -248,7 +274,7 @@ def send_handler(ctx):
     from sqlalchemy import func, select
     from sqlalchemy.exc import DBAPIError
 
-    from .models import Contact, OutreachCampaign, OutreachMessage, RunEvent
+    from .models import Contact, LaunchSignal, OutreachCampaign, OutreachMessage, RunEvent
     from .policy import Action, Category
     from .worker import TaskResult
 
@@ -264,10 +290,11 @@ def send_handler(ctx):
         if not (person_approved or launch_ok):
             raise NonRetryableError(f"campaign is {k.status}, not approved")
         channel, limit, target = k.channel, k.daily_limit, (k.audience or {}).get("list")
+        launch_id, sender_name, sender_email = k.launch_id, k.sender_name, k.sender_email
         db.rollback()
     ctx.authorize(Action(Category.OUTBOUND_CAMPAIGN, f"send campaign {cid}", channel="email",
                          target=target))
-    sender = MockSender()
+    sender = sender_for(channel, sender_name, sender_email)  # refuses an unverified sender
     out = {"sent": 0, "suppressed": 0, "deferred_quiet_hours": 0, "deferred_daily_limit": 0,
            "stopped": False}
     start_of_day = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
@@ -314,8 +341,14 @@ def send_handler(ctx):
                 out["stopped"] = True  # cancelled or opted out between checks
                 break
             m = db.get(OutreachMessage, mid)
-            m.external_id = sender.send(channel, m.to_address, m.subject, m.body)
+            m.external_id = sender.send(
+                channel, m.to_address, m.subject, m.body,
+                unsubscribe_url=unsubscribe_url(ctx.tenant_id, channel, m.to_address),
+                idempotency_key=f"msg-{mid}")
             m.status, m.sent_at = "sent", func.now()
+            if launch_id is not None:  # feeds the launch's bounce/complaint-rate checks
+                db.add(LaunchSignal(tenant_id=ctx.tenant_id, launch_id=launch_id, kind="send",
+                                    source=sender.backend, external_ref=str(mid)))
             if contact is not None and contact.stage == "new":
                 contact.stage = "contacted"
             db.commit()

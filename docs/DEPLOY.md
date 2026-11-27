@@ -94,6 +94,8 @@ If the service won't start, open **Deploy Logs**. A `FAIL` line names the missin
 | `MODEL_MONTHLY_BUDGET_USD` | you choose (default 20) | AI spending cap | 08 |
 | `OWNER_EMAIL`, `OWNER_AUTH_SUBJECT` | your email; Clerk → **Users** → User ID | making you the owner | 03 |
 | `SHOPIFY_STORE_DOMAIN`, `SHOPIFY_CLIENT_ID`, `SHOPIFY_CLIENT_SECRET` | your store + a Dev Dashboard app created from the store admin: see [`CONNECTORS.md`](CONNECTORS.md) | real draft products (drafts only) | 15 |
+| `UPLOADPOST_API_KEY`, `UPLOADPOST_USER` | upload-post.com → **API Keys** / **Manage Users**: see [`CONNECTORS.md`](CONNECTORS.md) | posting approved content | 16 |
+| `RESEND_API_KEY`, `RESEND_FROM`, `RESEND_WEBHOOK_SECRET` | resend.com → **API Keys** / **Webhooks**: see [`CONNECTORS.md`](CONNECTORS.md) | sending approved email, bounce handling | 18 |
 | `SITE_DOMAIN_VERIFY` | set to `dns` when you launch a website on your own domain | real domain checks | 17 |
 | `CLERK_SECRET_KEY`, `S3_*`, `OPENAI_API_KEY` | **not needed now** | — | — |
 

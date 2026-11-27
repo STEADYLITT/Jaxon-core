@@ -24,6 +24,7 @@ PUBLIC = {
     "/console/config.json": "public Clerk publishable key (designed to be public)",
     "/console/vendor/{name}": "pinned three.js files for the 3D core (allow-listed names)",
     "/u/{token}": "unsubscribe page; the HMAC-signed token is the credential",
+    "/webhooks/resend/{tenant_id}": "Resend bounce/complaint events; Svix-signed",
 }
 
 
