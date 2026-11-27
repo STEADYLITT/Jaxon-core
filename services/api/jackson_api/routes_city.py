@@ -10,13 +10,15 @@ POST /tenants/{t}/approvals/{id}/decision.
 """
 
 import json
+import re
 import time
 import uuid
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Header, Query
+from fastapi import APIRouter, Header, HTTPException, Query, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -262,3 +264,33 @@ def city_stream(tenant_id: uuid.UUID, member: TenantMember,
         after = max(after, int(last_event_id))
     return StreamingResponse(_stream(tenant_id, after, timeout), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+# --- The City page (built from apps/city; static, no data in it) ------------------------------
+
+CITY = Path(__file__).parent / "city_dist"
+
+
+def _page_headers(cache: str) -> dict:
+    from .routes_dashboard import _csp
+
+    return {"Content-Security-Policy": _csp(), "X-Content-Type-Options": "nosniff",
+            "Referrer-Policy": "no-referrer", "Cache-Control": cache}
+
+
+@router.get("/city", include_in_schema=False)
+def city_page() -> Response:
+    """The 3D City. Same sign-in and strict CSP as the console; it reads everything
+    through the authenticated API above."""
+    return Response((CITY / "index.html").read_text(), media_type="text/html; charset=utf-8",
+                    headers=_page_headers("no-store"))
+
+
+@router.get("/city/assets/{name}", include_in_schema=False)
+def city_asset(name: str) -> Response:
+    path = CITY / "assets" / name
+    if not re.fullmatch(r"[A-Za-z0-9_-]+\.(js|css)", name) or not path.is_file():
+        raise HTTPException(404, "not found")
+    media = "text/javascript" if name.endswith(".js") else "text/css"
+    return Response(path.read_bytes(), media_type=media,
+                    headers=_page_headers("public, max-age=31536000, immutable"))

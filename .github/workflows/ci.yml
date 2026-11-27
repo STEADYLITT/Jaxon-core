@@ -57,6 +57,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm test
+      - name: The committed City bundle matches its source
+        run: |
+          pnpm --filter @jackson-os/city build
+          git status --porcelain -- services/api/jackson_api/city_dist
+          test -z "$(git status --porcelain -- services/api/jackson_api/city_dist)"
 
   compose:
     runs-on: ubuntu-latest
@@ -99,6 +104,7 @@ jobs:
           curl -fs localhost:8000/ready | tee /dev/stderr | grep -q '"database":"ok"'
           curl -fs localhost:8000/ready | grep -q '"auth":"configured"'
           curl -fs localhost:8000/console | grep -q "Jackson OS"
+          curl -fs localhost:8000/city | grep -q "JAXON OS"
           test "$(curl -s -o /dev/null -w '%{http_code}' localhost:8000/docs)" = "404"
           docker logs jackson 2>&1 | grep -q "10/10 checks passed"
           docker logs jackson 2>&1 | grep -q "owner: ready"
