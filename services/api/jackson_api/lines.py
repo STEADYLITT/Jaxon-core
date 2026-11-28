@@ -293,9 +293,8 @@ LINES: list[Line] = [
           "controls exists.", "Results only from real backtest/sim data."],
          ("trading", "backtest", "apex", "apex-7", "mnq", "futures", "prop firm",
           "paper trade", "indicator", "trading strategy", "trading bot"),
-         ["models", "broker"],
-         [("APEX7_RESULTS_SOURCE", "real backtest results from APEX-7"),
-          ("BROKER_API_KEY", "live orders (restricted; not built)")],
+         ["models", "broker", "databento", "apex7"],
+         [("BROKER_API_KEY", "live orders (restricted; not built)")],
          _ch(note="Launches cover research and simulation only"),
          restricted=["live_trade"], budget_monthly_cents=2_000,
          proposed=[_spec("backtest-runner", "trading: backtests and sim reports",
@@ -567,8 +566,17 @@ def kpis(db: Session, tenant_id, key: str) -> list[dict]:  # noqa: C901 - one br
             Artifact.tenant_id == tenant_id,
             Artifact.meta["type"].as_string() == "paper_account")
             .order_by(Artifact.created_at.desc()).limit(1)) or {}
-        return [_kpi("Backtests run", None, "", "",
-                     "needs APEX7_RESULTS_SOURCE (real backtest/sim data)"),
+        last_bt = db.scalar(select(Artifact.meta).where(
+            Artifact.tenant_id == tenant_id,
+            Artifact.meta["type"].as_string() == "backtest")
+            .order_by(Artifact.created_at.desc()).limit(1)) or {}
+        n_bt = count(select(func.count()).select_from(Artifact).where(
+            Artifact.tenant_id == tenant_id, Artifact.meta["type"].as_string() == "backtest"))
+        return [_kpi("Backtests recorded (APEX-7)", n_bt, "", "artifacts (backtest)"),
+                _kpi("Latest backtest net P&L", last_bt.get("net_pnl"), "USD",
+                     "artifacts (latest backtest)", "no APEX-7 results recorded yet"),
+                _kpi("Latest backtest win rate", last_bt.get("win_rate_pct"), "%",
+                     "artifacts (latest backtest)", "no APEX-7 results recorded yet"),
                 _kpi("Paper P&L, last month (Alpaca paper)", paper.get("month_pl"), "USD",
                      "artifacts (latest paper_account snapshot)",
                      "no paper snapshot yet (connect Alpaca paper, then Snapshot)"),

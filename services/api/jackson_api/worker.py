@@ -145,6 +145,8 @@ def default_handlers() -> dict[str, Handler]:
     from .ads import insights_handler as ad_insights
     from .ads import pause_handler as ad_pause
     from .agent_handlers import agent_handler, eval_handler, factory_handler
+    from .apex7 import bars_handler as futures_bars
+    from .apex7 import import_handler as apex7_import
     from .clip_scout import scout_handler as clip_scout
     from .community import announce_handler as community_announce
     from .community import sync_handler as community_sync
@@ -188,7 +190,8 @@ def default_handlers() -> dict[str, Handler]:
             "paper_order": paper_order, "ad_draft": ad_draft, "ad_activate": ad_activate,
             "ad_pause": ad_pause, "ad_creative": ad_creative, "ad_insights": ad_insights,
             "repo_push": repo_push, "clip_scout": clip_scout,
-            "marketplace_research": marketplace_research}
+            "marketplace_research": marketplace_research, "apex7_import": apex7_import,
+            "futures_bars": futures_bars}
 
 
 class ModelBudgetExhausted(NonRetryableError):

@@ -574,3 +574,40 @@ fal.ai keeps generated files on its own servers. Post a clip within a few days o
 | `AMAZON_SP_REFRESH_TOKEN` | the self-authorization refresh token (seal it) |
 | `EBAY_CLIENT_ID` | the production App ID |
 | `EBAY_CLIENT_SECRET` | the production Cert ID (seal it) |
+
+---
+
+## APEX-7 results and futures market data (Trading)
+
+**APEX-7 results:** every number on the Trading building comes from APEX-7's real trades.
+- **Upload** (no key needed): `POST /tenants/{t}/trading/backtests`. Send either:
+  - the trades as JSON: `side`, `qty`, `entry_price`, `exit_price`, or a `pnl` per trade; or
+  - a CSV export from APEX-7, NinjaTrader, or TradingView's "List of trades".
+- **Or a feed:** if APEX-7 publishes its runs at an https address, set `APEX7_RESULTS_URL` (and `APEX7_RESULTS_TOKEN` if it needs one). Then `POST /tenants/{t}/trading/backtests/pull`.
+- **How the numbers are worked out:**
+  - Jackson computes trades, win rate, net P&L, profit factor, max drawdown, average win and loss, and expectancy.
+  - P&L uses the real contract size: MNQ = $2 a point, NQ $20, MES $5, ES $50.
+  - A trade with no result (no P&L and no exit price) is left out and counted as skipped, never guessed.
+  - Trading KPIs show the number of backtests recorded, plus the latest run's net P&L and win rate.
+
+**Futures data (Databento):** Alpaca has no futures, so real CME bars for MNQ come from Databento.
+- `POST /tenants/{t}/trading/futures/bars` with `symbol` (e.g. `MNQ`), `schema` (`ohlcv-1d`, `ohlcv-1h` or `ohlcv-1m`), `start` and `end` (YYYY-MM-DD).
+- Jackson first asks Databento what the pull costs and shows that exact price in **Approvals**. Nothing is downloaded until you approve.
+- It uses the front-month continuous contract, which is not back-adjusted.
+
+### Click steps
+1. **Databento:**
+   - Sign up at **databento.com**, then **Portal** → **API keys** → copy your key. New accounts usually get free credit.
+   - In Railway, add `DATABENTO_API_KEY` and **Seal** it.
+   - **Connections → Futures market data → Test** is a free check.
+2. **APEX-7 feed (optional):**
+   - Have APEX-7 publish its runs as JSON at an https address, in the same shape as the upload.
+   - Set `APEX7_RESULTS_URL`, plus `APEX7_RESULTS_TOKEN` if it needs one, and seal the token.
+   - **Connections → APEX-7 results feed → Test**.
+
+### Variables
+| Name | What to paste |
+|---|---|
+| `DATABENTO_API_KEY` | the Databento API key (secret, seal it) |
+| `APEX7_RESULTS_URL` | optional: https address where APEX-7 publishes its runs |
+| `APEX7_RESULTS_TOKEN` | optional: the token for that address (seal it) |

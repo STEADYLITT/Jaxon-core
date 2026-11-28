@@ -26,6 +26,8 @@ one real, harmless call (ADR-038).
     Twitch      app token + GET /helix/games/top?first=1
     Amazon      LWA token + GET /sellers/v1/marketplaceParticipations
     eBay        app token + one Browse search (limit 1)
+    Databento   GET metadata.list_datasets (free)
+    APEX-7      GET APEX7_RESULTS_URL (reads the runs it publishes)
 """
 
 import os
@@ -44,7 +46,8 @@ SECRET_VARS = ("ANTHROPIC_API_KEY", "SHOPIFY_CLIENT_SECRET", "SHOPIFY_ADMIN_API_
                "ALPACA_PAPER_SECRET_KEY",
                "META_ACCESS_TOKEN", "TIKTOK_ACCESS_TOKEN",
                "GITHUB_APP_TOKEN", "YOUTUBE_API_KEY", "TWITCH_CLIENT_SECRET",
-               "AMAZON_SP_CLIENT_SECRET", "AMAZON_SP_REFRESH_TOKEN", "EBAY_CLIENT_SECRET")
+               "AMAZON_SP_CLIENT_SECRET", "AMAZON_SP_REFRESH_TOKEN", "EBAY_CLIENT_SECRET",
+               "DATABENTO_API_KEY", "APEX7_RESULTS_TOKEN")
 
 
 def _new_client() -> httpx.Client:
@@ -342,6 +345,28 @@ def test_ebay(ctx: dict) -> dict:
     return {"app_login": "ok", "listings_for_test_search": r["total_listings"]}
 
 
+def test_databento(ctx: dict) -> dict:
+    from .connectors.apex7 import Databento
+
+    try:
+        ds = Databento(os.environ["DATABENTO_API_KEY"], client=_new_client()).datasets()
+    except Exception as e:  # noqa: BLE001
+        raise TestFailed(str(e)) from None
+    return {"datasets": len(ds), "cme_futures": "GLBX.MDP3" in ds,
+            "note": "free check; every data pull shows Databento's own price first"}
+
+
+def test_apex7(ctx: dict) -> dict:
+    from .connectors.apex7 import pull_results
+
+    try:
+        runs = pull_results()["runs"]
+    except Exception as e:  # noqa: BLE001
+        raise TestFailed(str(e)) from None
+    return {"runs_published": len(runs),
+            "trades_in_latest": len(runs[-1].get("trades") or []) if runs else 0}
+
+
 # --- The list -----------------------------------------------------------------------------------
 
 @dataclass
@@ -398,6 +423,11 @@ CONNECTORS = [
               test=test_amazon),
     Connector("ebay", "eBay (Browse research)", ["EBAY_CLIENT_ID", "EBAY_CLIENT_SECRET"],
               test=test_ebay),
+    Connector("databento", "Futures market data (Databento)", ["DATABENTO_API_KEY"],
+              test=test_databento),
+    Connector("apex7", "APEX-7 results feed", ["APEX7_RESULTS_URL"],
+              optional=["APEX7_RESULTS_TOKEN"], test=test_apex7,
+              note="or upload results: POST /trading/backtests"),
     Connector("dns", "Domain checks (DNS)", ["SITE_DOMAIN_VERIFY"],
               note="set to dns when you launch a site on your own domain; no key needed"),
     Connector("hosting", "Website hosting (Netlify)", ["NETLIFY_AUTH_TOKEN"],
