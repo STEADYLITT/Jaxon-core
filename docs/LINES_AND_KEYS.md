@@ -45,7 +45,8 @@ Paste values only in **Railway → Jaxon-core → Variables**, and seal secrets.
 | | | `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID`, `DISCORD_MEMBER_ROLE_ID`, `DISCORD_ANNOUNCE_CHANNEL_ID` | built: the member role follows Whop access; announcements approved first |
 | | | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `TELEGRAM_WEBHOOK_SECRET` | built: paying members let in automatically (join link), lapsed members removed, announcements approved first |
 | 12 | **Trading** | `ALPACA_PAPER_KEY_ID`, `ALPACA_PAPER_SECRET_KEY` | built: market data and a PAPER account for APEX-7 (real paper P&L; MNQ tested on QQQ, since Alpaca has no futures) |
-| | | `APEX7_RESULTS_SOURCE` | **not built yet**: APEX-7's own backtest results |
+| | | `APEX7_RESULTS_URL` (optional `APEX7_RESULTS_TOKEN`), or upload | built: APEX-7's real backtest/sim trades with win rate, profit factor and drawdown computed from them |
+| | | `DATABENTO_API_KEY` | built: real CME futures bars (MNQ etc.), with Databento's price shown and approved first |
 | | | `BROKER_API_KEY` | **not built, on purpose**: live orders stay refused until a broker connector with daily loss caps, a kill switch and your explicit approval per order exists |
 | 13 | **Real Estate (wholesaling)** | `BATCHDATA_API_TOKEN`, `BATCHDATA_CENTS_PER_RECORD` | built: comps and skip tracing (BatchData), research only, every lookup approved first |
 | 14 | **Legal & Admin** | none | Drafts only; always sent to you; never filed automatically |
@@ -78,7 +79,9 @@ Paste these in **Railway → Jaxon-core → Variables**. **Seal** every secret. 
 | eBay research | `EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET` | yes: the secret |
 | Clip scouting | `YOUTUBE_API_KEY`, `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`; optional `CLIP_ALLOWED_CREATORS` | yes: the key and the Twitch secret |
 | GitHub repos (App Factory) | `GITHUB_APP_TOKEN`, `GITHUB_OWNER`; optional `GITHUB_REPO_PREFIX` | yes: the token |
+| APEX-7 results feed | `APEX7_RESULTS_URL`; optional `APEX7_RESULTS_TOKEN` (or upload results, no key needed) | yes: the token |
+| Futures data (Databento) | `DATABENTO_API_KEY` | yes |
 | Domain checks | `SITE_DOMAIN_VERIFY=dns` | no |
 | File storage (optional) | `S3_BUCKET` | no |
 
-Still not built: SMS/calls, Amazon/eBay data, YouTube/Twitch clip finding, platform analytics, APEX-7's own backtest results (`APEX7_RESULTS_SOURCE`) and live trading (on purpose).
+Still not built: SMS/calls, clip payouts (`CLIP_PAYOUTS_SOURCE`), creator earnings (`CREATOR_EARNINGS_SOURCE`), platform follower analytics (`PLATFORM_ANALYTICS`), and live trading (on purpose).
