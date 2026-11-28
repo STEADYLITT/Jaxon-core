@@ -121,7 +121,7 @@ LINES: list[Line] = [
          ("marketing", "post", "posts", "campaign", "funnel", "seo", "ads", "replay trainer",
           "steady trades", "pro breakout", "atom labs", "growth os", "shred 90",
           "csw trades", "brand"),
-         ["models", "social", "email", "whop", "voice"],
+         ["models", "social", "email", "whop", "voice", "meta_ads", "tiktok_ads"],
          [],
          _ch(social=("instagram", "tiktok", "x", "facebook"), email=("students",)),
          budget_monthly_cents=15_000,

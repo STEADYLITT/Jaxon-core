@@ -33,6 +33,8 @@ How to paste a variable into Railway (same every time):
 | 10 | **Netlify** (steps below) | `NETLIFY_AUTH_TOKEN` | your Netlify account name |
 | 11 | **BatchData** (steps below) | `BATCHDATA_API_TOKEN`, `BATCHDATA_CENTS_PER_RECORD` | that the token and your price are set (BatchData has no free test call) |
 | 12 | **Alpaca paper** (steps below) | `ALPACA_PAPER_KEY_ID`, `ALPACA_PAPER_SECRET_KEY` | your paper account number, status and equity |
+| 13 | **Meta ads** (steps below) | `META_ACCESS_TOKEN`, `META_AD_ACCOUNT_ID` | your ad account name, status and currency |
+| 14 | **TikTok ads** (steps below) | `TIKTOK_ACCESS_TOKEN`, `TIKTOK_ADVERTISER_ID` | your advertiser name and status |
 | — | **Claude** | `ANTHROPIC_API_KEY` (already set) | how many models your key can use (free call) |
 
 Not built yet: SMS/calls, so it always shows MOCK. File storage (S3) is optional, because files live on the Railway disk.
@@ -400,3 +402,45 @@ fal.ai keeps generated files on its own servers. Post a clip within a few days o
 |---|---|
 | `ALPACA_PAPER_KEY_ID` | the paper account's Key ID |
 | `ALPACA_PAPER_SECRET_KEY` | the paper account's Secret Key (secret, seal it) |
+
+---
+
+## Paid ads: Meta (Facebook/Instagram) and TikTok
+
+**What Jackson does:**
+- **Drafts first** (`POST /tenants/{t}/ads/drafts`):
+  - Jackson creates the campaign on Meta and TikTok and leaves it switched off, so a draft spends **nothing**. On Meta that's a campaign plus an ad set, both paused; on TikTok it's a campaign set to off.
+  - The ad copy is checked first: income promises, "guaranteed" and fake reviews are refused.
+- **Spend only under an approved Launch** (`POST /tenants/{t}/ads/{id}/activate` with the `launch_id`). Every one of these must be true:
+  - the Launch is **active**, which means you approved it;
+  - it belongs to the same business;
+  - it has `ads: true` and lists the platform in `ad_platforms` (`meta` and/or `tiktok`);
+  - one day of the ad's budget fits the Launch's daily cap and what's left of its total budget.
+
+  On Meta, the ad set also gets the Launch's end date, so Meta stops it on its own. Outside a Launch, nothing can switch an ad on.
+- **Kill switch:**
+  - `POST /tenants/{t}/ads/{id}/pause` pauses an ad at any time.
+  - Jackson also pauses every live ad whose Launch was paused, killed, revoked or expired, on its next check (every few minutes).
+- **Special categories:** housing, credit, employment or financial-products ads have Meta rules. Pass `special_categories`; Jackson never guesses them.
+
+### Meta click steps
+1. Go to **business.facebook.com** → **Business settings** → **Users** → **System users** → **Add** → name it "Jackson", role **Admin** (or Employee).
+2. **Assign assets:** give it your **ad account** with **Manage campaigns**, and your app if Meta asks.
+3. **Generate new token:** pick your app, set it to never expire, and tick **ads_management** and **ads_read**. Copy it into Railway as `META_ACCESS_TOKEN` and **Seal** it.
+4. Your ad account id is in **Ads Manager** → account dropdown, the number after `act_`. Add it as `META_AD_ACCOUNT_ID`; just the number is fine.
+5. **Connections → Ads: Meta → Test** shows the ad account's name, status and currency.
+
+### TikTok click steps
+1. At **business-api.tiktok.com**, register as a developer and **create an app** with the **Ads Management** and **Reporting** permissions. TikTok reviews new apps, which can take a few days.
+2. Open the app's **authorization URL**, sign in with your TikTok Ads account and approve. TikTok sends back an `auth_code`.
+3. Exchange the code for a long-term token. It's one request with the app id, secret and code, shown on TikTok's "Obtain a long-term access token" page. Paste the `access_token` into Railway as `TIKTOK_ACCESS_TOKEN` and **Seal** it.
+4. Your advertiser id is in **TikTok Ads Manager**, top right under the account name. Add it as `TIKTOK_ADVERTISER_ID`.
+5. **Connections → Ads: TikTok → Test** shows the advertiser name and status.
+
+### Variables
+| Name | What to paste |
+|---|---|
+| `META_ACCESS_TOKEN` | the system user token (secret, seal it) |
+| `META_AD_ACCOUNT_ID` | the ad account number (with or without `act_`) |
+| `TIKTOK_ACCESS_TOKEN` | the long-term access token (secret, seal it) |
+| `TIKTOK_ADVERTISER_ID` | the advertiser id |

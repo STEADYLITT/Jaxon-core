@@ -20,6 +20,8 @@ Paste values only in **Railway → Jaxon-core → Variables**, and seal secrets.
 | | | `RESEND_API_KEY`, `RESEND_FROM` | built: email |
 | | | `WHOP_API_KEY` | built: real sales for course offers |
 | | | `ELEVENLABS_API_KEY` | built: ad voiceovers, cost approved first |
+| | | `META_ACCESS_TOKEN`, `META_AD_ACCOUNT_ID` | built: Meta (Facebook/Instagram) ads, drafted paused; they spend only inside an approved Launch |
+| | | `TIKTOK_ACCESS_TOKEN`, `TIKTOK_ADVERTISER_ID` | built: TikTok ads, drafted off; they spend only inside an approved Launch |
 | 4 | **Agency** | `UPLOADPOST_API_KEY`, `UPLOADPOST_USER`, `RESEND_API_KEY`, `RESEND_FROM` | built: client deliverables and outreach |
 | 5 | **Sales & Lead Gen** | `RESEND_API_KEY`, `RESEND_FROM` | built: outreach email (opt-outs respected) |
 | | | `APIFY_TOKEN` | built: local business leads from Google Maps (public listings only) |
@@ -49,3 +51,29 @@ Paste values only in **Railway → Jaxon-core → Variables**, and seal secrets.
 | 15 | **Finance & Ops** | none | Uses everything above. Revenue is real only when Whop or Shopify report it, or when you record a referenced entry. |
 
 **Fastest money first:** Shopify and Whop are both built and waiting on your keys. One Whop key unlocks Courses, Marketing sales and Community numbers.
+
+## Every Railway variable, in one list
+
+Paste these in **Railway → Jaxon-core → Variables**. **Seal** every secret. A service you don't use can stay empty: it shows MOCK and Jackson never invents anything for it. Click steps are in [`CONNECTORS.md`](CONNECTORS.md).
+
+| Service | Variables | Secret? |
+|---|---|---|
+| Claude (thinking) | `ANTHROPIC_API_KEY` | yes |
+| Shopify | `SHOPIFY_STORE_DOMAIN` + (`SHOPIFY_CLIENT_ID`, `SHOPIFY_CLIENT_SECRET`) or `SHOPIFY_ADMIN_API_TOKEN` | yes: the secret and the token |
+| Social posting (Upload-Post) | `UPLOADPOST_API_KEY`, `UPLOADPOST_USER` | yes: the key |
+| Email (Resend) | `RESEND_API_KEY`, `RESEND_FROM`, `RESEND_WEBHOOK_SECRET` | yes: the key and the webhook secret. **Already set and LIVE.** |
+| UGC video (fal.ai) | `FAL_KEY`; optional `FAL_VIDEO_MODEL`, `FAL_VIDEO_CENTS_PER_SECOND` | yes: the key |
+| Whop | `WHOP_API_KEY`, `WHOP_WEBHOOK_SECRET` | yes |
+| AI voice (ElevenLabs) | `ELEVENLABS_API_KEY`; optional `ELEVENLABS_MODEL`, `ELEVENLABS_CENTS_PER_1K_CHARS` | yes: the key |
+| Web research (Apify) | `APIFY_TOKEN` | yes |
+| Discord | `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID`, `DISCORD_MEMBER_ROLE_ID`, `DISCORD_ANNOUNCE_CHANNEL_ID` | yes: the bot token |
+| Telegram | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | yes: the bot token |
+| Website hosting (Netlify) | `NETLIFY_AUTH_TOKEN`; optional `NETLIFY_SITE_PREFIX` | yes: the token |
+| Real-estate data (BatchData) | `BATCHDATA_API_TOKEN`, `BATCHDATA_CENTS_PER_RECORD` | yes: the token |
+| Trading, PAPER only (Alpaca) | `ALPACA_PAPER_KEY_ID`, `ALPACA_PAPER_SECRET_KEY` | yes: the secret |
+| Meta ads | `META_ACCESS_TOKEN`, `META_AD_ACCOUNT_ID` | yes: the token |
+| TikTok ads | `TIKTOK_ACCESS_TOKEN`, `TIKTOK_ADVERTISER_ID` | yes: the token |
+| Domain checks | `SITE_DOMAIN_VERIFY=dns` | no |
+| File storage (optional) | `S3_BUCKET` | no |
+
+Still not built: SMS/calls, Amazon/eBay data, YouTube/Twitch clip finding, platform analytics, APEX-7's own backtest results (`APEX7_RESULTS_SOURCE`) and live trading (on purpose).

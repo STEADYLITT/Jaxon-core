@@ -1190,3 +1190,34 @@ class WhopMember(Base):
     telegram_synced: Mapped[str | None] = mapped_column(String(16))  # revoked
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = _updated()
+
+
+class AdCampaign(Base):
+    """A paid-ads campaign Jackson drafted on Meta or TikTok (ADR-048). Created paused; it
+    can only be switched on inside an active Launch, and is paused when that Launch stops."""
+
+    __tablename__ = "ad_campaigns"
+    __table_args__ = (
+        CheckConstraint("platform IN ('meta','tiktok')", name="ck_ad_platform"),
+        CheckConstraint("status IN ('mock','draft','active','paused')", name="ck_ad_status"),
+        CheckConstraint("daily_budget_cents >= 100", name="ck_ad_budget"),
+    )
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    business_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("businesses.id"))
+    launch_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("launches.id"))
+    run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("workflow_runs.id"))
+    platform: Mapped[str] = mapped_column(String(16), nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    objective: Mapped[str] = mapped_column(String(40), nullable=False)
+    daily_budget_cents: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    countries: Mapped[list] = mapped_column(JSON().with_variant(JSONB(), "postgresql"),
+                                            nullable=False, default=list)
+    copy: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    external_campaign_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    external_adset_id: Mapped[str | None] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    created_at: Mapped[datetime] = _created()
+    updated_at: Mapped[datetime] = _updated()

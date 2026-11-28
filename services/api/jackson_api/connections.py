@@ -19,6 +19,8 @@ one real, harmless call (ADR-038).
     Netlify     GET /api/v1/user (the account behind the token)
     BatchData   no free endpoint: checks the token and price are set (no call, no charge)
     Alpaca      GET paper-api /v2/account (the PAPER account; live is never called)
+    Meta ads    GET act_{id}?fields=name,account_status,currency,amount_spent
+    TikTok ads  GET advertiser/info/ (the advertiser account)
 """
 
 import os
@@ -34,7 +36,8 @@ SECRET_VARS = ("ANTHROPIC_API_KEY", "SHOPIFY_CLIENT_SECRET", "SHOPIFY_ADMIN_API_
                "ELEVENLABS_API_KEY", "APIFY_TOKEN",
                "DISCORD_BOT_TOKEN", "TELEGRAM_BOT_TOKEN",
                "NETLIFY_AUTH_TOKEN", "BATCHDATA_API_TOKEN",
-               "ALPACA_PAPER_SECRET_KEY")
+               "ALPACA_PAPER_SECRET_KEY",
+               "META_ACCESS_TOKEN", "TIKTOK_ACCESS_TOKEN")
 
 
 def _new_client() -> httpx.Client:
@@ -256,6 +259,27 @@ def test_alpaca(ctx: dict) -> dict:
             "note": "PAPER only: live orders stay refused"}
 
 
+def test_meta_ads(ctx: dict) -> dict:
+    from .connectors.ads import MetaAds
+
+    try:
+        a = MetaAds(os.environ["META_ACCESS_TOKEN"], client=_new_client()).account()
+    except Exception as e:  # noqa: BLE001
+        raise TestFailed(str(e)) from None
+    return {**a, "access": "drafts are paused; ads only switch on inside an approved Launch"}
+
+
+def test_tiktok_ads(ctx: dict) -> dict:
+    from .connectors.ads import TikTokAds
+
+    try:
+        a = TikTokAds(os.environ["TIKTOK_ACCESS_TOKEN"], os.environ["TIKTOK_ADVERTISER_ID"],
+                      client=_new_client()).account()
+    except Exception as e:  # noqa: BLE001
+        raise TestFailed(str(e)) from None
+    return {**a, "access": "drafts are disabled; ads only switch on inside an approved Launch"}
+
+
 # --- The list -----------------------------------------------------------------------------------
 
 @dataclass
@@ -295,6 +319,10 @@ CONNECTORS = [
               ["BATCHDATA_API_TOKEN", "BATCHDATA_CENTS_PER_RECORD"], test=test_batchdata),
     Connector("broker", "Trading: Alpaca PAPER + market data",
               ["ALPACA_PAPER_KEY_ID", "ALPACA_PAPER_SECRET_KEY"], test=test_alpaca),
+    Connector("meta_ads", "Ads: Meta (Facebook/Instagram)",
+              ["META_ACCESS_TOKEN", "META_AD_ACCOUNT_ID"], test=test_meta_ads),
+    Connector("tiktok_ads", "Ads: TikTok", ["TIKTOK_ACCESS_TOKEN", "TIKTOK_ADVERTISER_ID"],
+              test=test_tiktok_ads),
     Connector("dns", "Domain checks (DNS)", ["SITE_DOMAIN_VERIFY"],
               note="set to dns when you launch a site on your own domain; no key needed"),
     Connector("hosting", "Website hosting (Netlify)", ["NETLIFY_AUTH_TOKEN"],
