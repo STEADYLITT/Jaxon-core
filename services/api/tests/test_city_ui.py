@@ -108,7 +108,7 @@ def test_real_events_fly_and_land_in_the_ticker(client, world, make_token, maker
         before = state(page)["lastEventId"]
         assert state(page)["envelopes"] == 0  # nothing moves without an event
         new_run(client, world, make_token, objective="Ticker proof command")
-        until(page, "window.__city.envelopes + window.__city.queued > 0")  # the letter flies
+        until(page, "window.__city.flown > 0")  # the letter flew (it lasts 1.8 s on screen)
         w.run_once()
         page.wait_for_selector(".ticker li:has-text('Steady → Jaxon: Ticker proof command')",
                                timeout=15_000)
@@ -291,7 +291,7 @@ def test_typing_a_command_flies_to_jaxon_and_a_real_agent_starts(client, world, 
         assert run is not None  # the command row
         assert owner_db.scalar(select(Event.id).where(Event.run_id == run.id,
                                                       Event.type == "command.issued"))
-        until(page, "window.__city.envelopes + window.__city.queued > 0")  # the letter flies
+        until(page, "window.__city.flown > 0")  # the letter flew (it lasts 1.8 s on screen)
         page.wait_for_selector(f".ticker li:has-text('Steady → Jaxon: {text}')")
         w.run_once()  # Jaxon plans and routes
         page.wait_for_selector(".ticker li:has-text('Jaxon → Content Writer')", timeout=15_000)

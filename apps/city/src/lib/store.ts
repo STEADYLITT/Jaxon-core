@@ -34,6 +34,7 @@ export interface CityState {
   pulseAt: number;
   pulses: number[]; // event times in the last minute, for the orb's glow
   revenueTicks: number;
+  flown: number; // envelopes sent since the page opened (one per real event that has one)
   listView: boolean;
   setSnapshot(s: Snapshot): void;
   onEvent(e: CityEvent, now?: number): void;
@@ -56,6 +57,7 @@ export const useCity = create<CityState>((set, get) => ({
   pulseAt: 0,
   pulses: [],
   revenueTicks: 0,
+  flown: 0,
   listView: false,
   setSnapshot(s) {
     // The stream cursor is set from the first snapshot only; after that only streamed
@@ -75,6 +77,7 @@ export const useCity = create<CityState>((set, get) => ({
       pulseAt: now,
       pulses: [...st.pulses.filter((t) => now - t < 60_000), now],
       revenueTicks: st.revenueTicks + (e.type === "revenue.recorded" ? 1 : 0),
+      flown: st.flown + fx.filter((x) => x.kind === "envelope").length,
     });
   },
   step(now) {
