@@ -8,7 +8,7 @@ export const FLOOR_H = 3.2;
 export const BUILDING_W = 6;
 export const TOWER_H = 22;
 export const TOWER_W = 6;
-export const ORB_Y = 30;
+export const ORB_Y = 37;
 export const CEO_TOP: Vec3 = [0, TOWER_H + 0.6, 0];
 export const ORB: Vec3 = [0, ORB_Y, 0];
 
@@ -21,7 +21,7 @@ export const STATUS_COLOR: Record<AgentStatus | "just_done", string> = {
   offline: "#4a4f5c",
   killed: "#4a4f5c",
   paused: "#8a6cff",
-  idle: "#16324a",
+  idle: "#2a6f9a",
 };
 
 const JUST_DONE_MS = 2 * 60 * 1000;

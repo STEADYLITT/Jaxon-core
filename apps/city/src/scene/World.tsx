@@ -1,6 +1,6 @@
 // The world around the City: a galaxy sky, stars, a glossy ground and the post-processing.
 // Pure scenery: it never shows a number, so it can move when nothing is happening.
-import { MeshReflectorMaterial } from "@react-three/drei";
+import { Environment, Lightformer, MeshReflectorMaterial } from "@react-three/drei";
 import { useFrame, useThree } from "@react-three/fiber";
 import {
   Bloom, ChromaticAberration, EffectComposer, SMAA, ToneMapping, Vignette,
@@ -258,7 +258,7 @@ function Ground({ reflect }: { reflect: boolean }) {
         <circleGeometry args={[1300, 96]} />
         {reflect ? (
           <MeshReflectorMaterial
-            blur={[400, 120]} resolution={512} mixBlur={1} mixStrength={0.4} mirror={0.4}
+            blur={[240, 80]} resolution={256} mixBlur={1} mixStrength={0.4} mirror={0.4}
             roughness={0.75} depthScale={0.6} minDepthThreshold={0.4} maxDepthThreshold={1.3}
             color="#07050f" metalness={0.6} />
         ) : (
@@ -278,6 +278,18 @@ export function World({ light }: { light: boolean }) {
       <Stars count={light ? 1500 : 5000} />
       <BrightStars />
       <Ground reflect={!light} />
+      {/* what the glass towers reflect: the nebula's colours as soft light panels,
+          rendered once into a small cube map (no network, no HDR file) */}
+      <Environment resolution={light ? 64 : 128} frames={1}>
+        <color attach="background" args={["#05040c"]} />
+        <Lightformer form="ring" intensity={2.2} color="#7a3cc8" scale={60} position={[0, 40, -80]} />
+        <Lightformer form="rect" intensity={1.6} color="#f0b040" scale={[120, 14, 1]} position={[0, 18, 90]}
+          rotation-y={Math.PI} />
+        <Lightformer form="rect" intensity={1.2} color="#2a5cff" scale={[90, 30, 1]} position={[-90, 25, 0]}
+          rotation-y={Math.PI / 2} />
+        <Lightformer form="rect" intensity={0.8} color="#ff3df2" scale={[60, 20, 1]} position={[90, 20, 0]}
+          rotation-y={-Math.PI / 2} />
+      </Environment>
       <hemisphereLight args={["#5a6cff", "#140a26", 0.35]} />
       <directionalLight position={[60, 90, 40]} intensity={0.55} color="#dfe4ff" />
     </group>
@@ -287,7 +299,7 @@ export function World({ light }: { light: boolean }) {
 /** Bloom only on bright emissive things (threshold 0.85), ACES, a soft vignette, SMAA. */
 export function Post() {
   return (
-    <EffectComposer multisampling={4}>
+    <EffectComposer multisampling={0}>
       <Bloom intensity={0.6} luminanceThreshold={0.85} luminanceSmoothing={0.12} mipmapBlur />
       <ChromaticAberration blendFunction={BlendFunction.NORMAL}
         offset={new THREE.Vector2(0.0004, 0.0004)} radialModulation modulationOffset={0.4} />

@@ -12,6 +12,7 @@ import type { Mode } from "../lib/mode";
 import { seeded } from "../lib/rand";
 import { statusesAt, type PastStatus } from "../lib/replay";
 import { useCity, type Focus } from "../lib/store";
+import { CeoTower, HoloLot, JaxonOrb, Tower as DeptTower, crownH } from "./Architecture";
 import { Office } from "./Office";
 import { HAZE, Post, World } from "./World";
 import type { Department, Snapshot } from "../lib/types";
@@ -105,25 +106,22 @@ function ScreenProbe() {
   return null;
 }
 
-/** The building's skin; flashes red while its failure siren is sounding. */
-function SirenMaterial({ id, color }: { id: string; color: string }) {
-  const mat = useRef<THREE.MeshStandardMaterial>(null);
-  const red = useMemo(() => new THREE.Color("#ff2244"), []);
-  const base = useMemo(() => new THREE.Color(color), [color]);
+/** A red glass shell that pulses only while the building's real failure siren sounds. */
+function Siren({ id, h }: { id: string; h: number }) {
+  const mat = useRef<THREE.MeshBasicMaterial>(null);
   useFrame(({ clock }) => {
     const on = (useCity.getState().snapshot?.sirens ?? []).includes(id);
     if (!mat.current) return;
-    if (on) {
-      const k = (Math.sin(clock.elapsedTime * 8) + 1) / 2;
-      mat.current.emissive.copy(red);
-      mat.current.emissiveIntensity = 0.2 + k * 0.9;
-    } else {
-      mat.current.emissive.copy(base);
-      mat.current.emissiveIntensity = 0.05;
-    }
+    mat.current.visible = on;
+    if (on) mat.current.opacity = 0.12 + ((Math.sin(clock.elapsedTime * 8) + 1) / 2) * 0.3;
   });
-  return <meshStandardMaterial ref={mat} color="#0d0826" emissive={color} emissiveIntensity={0.05}
-    metalness={0.2} roughness={0.6} />;
+  return (
+    <mesh position-y={h / 2 + 0.3}>
+      <boxGeometry args={[BUILDING_W + 0.25, h + 0.2, BUILDING_W + 0.25]} />
+      <meshBasicMaterial ref={mat} color="#ff2244" transparent opacity={0} visible={false}
+        toneMapped={false} depthWrite={false} />
+    </mesh>
+  );
 }
 
 function pointer(on: boolean) {
@@ -144,22 +142,17 @@ function RingRoad() {
 function Tower({ inbox }: { inbox: number }) {
   return (
     <group>
-      <mesh position-y={TOWER_H / 2} name="ceo-tower"
+      <group name="ceo-tower"
         onClick={(e) => { e.stopPropagation(); useCity.getState().setFocus({ kind: "ceo" }); }}
         onPointerOver={() => pointer(true)} onPointerOut={() => pointer(false)}>
-        <boxGeometry args={[TOWER_W, TOWER_H, TOWER_W]} />
-        <meshStandardMaterial color="#120a2e" emissive="#2a0f5c" emissiveIntensity={0.6}
-          metalness={0.3} roughness={0.4} />
-      </mesh>
-      <lineSegments position-y={TOWER_H / 2}>
-        <edgesGeometry args={[new THREE.BoxGeometry(TOWER_W, TOWER_H, TOWER_W)]} />
-        <lineBasicMaterial color="#00e5ff" toneMapped={false} />
-      </lineSegments>
+        <CeoTower />
+      </group>
       {Array.from({ length: Math.min(inbox, 12) }, (_, i) => (
         <mesh key={i} position={[-1.6 + (i % 4) * 1.05, TOWER_H + 0.35 + Math.floor(i / 4) * 0.35, 0]}
           rotation-x={-Math.PI / 2} name="inbox-letter">
           <planeGeometry args={[0.9, 0.6]} />
-          <meshBasicMaterial color="#ff2244" toneMapped={false} side={THREE.DoubleSide} />
+          <meshBasicMaterial color={new THREE.Color("#ff2244").multiplyScalar(2.2)} toneMapped={false}
+            side={THREE.DoubleSide} />
         </mesh>
       ))}
     </group>
@@ -168,36 +161,17 @@ function Tower({ inbox }: { inbox: number }) {
 
 function CeoLabel({ inbox }: { inbox: number }) {
   return (
-    <Label position={[0, TOWER_H + 2.6, 0]} className="label ceo">
+    <Label position={[0, TOWER_H + 4.6, 0]} className="label ceo">
       CEO · Steady{inbox ? <b className="inbox-count"> {inbox}</b> : null}
     </Label>
   );
 }
 
 function Orb() {
-  const ref = useRef<THREE.Mesh>(null);
-  const mat = useRef<THREE.MeshStandardMaterial>(null);
-  useFrame(() => {
-    const { pulseAt, pulses } = useCity.getState();
-    const now = performance.now();
-    const perMin = pulses.filter((t) => now - t < 60_000).length;
-    const base = 0.6 + Math.min(perMin / 30, 1) * 2.4; // glow = events per minute
-    const kick = Math.max(0, 1 - (now - pulseAt) / 600) * 2.5; // pulse on every event
-    if (mat.current) mat.current.emissiveIntensity = base + kick;
-    if (ref.current) {
-      const s = 1 + kick * 0.08;
-      ref.current.scale.setScalar(s);
-      ref.current.rotation.y += 0.004;
-    }
-  });
   return (
-    <mesh ref={ref} position={ORB} name="jaxon-orb"
-      onClick={(e) => { e.stopPropagation(); useCity.getState().setFocus({ kind: "jaxon" }); }}
-      onPointerOver={() => pointer(true)} onPointerOut={() => pointer(false)}>
-      <icosahedronGeometry args={[3.2, 3]} />
-      <meshStandardMaterial ref={mat} color="#1a0b3d" emissive="#9b5cff" emissiveIntensity={1}
-        wireframe toneMapped={false} />
-    </mesh>
+    <group position={ORB} onPointerOver={() => pointer(true)} onPointerOut={() => pointer(false)}>
+      <JaxonOrb onClick={() => useCity.getState().setFocus({ kind: "jaxon" })} />
+    </group>
   );
 }
 
@@ -210,15 +184,8 @@ function Building({ d, n }: { d: Department; n: number }) {
         onClick={(e) => { e.stopPropagation(); useCity.getState().setFocus({ kind: "building", id: d.id }); }}
         onPointerOver={() => pointer(true)} onPointerOut={() => pointer(false)}>
         {/* the lot itself is clickable: its line's playbook, proposed agents and keys */}
-        <mesh rotation-x={-Math.PI / 2} position-y={0.06}>
-          <planeGeometry args={[BUILDING_W, BUILDING_W]} />
-          <meshBasicMaterial color={d.color} transparent opacity={0.06} />
-        </mesh>
-        <lineSegments position-y={0.05}>
-          <edgesGeometry args={[new THREE.BoxGeometry(BUILDING_W, 0.1, BUILDING_W)]} />
-          <lineBasicMaterial color="#3b3560" />
-        </lineSegments>
-        <Label position={[0, 1.2, 0]} className="label lot">{d.name}<br />not staffed</Label>
+        <HoloLot color={d.color} />
+        <Label position={[0, 5.2, 0]} className="label lot">{d.name}<br />not staffed</Label>
       </group>
     );
   }
@@ -227,19 +194,13 @@ function Building({ d, n }: { d: Department; n: number }) {
     <group position={[x, 0, z]} rotation-y={rot} name={`building-${d.key}`}
       onClick={(e) => { e.stopPropagation(); useCity.getState().setFocus({ kind: "building", id: d.id }); }}
       onPointerOver={() => pointer(true)} onPointerOut={() => pointer(false)}>
-      <mesh position-y={h / 2}>
-        <boxGeometry args={[BUILDING_W, h, BUILDING_W]} />
-        <SirenMaterial id={d.id} color={d.color} />
-      </mesh>
-      <lineSegments position-y={h / 2}>
-        <edgesGeometry args={[new THREE.BoxGeometry(BUILDING_W, h, BUILDING_W)]} />
-        <lineBasicMaterial color={d.color} toneMapped={false} />
-      </lineSegments>
-      <Label position={[0, h + 1.4, 0]} className="label">{d.name}</Label>
-      {d.floors.map((f, i) => (
-        <mesh key={f.id} position-y={(i + 1) * FLOOR_H} rotation-x={-Math.PI / 2}>
-          <ringGeometry args={[BUILDING_W * 0.7, BUILDING_W * 0.71, 4, 1, Math.PI / 4]} />
-          <meshBasicMaterial color={d.color} transparent opacity={0.25} />
+      <DeptTower h={h} color={d.color} slot={d.slot} />
+      <Siren id={d.id} h={h} />
+      <Label position={[0, h + crownH(d.slot) + 1.6, 0]} className="label holo">{d.name}</Label>
+      {d.floors.map((f, i) => i === 0 ? null : ( // a thin light band between floors
+        <mesh key={f.id} position-y={i * FLOOR_H + 0.3}>
+          <boxGeometry args={[BUILDING_W + 0.06, 0.07, BUILDING_W + 0.06]} />
+          <meshBasicMaterial color={new THREE.Color(d.color).multiplyScalar(1.3)} toneMapped={false} />
         </mesh>
       ))}
     </group>
@@ -253,9 +214,10 @@ function Windows({ s }: { s: Snapshot }) {
   const col = useMemo(() => new THREE.Color(), []);
   const byId = useMemo(() => new Map(s.agents.map((a) => [a.id, a])), [s]);
   const past = useRef<{ index: number; map: Map<string, PastStatus> } | null>(null);
-  useFrame(() => {
+  useFrame(({ clock }) => {
     const m = ref.current;
     if (!m) return;
+    const t = clock.elapsedTime;
     const r = useCity.getState().replay;
     let now = Date.now();
     let map: Map<string, PastStatus> | null = null;
@@ -278,6 +240,13 @@ function Windows({ s }: { s: Snapshot }) {
               status_changed_at: p?.at ?? null };
       }
       col.set(a ? windowColor(a, now) : "#000");
+      if (a) { // active states glow (they bloom); offline/idle stay dim. Only online agents flicker.
+        const st = a.online || a.status === "paused" ? a.status : "offline";
+        const gain = st === "working" || st === "waiting" || st === "failed" ? 2.6
+          : st === "done" ? 1.6 : st === "offline" ? 0.7 : 2.2; // idle = online, lit softly
+        const flick = a.online ? 0.92 + 0.08 * Math.sin(t * 3.1 + i * 1.7) : 1;
+        col.multiplyScalar(gain * flick);
+      }
       m.setColorAt(i, col);
     });
     m.instanceMatrix.needsUpdate = true;
