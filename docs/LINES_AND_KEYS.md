@@ -38,7 +38,8 @@ Paste values only in **Railway → Jaxon-core → Variables**, and seal secrets.
 | | | `APIFY_TOKEN` | built: product and trend research with sources |
 | | | `AMAZON_SP_API_KEY`, `EBAY_API_KEY` | **not built yet**: FBA and eBay research |
 | 11 | **Community** | `WHOP_API_KEY` | built: paying members and their linked Discord accounts |
-| | | `DISCORD_BOT_TOKEN`, `TELEGRAM_BOT_TOKEN` | **not built yet**: role sync from Whop payments |
+| | | `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID`, `DISCORD_MEMBER_ROLE_ID`, `DISCORD_ANNOUNCE_CHANNEL_ID` | built: the member role follows Whop access; announcements approved first |
+| | | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | built: lapsed members removed, one-use invites for paying members, announcements approved first |
 | 12 | **Trading** | `APEX7_RESULTS_SOURCE`, `MARKET_DATA_API_KEY` | **not built yet**: real backtest and sim results |
 | | | `BROKER_API_KEY` | **not built, on purpose**: live orders stay refused until a broker connector with daily loss caps, a kill switch and your explicit approval per order exists |
 | 13 | **Real Estate (wholesaling)** | `PROPERTY_DATA_API_KEY` | **not built yet**: comps; research and simulation only |

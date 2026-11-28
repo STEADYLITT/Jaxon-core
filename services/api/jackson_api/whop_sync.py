@@ -143,4 +143,7 @@ def sync_handler(ctx):
     out["members_with_access"] = access
     out["summary"] = (f"Whop sync: {out['members_seen']} memberships, {out['new_sales']} new "
                       f"sales, {access} members with access")
-    return TaskResult(output=out)
+    from .connectors import community as K
+    follow = ([("community_sync", "Sync Discord/Telegram access from Whop")]
+              if K.discord_configured() or K.telegram_configured() else [])
+    return TaskResult(output=out, follow_ups=follow)

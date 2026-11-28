@@ -14,6 +14,8 @@ one real, harmless call (ADR-038).
     Whop        GET /api/v1/accounts/me (the account behind the key)
     ElevenLabs  GET /v1/user/subscription (plan and characters left)
     Apify       GET /v2/users/me (account and plan)
+    Discord     GET /guilds/{id}?with_counts=true (the server, read-only)
+    Telegram    getMe + getChat (the bot and the group, read-only)
 """
 
 import os
@@ -26,7 +28,8 @@ import httpx
 SECRET_VARS = ("ANTHROPIC_API_KEY", "SHOPIFY_CLIENT_SECRET", "SHOPIFY_ADMIN_API_TOKEN",
                "UPLOADPOST_API_KEY", "RESEND_API_KEY", "RESEND_WEBHOOK_SECRET", "FAL_KEY",
                "CLERK_SECRET_KEY", "WHOP_API_KEY", "WHOP_WEBHOOK_SECRET",
-               "ELEVENLABS_API_KEY", "APIFY_TOKEN")
+               "ELEVENLABS_API_KEY", "APIFY_TOKEN",
+               "DISCORD_BOT_TOKEN", "TELEGRAM_BOT_TOKEN")
 
 
 def _new_client() -> httpx.Client:
@@ -182,6 +185,36 @@ def test_apify(ctx: dict) -> dict:
             "access": "runs only after you approve each run's cost cap"}
 
 
+def test_discord(ctx: dict) -> dict:
+    from .connectors.community import Discord
+
+    try:
+        g = Discord(os.environ["DISCORD_BOT_TOKEN"], os.environ["DISCORD_GUILD_ID"],
+                    client=_new_client()).server()
+    except Exception as e:  # noqa: BLE001
+        raise TestFailed(str(e)) from None
+    role = os.environ.get("DISCORD_MEMBER_ROLE_ID")
+    names = {str(r.get("id")): r.get("name") for r in g.get("roles") or []}
+    if role not in names:
+        raise TestFailed(f"the bot sees server '{g.get('name')}' but no role with id "
+                         "DISCORD_MEMBER_ROLE_ID: copy the role's id again")
+    return {"server": g.get("name"), "members": g.get("approximate_member_count"),
+            "member_role": names[role],
+            "announce_channel_set": bool(os.environ.get("DISCORD_ANNOUNCE_CHANNEL_ID"))}
+
+
+def test_telegram(ctx: dict) -> dict:
+    from .connectors.community import Telegram
+
+    try:
+        t = Telegram(os.environ["TELEGRAM_BOT_TOKEN"], os.environ["TELEGRAM_CHAT_ID"],
+                     client=_new_client())
+        me, chat = t.me(), t.chat_info()
+    except Exception as e:  # noqa: BLE001
+        raise TestFailed(str(e)) from None
+    return {"bot": me.get("username"), "chat": chat.get("title"), "type": chat.get("type")}
+
+
 # --- The list -----------------------------------------------------------------------------------
 
 @dataclass
@@ -212,6 +245,11 @@ CONNECTORS = [
               optional=["ELEVENLABS_MODEL", "ELEVENLABS_CENTS_PER_1K_CHARS"],
               test=test_elevenlabs),
     Connector("research", "Web research (Apify)", ["APIFY_TOKEN"], test=test_apify),
+    Connector("discord", "Discord (roles, announcements)",
+              ["DISCORD_BOT_TOKEN", "DISCORD_GUILD_ID", "DISCORD_MEMBER_ROLE_ID"],
+              optional=["DISCORD_ANNOUNCE_CHANNEL_ID"], test=test_discord),
+    Connector("telegram", "Telegram (group access, announcements)",
+              ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"], test=test_telegram),
     Connector("dns", "Domain checks (DNS)", ["SITE_DOMAIN_VERIFY"],
               note="set to dns when you launch a site on your own domain; no key needed"),
     Connector("hosting", "Website hosting", [],
