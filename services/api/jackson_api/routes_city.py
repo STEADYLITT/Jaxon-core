@@ -701,8 +701,9 @@ def city_page() -> Response:
 @router.get("/city/assets/{name}", include_in_schema=False)
 def city_asset(name: str) -> Response:
     path = CITY / "assets" / name
-    if not re.fullmatch(r"[A-Za-z0-9_-]+\.(js|css)", name) or not path.is_file():
+    if not re.fullmatch(r"[A-Za-z0-9_-]+\.(js|css|woff2)", name) or not path.is_file():
         raise HTTPException(404, "not found")
-    media = "text/javascript" if name.endswith(".js") else "text/css"
+    media = {"js": "text/javascript", "css": "text/css",
+             "woff2": "font/woff2"}[name.rsplit(".", 1)[1]]
     return Response(path.read_bytes(), media_type=media,
                     headers=_page_headers("public, max-age=31536000, immutable"))
