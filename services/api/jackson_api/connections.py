@@ -24,6 +24,8 @@ one real, harmless call (ADR-038).
     GitHub      GET /user (who the token is)
     YouTube     GET /youtube/v3/videos?part=id (1 quota unit)
     Twitch      app token + GET /helix/games/top?first=1
+    Amazon      LWA token + GET /sellers/v1/marketplaceParticipations
+    eBay        app token + one Browse search (limit 1)
 """
 
 import os
@@ -41,7 +43,8 @@ SECRET_VARS = ("ANTHROPIC_API_KEY", "SHOPIFY_CLIENT_SECRET", "SHOPIFY_ADMIN_API_
                "NETLIFY_AUTH_TOKEN", "BATCHDATA_API_TOKEN", "TELEGRAM_WEBHOOK_SECRET",
                "ALPACA_PAPER_SECRET_KEY",
                "META_ACCESS_TOKEN", "TIKTOK_ACCESS_TOKEN",
-               "GITHUB_APP_TOKEN", "YOUTUBE_API_KEY", "TWITCH_CLIENT_SECRET")
+               "GITHUB_APP_TOKEN", "YOUTUBE_API_KEY", "TWITCH_CLIENT_SECRET",
+               "AMAZON_SP_CLIENT_SECRET", "AMAZON_SP_REFRESH_TOKEN", "EBAY_CLIENT_SECRET")
 
 
 def _new_client() -> httpx.Client:
@@ -317,6 +320,28 @@ def test_twitch(ctx: dict) -> dict:
     return {"app_login": "ok", "top_game_now": r.get("top_game")}
 
 
+def test_amazon(ctx: dict) -> dict:
+    from .connectors.marketplaces import Amazon
+
+    try:
+        r = Amazon(os.environ["AMAZON_SP_CLIENT_ID"], os.environ["AMAZON_SP_CLIENT_SECRET"],
+                   os.environ["AMAZON_SP_REFRESH_TOKEN"], client=_new_client()).ping()
+    except Exception as e:  # noqa: BLE001
+        raise TestFailed(str(e)) from None
+    return {"marketplaces": r["marketplaces"], "access": "read-only research"}
+
+
+def test_ebay(ctx: dict) -> dict:
+    from .connectors.marketplaces import Ebay
+
+    try:
+        r = Ebay(os.environ["EBAY_CLIENT_ID"], os.environ["EBAY_CLIENT_SECRET"],
+                 client=_new_client()).search("test", 1)
+    except Exception as e:  # noqa: BLE001
+        raise TestFailed(str(e)) from None
+    return {"app_login": "ok", "listings_for_test_search": r["total_listings"]}
+
+
 # --- The list -----------------------------------------------------------------------------------
 
 @dataclass
@@ -368,6 +393,11 @@ CONNECTORS = [
               optional=["CLIP_ALLOWED_CREATORS"], test=test_youtube),
     Connector("twitch", "Twitch (clip scouting)", ["TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET"],
               optional=["CLIP_ALLOWED_CREATORS"], test=test_twitch),
+    Connector("amazon", "Amazon (SP-API research)",
+              ["AMAZON_SP_CLIENT_ID", "AMAZON_SP_CLIENT_SECRET", "AMAZON_SP_REFRESH_TOKEN"],
+              test=test_amazon),
+    Connector("ebay", "eBay (Browse research)", ["EBAY_CLIENT_ID", "EBAY_CLIENT_SECRET"],
+              test=test_ebay),
     Connector("dns", "Domain checks (DNS)", ["SITE_DOMAIN_VERIFY"],
               note="set to dns when you launch a site on your own domain; no key needed"),
     Connector("hosting", "Website hosting (Netlify)", ["NETLIFY_AUTH_TOKEN"],

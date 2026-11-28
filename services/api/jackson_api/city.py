@@ -76,6 +76,8 @@ BUILT_IN = {
     "repo_push": ("factory", "build", "Repo Keeper",
                   "puts approved builds in private GitHub repos"),
     "content_video": ("influencers", "studio", "Video Producer", "makes short clips (fal.ai)"),
+    "marketplace_research": ("ecommerce", "reselling", "Marketplace Researcher",
+                             "Amazon/eBay prices, ranks, FBA fees and margins (cited)"),
     "store_build": ("ecommerce", "store", "Store Builder", "builds Shopify drafts"),
     "shopify_publish": ("ecommerce", "store", "Shop Publisher", "publishes products"),
     "agent_factory": ("finance", "ops", "Agent Factory", "drafts new agents"),

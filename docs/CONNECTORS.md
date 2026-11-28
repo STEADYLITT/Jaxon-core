@@ -541,3 +541,36 @@ fal.ai keeps generated files on its own servers. Post a clip within a few days o
 | `TWITCH_CLIENT_ID` | the Twitch app's client id |
 | `TWITCH_CLIENT_SECRET` | the Twitch app's secret (seal it) |
 | `CLIP_ALLOWED_CREATORS` | optional: comma-separated channel names you're allowed to clip (e.g. `steadyfriend,OpenClips`) |
+
+---
+
+## Amazon and eBay product research (E-commerce & Reselling)
+
+**What Jackson does:** `POST /tenants/{t}/ecommerce/research` with up to 5 keywords and, optionally, your landed cost per unit (`landed_cost_cents`).
+- **Amazon:**
+  - Catalog matches with their sales rank.
+  - For the top 5: the Buy Box and lowest new price, and Amazon's own FBA fee estimate at that price.
+  - Margin = price − FBA fees − your cost. It's only shown when every number is real; anything missing stays blank.
+- **eBay:** the count and the median, lowest and highest **asking** prices of active listings. These are not sold prices, and the report says so.
+- **Results:** the best margins are listed first, and every item keeps its link. The full report is saved for the Product Research floor.
+- **Read-only:** nothing is listed, bought or messaged.
+
+### Amazon click steps (needs an Amazon Seller Central account)
+1. **sellercentral.amazon.com** → **Apps and Services** → **Develop Apps**. Register as a developer for a **private** app, choosing your own account only. The roles to request are **Product Listing** and **Pricing**. Amazon reviews developer registrations, which can take a few days.
+2. **Add new app client** → name "Jackson". Pick API type **SP API** and the same roles. Save, then **View** the LWA credentials: copy the **Client identifier** and **Client secret**.
+3. On the app, choose **Authorize** → **Authorize app**. Copy the **Refresh token** it shows.
+4. In Railway, add `AMAZON_SP_CLIENT_ID`, `AMAZON_SP_CLIENT_SECRET` and `AMAZON_SP_REFRESH_TOKEN`. **Seal** the secret and the token. **Connections → Amazon → Test** shows your marketplaces.
+
+### eBay click steps
+1. Go to **developer.ebay.com** → sign in → **Application Keys** → create a **Production** keyset (name "Jackson").
+2. Copy the **App ID (Client ID)** and the **Cert ID (Client Secret)**.
+3. In Railway, add `EBAY_CLIENT_ID` and `EBAY_CLIENT_SECRET`. **Seal** the secret. **Connections → eBay → Test**.
+
+### Variables
+| Name | What to paste |
+|---|---|
+| `AMAZON_SP_CLIENT_ID` | the LWA client identifier |
+| `AMAZON_SP_CLIENT_SECRET` | the LWA client secret (seal it) |
+| `AMAZON_SP_REFRESH_TOKEN` | the self-authorization refresh token (seal it) |
+| `EBAY_CLIENT_ID` | the production App ID |
+| `EBAY_CLIENT_SECRET` | the production Cert ID (seal it) |

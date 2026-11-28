@@ -39,7 +39,8 @@ Paste values only in **Railway → Jaxon-core → Variables**, and seal secrets.
 | | | `PLATFORM_ANALYTICS` | **not built yet**: follower growth |
 | 10 | **E-commerce & Reselling** | `SHOPIFY_STORE_DOMAIN` + (`SHOPIFY_CLIENT_ID`, `SHOPIFY_CLIENT_SECRET`) or `SHOPIFY_ADMIN_API_TOKEN` | built: drafts; publishing only inside a Launch |
 | | | `APIFY_TOKEN` | built: product and trend research with sources |
-| | | `AMAZON_SP_API_KEY`, `EBAY_API_KEY` | **not built yet**: FBA and eBay research |
+| | | `AMAZON_SP_CLIENT_ID`, `AMAZON_SP_CLIENT_SECRET`, `AMAZON_SP_REFRESH_TOKEN` | built: Amazon catalog, sales rank, Buy Box price, FBA fees and real margins |
+| | | `EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET` | built: eBay asking prices (active listings) |
 | 11 | **Community** | `WHOP_API_KEY` | built: paying members and their linked Discord accounts |
 | | | `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID`, `DISCORD_MEMBER_ROLE_ID`, `DISCORD_ANNOUNCE_CHANNEL_ID` | built: the member role follows Whop access; announcements approved first |
 | | | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `TELEGRAM_WEBHOOK_SECRET` | built: paying members let in automatically (join link), lapsed members removed, announcements approved first |
@@ -73,6 +74,8 @@ Paste these in **Railway → Jaxon-core → Variables**. **Seal** every secret. 
 | Trading, PAPER only (Alpaca) | `ALPACA_PAPER_KEY_ID`, `ALPACA_PAPER_SECRET_KEY` | yes: the secret |
 | Meta ads | `META_ACCESS_TOKEN`, `META_AD_ACCOUNT_ID`, `META_PAGE_ID` | yes: the token |
 | TikTok ads | `TIKTOK_ACCESS_TOKEN`, `TIKTOK_ADVERTISER_ID`, `TIKTOK_IDENTITY_ID` (optional `TIKTOK_IDENTITY_TYPE`) | yes: the token |
+| Amazon research (SP-API) | `AMAZON_SP_CLIENT_ID`, `AMAZON_SP_CLIENT_SECRET`, `AMAZON_SP_REFRESH_TOKEN` | yes: the secret and the refresh token |
+| eBay research | `EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET` | yes: the secret |
 | Clip scouting | `YOUTUBE_API_KEY`, `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`; optional `CLIP_ALLOWED_CREATORS` | yes: the key and the Twitch secret |
 | GitHub repos (App Factory) | `GITHUB_APP_TOKEN`, `GITHUB_OWNER`; optional `GITHUB_REPO_PREFIX` | yes: the token |
 | Domain checks | `SITE_DOMAIN_VERIFY=dns` | no |

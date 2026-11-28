@@ -157,6 +157,7 @@ def default_handlers() -> dict[str, Handler]:
     from .crm import send_handler as outreach_send
     from .dashboard import report_handler
     from .factory_repos import push_handler as repo_push
+    from .marketplace_research import research_handler as marketplace_research
     from .planner import plan_handler  # lazy: planner imports TaskResult from here
     from .realestate import comps_handler as property_comps
     from .realestate import skip_trace_handler as skip_trace
@@ -186,7 +187,8 @@ def default_handlers() -> dict[str, Handler]:
             "skip_trace": skip_trace, "paper_snapshot": paper_snapshot,
             "paper_order": paper_order, "ad_draft": ad_draft, "ad_activate": ad_activate,
             "ad_pause": ad_pause, "ad_creative": ad_creative, "ad_insights": ad_insights,
-            "repo_push": repo_push, "clip_scout": clip_scout}
+            "repo_push": repo_push, "clip_scout": clip_scout,
+            "marketplace_research": marketplace_research}
 
 
 class ModelBudgetExhausted(NonRetryableError):

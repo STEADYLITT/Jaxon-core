@@ -27,6 +27,7 @@ from .routes_dashboard import router as dashboard_router
 from .routes_factory_repos import router as factory_repos_router
 from .routes_launches import router as launches_router
 from .routes_lines import router as lines_router
+from .routes_marketplaces import router as marketplaces_router
 from .routes_memory import router as memory_router
 from .routes_opportunities import router as opportunities_router
 from .routes_policy import router as policy_router
@@ -71,6 +72,7 @@ app.include_router(trading_router)
 app.include_router(ads_router)
 app.include_router(factory_repos_router)
 app.include_router(clips_router)
+app.include_router(marketplaces_router)
 app.include_router(sites_router)
 app.include_router(city_router)
 app.include_router(connections_router)
