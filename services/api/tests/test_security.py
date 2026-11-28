@@ -31,6 +31,8 @@ PUBLIC = {
     "/webhooks/resend/{tenant_id}": "Resend bounce/complaint events; Svix-signed",
     "/webhooks/whop/{tenant_id}": "Whop sales/membership events; Standard Webhooks-signed",
     "/webhooks/telegram/{tenant_id}": "Telegram join requests; secret_token header checked",
+    "/webhooks/twilio/{tenant_id}": "Twilio inbound texts (STOP opt-outs); X-Twilio-Signature "
+                                    "checked",
 }
 
 

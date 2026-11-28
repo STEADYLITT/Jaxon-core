@@ -25,7 +25,7 @@ Paste values only in **Railway → Jaxon-core → Variables**, and seal secrets.
 | 4 | **Agency** | `UPLOADPOST_API_KEY`, `UPLOADPOST_USER`, `RESEND_API_KEY`, `RESEND_FROM` | built: client deliverables and outreach |
 | 5 | **Sales & Lead Gen** | `RESEND_API_KEY`, `RESEND_FROM` | built: outreach email (opt-outs respected) |
 | | | `APIFY_TOKEN` | built: local business leads from Google Maps (public listings only) |
-| | | (SMS and calls) | **not built yet**: call lists and scripts are drafts for your team |
+| | | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` | built: approved SMS and call campaigns go out through Twilio, only to contacts with recorded consent, 8am-9pm their time; STOP replies opt out |
 | 6 | **App / SaaS / Web Factory** | `SITE_DOMAIN_VERIFY` | built: domain checks |
 | | | `NETLIFY_AUTH_TOKEN` | built: approved sites and course pages go live on Netlify (https, your own domain) |
 | | | `GITHUB_APP_TOKEN`, `GITHUB_OWNER` | built: every approved build gets its own private GitHub repo |
@@ -81,10 +81,11 @@ Paste these in **Railway → Jaxon-core → Variables**. **Seal** every secret. 
 | GitHub repos (App Factory) | `GITHUB_APP_TOKEN`, `GITHUB_OWNER`; optional `GITHUB_REPO_PREFIX` | yes: the token |
 | APEX-7 results feed | `APEX7_RESULTS_URL`; optional `APEX7_RESULTS_TOKEN` (or upload results, no key needed) | yes: the token |
 | Futures data (Databento) | `DATABENTO_API_KEY` | yes |
+| SMS and calls (Twilio) | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` (E.164, e.g. +12175550000). In Twilio, set the number's "A message comes in" webhook to `https://<your app>/webhooks/twilio/<tenant id>` (HTTP POST) | yes: the auth token |
 | Follower analytics | `PLATFORM_ANALYTICS` (list: `youtube,instagram,tiktok`); YouTube: `YOUTUBE_API_KEY` + `YOUTUBE_CHANNEL_IDS`; Instagram: `META_ACCESS_TOKEN` + `INSTAGRAM_USER_IDS`; TikTok: `TIKTOK_DISPLAY_TOKEN` | yes: the TikTok token (the others are already listed) |
 | Creator earnings | `CREATOR_EARNINGS_SOURCE` (an https feed address, or `import` to upload CSV statements); optional `CREATOR_EARNINGS_TOKEN` | yes: the token |
 | Clip payouts | `CLIP_PAYOUTS_SOURCE` (an https feed address, or `import` to upload CSV statements); optional `CLIP_PAYOUTS_TOKEN` | yes: the token |
 | Domain checks | `SITE_DOMAIN_VERIFY=dns` | no |
 | File storage (optional) | `S3_BUCKET` | no |
 
-Still not built: SMS/calls, and live trading (on purpose).
+Still not built: live trading (on purpose). Everything else on this page is built and shows MOCK until its key is set.
