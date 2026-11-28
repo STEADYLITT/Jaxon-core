@@ -222,8 +222,8 @@ LINES: list[Line] = [
          ["Agents never generate explicit content.",
           "Nothing is posted or sent without an approval or a Launch that covers it."],
          ("creator", "talent", "signed creator", "creator x", "dm"),
-         ["social", "email"],
-         [("CREATOR_EARNINGS_SOURCE", "real earnings per creator")],
+         ["social", "email", "creator_earnings"],
+         [],
          _ch(social=("instagram", "x"), note="one launch per creator"),
          budget_monthly_cents=3_000,
          proposed=[_spec("creator-planner", "creators: weekly SFW content calendar",
@@ -421,6 +421,15 @@ def kpis(db: Session, tenant_id, key: str) -> list[dict]:  # noqa: C901 - one br
             PayoutLine.period == month.strftime("%Y-%m"))) or 0)
         return total if what == "views" else total / 100
 
+    def creators_paid():
+        from .models import PayoutLine
+
+        if payout_sum("creators", "amount") is None:
+            return None
+        return count(select(func.count(func.distinct(PayoutLine.subject))).where(
+            PayoutLine.tenant_id == tenant_id, PayoutLine.line == "creators",
+            PayoutLine.period == month.strftime("%Y-%m"), PayoutLine.amount_cents > 0))
+
     def payout_reason(line: str) -> str:
         from .connectors import payouts as P
 
@@ -555,7 +564,10 @@ def kpis(db: Session, tenant_id, key: str) -> list[dict]:  # noqa: C901 - one br
         return [_kpi("Drafts waiting for approval", posts(("in_review",),
                      since=month - timedelta(days=365)), "", "content_items"),
                 _kpi("Posts published this month", posts(), "", "content_items"),
-                _kpi("Creator earnings", None, "USD", "", "needs CREATOR_EARNINGS_SOURCE")]
+                _kpi("Creator earnings this month", payout_sum("creators", "amount"), "USD",
+                     "payout_lines", payout_reason("creators")),
+                _kpi("Creators paid this month", creators_paid(), "", "payout_lines",
+                     payout_reason("creators"))]
     if key == "influencers":
         return [_kpi("AI personas", count(select(func.count()).select_from(Persona).where(
                     Persona.tenant_id == tenant_id, Persona.kind == "virtual_influencer")),

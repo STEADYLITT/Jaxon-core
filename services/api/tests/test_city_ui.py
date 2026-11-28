@@ -89,7 +89,7 @@ def test_desktop_draws_the_real_city_in_3d(client, world, make_token, maker, own
         assert s["mode"] == "high"
         assert sorted(s["staffed"]) == sorted(d["key"] for d in snap["departments"]
                                               if d["staffed"])
-        assert "legal" not in s["staffed"] and "creators" not in s["staffed"]
+        assert "legal" not in s["staffed"] and "agency" not in s["staffed"]
         page.wait_for_selector(".label.ceo", state="attached", timeout=10_000)
         labels = page.locator(".label").all_text_contents()
         assert any("not staffed" in x and "Legal & Admin" in x for x in labels)
@@ -409,7 +409,7 @@ def test_a_building_shows_its_business_line(client, world, make_token, maker, ow
     Worker(maker).city_heartbeat()
     with city(client, world, make_token(world.alice)) as (page, problems):
         page.wait_for_selector(".label.ceo", state="attached", timeout=20_000)
-        click3d(page, "lot-creators")
+        click3d(page, "building-creators")  # staffed: its Earnings Recorder (ADR-058)
         page.wait_for_selector("[data-panel=building] h2:has-text('Creator Agency')")
         page.wait_for_selector("[data-line=creators] .proposed li:has-text('creator-planner')")
         txt = page.text_content("[data-line=creators]")

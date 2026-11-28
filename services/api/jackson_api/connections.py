@@ -29,6 +29,7 @@ one real, harmless call (ADR-038).
     Databento   GET metadata.list_datasets (free)
     APEX-7      GET APEX7_RESULTS_URL (reads the runs it publishes)
     Clip payouts GET the CLIP_PAYOUTS_SOURCE feed (reads it; records nothing)
+    Creator earnings GET the CREATOR_EARNINGS_SOURCE feed (reads it; records nothing)
 """
 
 import os
@@ -48,7 +49,8 @@ SECRET_VARS = ("ANTHROPIC_API_KEY", "SHOPIFY_CLIENT_SECRET", "SHOPIFY_ADMIN_API_
                "META_ACCESS_TOKEN", "TIKTOK_ACCESS_TOKEN",
                "GITHUB_APP_TOKEN", "YOUTUBE_API_KEY", "TWITCH_CLIENT_SECRET",
                "AMAZON_SP_CLIENT_SECRET", "AMAZON_SP_REFRESH_TOKEN", "EBAY_CLIENT_SECRET",
-               "DATABENTO_API_KEY", "APEX7_RESULTS_TOKEN", "CLIP_PAYOUTS_TOKEN")
+               "DATABENTO_API_KEY", "APEX7_RESULTS_TOKEN", "CLIP_PAYOUTS_TOKEN",
+               "CREATOR_EARNINGS_TOKEN")
 
 
 def _new_client() -> httpx.Client:
@@ -375,6 +377,10 @@ def test_clip_payouts(ctx: dict) -> dict:
     return _test_payouts("clips")
 
 
+def test_creator_earnings(ctx: dict) -> dict:
+    return _test_payouts("creators")
+
+
 def _test_payouts(line: str) -> dict:
     """Reads the feed (nothing is recorded) and reports what an import would see."""
     from .connectors import payouts as P
@@ -475,6 +481,9 @@ CONNECTORS = [
     Connector("clip_payouts", "Clip views & payouts", ["CLIP_PAYOUTS_SOURCE"],
               optional=["CLIP_PAYOUTS_TOKEN"], test=test_clip_payouts,
               note="an https feed, or import: upload a CSV at POST /payouts/clips/import"),
+    Connector("creator_earnings", "Creator earnings", ["CREATOR_EARNINGS_SOURCE"],
+              optional=["CREATOR_EARNINGS_TOKEN"], test=test_creator_earnings,
+              note="an https feed, or import: upload a CSV at POST /payouts/creators/import"),
     Connector("sms", "SMS and calls", [], note="not built yet: outreach is email only"),
     Connector("artifacts", "File storage (S3)", ["S3_BUCKET"],
               note="optional: files live on the Railway disk until this is set"),

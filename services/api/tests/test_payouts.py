@@ -112,3 +112,35 @@ def test_pull_without_a_feed_is_refused_and_import_mode_is_mock_free(client, wor
     t = client.post(f"/tenants/{world.tenant_a}/admin/connectors/clip_payouts/test",
                     headers=alice)
     assert t.json()["ok"] and t.json()["result"]["mode"] == "import"
+
+
+def test_creator_earnings_per_creator_and_mock_until_configured(client, world, alice, maker,
+                                                                owner_db, drain, monkeypatch):
+    monkeypatch.delenv("CREATOR_EARNINGS_SOURCE", raising=False)
+    k = {x["name"]: x for x in kpis(owner_db, world.tenant_a, "creators")}
+    assert k["Creator earnings this month"]["value"] is None
+    assert k["Creator earnings this month"]["note"] == "needs CREATOR_EARNINGS_SOURCE"
+    t = client.post(f"/tenants/{world.tenant_a}/admin/connectors/creator_earnings/test",
+                    headers=alice)
+    assert t.status_code == 409 or not t.json().get("ok")  # MOCK: nothing to test
+    from datetime import UTC, datetime
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
+    rows = [{"creator": "Creator X", "platform": "Fanvue", "net_earnings": "1,240.00",
+             "date": today, "transaction_id": "fv-1"},
+            {"creator": "Creator X", "platform": "Fanvue", "net_earnings": "60", "date": today,
+             "transaction_id": "fv-2"},
+            {"creator": "Creator Y", "platform": "OnlyFans", "net_earnings": "300",
+             "date": today, "transaction_id": "of-1"},
+            {"creator": "Creator Z", "platform": "OnlyFans", "date": today}]  # no amount
+    r = client.post(f"/tenants/{world.tenant_a}/payouts/creators/import",
+                    headers=alice, json={"rows": rows, "idempotency_key": uuid.uuid4().hex})
+    assert r.status_code == 202, r.text
+    Worker(maker, retry_base_seconds=0).run_once()
+    run, tasks = run_state(owner_db, r.json()["run_id"])
+    assert run.status == "succeeded", tasks[0].error
+    assert tasks[0].kind == "creator_earnings_import" and tasks[0].output["skipped"] == 1
+    k = {x["name"]: x for x in kpis(owner_db, world.tenant_a, "creators")}
+    assert k["Creator earnings this month"]["value"] == 1600.0
+    assert k["Creators paid this month"]["value"] == 2
+    ka = {x["name"]: x for x in kpis(owner_db, world.tenant_b, "creators")}
+    assert ka["Creator earnings this month"]["value"] is None  # other tenant: nothing

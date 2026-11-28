@@ -69,6 +69,8 @@ BUILT_IN = {
                     "reads real spend and results back from Meta/TikTok"),
     "clip_payouts_import": ("clips", "posting", "Payout Recorder",
                             "records real clip views and payouts (never estimated)"),
+    "creator_earnings_import": ("creators", "earnings", "Earnings Recorder",
+                                "records each signed creator's real earnings"),
     "clip_scout": ("clips", "scouting", "Clip Scout",
                    "finds clippable YouTube/Twitch moments from permitted creators"),
     "opportunity_research": ("rnd", "board", "Research Scout",
