@@ -17,6 +17,7 @@ one real, harmless call (ADR-038).
     Discord     GET /guilds/{id}?with_counts=true (the server, read-only)
     Telegram    getMe + getChat (the bot and the group, read-only)
     Netlify     GET /api/v1/user (the account behind the token)
+    BatchData   no free endpoint: checks the token and price are set (no call, no charge)
 """
 
 import os
@@ -31,7 +32,7 @@ SECRET_VARS = ("ANTHROPIC_API_KEY", "SHOPIFY_CLIENT_SECRET", "SHOPIFY_ADMIN_API_
                "CLERK_SECRET_KEY", "WHOP_API_KEY", "WHOP_WEBHOOK_SECRET",
                "ELEVENLABS_API_KEY", "APIFY_TOKEN",
                "DISCORD_BOT_TOKEN", "TELEGRAM_BOT_TOKEN",
-               "NETLIFY_AUTH_TOKEN")
+               "NETLIFY_AUTH_TOKEN", "BATCHDATA_API_TOKEN")
 
 
 def _new_client() -> httpx.Client:
@@ -228,6 +229,19 @@ def test_netlify(ctx: dict) -> dict:
             "access": "publishes only after you approve each launch"}
 
 
+def test_batchdata(ctx: dict) -> dict:
+    tok = os.environ["BATCHDATA_API_TOKEN"].strip()
+    if len(tok) < 20 or " " in tok:
+        raise TestFailed("BATCHDATA_API_TOKEN doesn't look like a BatchData server-side token")
+    per = os.environ.get("BATCHDATA_CENTS_PER_RECORD", "")
+    if not per.isdigit():
+        raise TestFailed("set BATCHDATA_CENTS_PER_RECORD to your plan's price per record "
+                         "(in cents) so every lookup shows its cost first")
+    return {"token": "set", "price_per_record_cents": int(per),
+            "note": "BatchData has no free test call: the first approved comps search is "
+                    "the real check"}
+
+
 # --- The list -----------------------------------------------------------------------------------
 
 @dataclass
@@ -263,6 +277,8 @@ CONNECTORS = [
               optional=["DISCORD_ANNOUNCE_CHANNEL_ID"], test=test_discord),
     Connector("telegram", "Telegram (group access, announcements)",
               ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"], test=test_telegram),
+    Connector("realestate", "Real-estate data (BatchData)",
+              ["BATCHDATA_API_TOKEN", "BATCHDATA_CENTS_PER_RECORD"], test=test_batchdata),
     Connector("dns", "Domain checks (DNS)", ["SITE_DOMAIN_VERIFY"],
               note="set to dns when you launch a site on your own domain; no key needed"),
     Connector("hosting", "Website hosting (Netlify)", ["NETLIFY_AUTH_TOKEN"],
