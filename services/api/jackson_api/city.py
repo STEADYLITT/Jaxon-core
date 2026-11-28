@@ -38,6 +38,8 @@ BUILT_IN = {
                        "narrates lessons and ad scripts with AI voice (cost approved first)"),
     "whop_sync": ("courses", "launch", "Sales Recorder",
                   "records real Whop members and sales (never estimated)"),
+    "web_research": ("rnd", "board", "Web Researcher",
+                     "Google search, Trends and Maps research via Apify (cost cap approved)"),
     "opportunity_research": ("rnd", "board", "Research Scout",
                              "researches opportunities from cited sources"),
     "content_generate": ("marketing", "content", "Content Writer", "drafts posts in a voice"),

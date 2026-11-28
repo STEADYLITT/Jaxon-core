@@ -10,6 +10,7 @@ Paste values only in **Railway → Jaxon-core → Variables**, and seal secrets.
 | 0 | **Every department** (thinking) | `ANTHROPIC_API_KEY` | built |
 | | (file storage) | `S3_BUCKET` | built |
 | 1 | **R&D / Opportunities** | `ANTHROPIC_API_KEY` | built. Research reads the links you put in a command. |
+| | | `APIFY_TOKEN` | built: Google search, Google Trends and Maps research, cost cap approved first |
 | 2 | **Course & Education Factory** | `RESEND_API_KEY`, `RESEND_FROM`, `RESEND_WEBHOOK_SECRET` | built: course emails and funnels |
 | | | `FAL_KEY` | built: AI video for lessons, always approved first |
 | | | `WHOP_API_KEY`, `WHOP_WEBHOOK_SECRET` | built: course checkout links, students with access, real course revenue |
@@ -20,6 +21,7 @@ Paste values only in **Railway → Jaxon-core → Variables**, and seal secrets.
 | | | `ELEVENLABS_API_KEY` | built: ad voiceovers, cost approved first |
 | 4 | **Agency** | `UPLOADPOST_API_KEY`, `UPLOADPOST_USER`, `RESEND_API_KEY`, `RESEND_FROM` | built: client deliverables and outreach |
 | 5 | **Sales & Lead Gen** | `RESEND_API_KEY`, `RESEND_FROM` | built: outreach email (opt-outs respected) |
+| | | `APIFY_TOKEN` | built: local business leads from Google Maps (public listings only) |
 | | | (SMS and calls) | **not built yet**: call lists and scripts are drafts for your team |
 | 6 | **App / SaaS / Web Factory** | `SITE_DOMAIN_VERIFY` | built: domain checks |
 | | | (website hosting) | **not built yet**: sites are built and tested, not published |
@@ -33,6 +35,7 @@ Paste values only in **Railway → Jaxon-core → Variables**, and seal secrets.
 | | | `ELEVENLABS_API_KEY` | built: persona voice from your own voice library, labeled as AI |
 | | | `PLATFORM_ANALYTICS` | **not built yet**: follower growth |
 | 10 | **E-commerce & Reselling** | `SHOPIFY_STORE_DOMAIN` + (`SHOPIFY_CLIENT_ID`, `SHOPIFY_CLIENT_SECRET`) or `SHOPIFY_ADMIN_API_TOKEN` | built: drafts; publishing only inside a Launch |
+| | | `APIFY_TOKEN` | built: product and trend research with sources |
 | | | `AMAZON_SP_API_KEY`, `EBAY_API_KEY` | **not built yet**: FBA and eBay research |
 | 11 | **Community** | `WHOP_API_KEY` | built: paying members and their linked Discord accounts |
 | | | `DISCORD_BOT_TOKEN`, `TELEGRAM_BOT_TOKEN` | **not built yet**: role sync from Whop payments |

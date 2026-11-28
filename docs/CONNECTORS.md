@@ -27,6 +27,7 @@ How to paste a variable into Railway (same every time):
 | 4 | **fal.ai** (steps below) | `FAL_KEY` | your credit balance (or "key accepted") |
 | 5 | **Whop** (steps below) | `WHOP_API_KEY`, then `WHOP_WEBHOOK_SECRET` | your Whop account id and name (read-only) |
 | 6 | **ElevenLabs** (steps below) | `ELEVENLABS_API_KEY` | your plan and characters left |
+| 7 | **Apify** (steps below) | `APIFY_TOKEN` | your Apify account and plan |
 | — | **Claude** | `ANTHROPIC_API_KEY` (already set) | how many models your key can use (free call) |
 
 Never needed yet: website hosting and SMS/calls aren't built, so they always show MOCK. File storage (S3) is optional, because files live on the Railway disk.
@@ -216,3 +217,39 @@ fal.ai keeps generated files on its own servers. Post a clip within a few days o
 | `ELEVENLABS_API_KEY` | the API key (secret, seal it) |
 | `ELEVENLABS_MODEL` | optional: `eleven_flash_v2_5` for the cheaper, faster voice (default `eleven_multilingual_v2`) |
 | `ELEVENLABS_CENTS_PER_1K_CHARS` | optional: your plan's real price, if different |
+
+---
+
+## Web research via Apify (trends, leads, product research)
+
+**What Jackson does:** runs one of three ready-made Apify scrapers and keeps every result with the link it came from.
+
+| Kind | What you get | Apify price |
+|---|---|---|
+| `search` | Google results for your terms: title, link, snippet, rank | from $1.80 per 1,000 result pages |
+| `trends` | Google Trends interest for your terms over the last 3 months | from $3.00 per 1,000 results |
+| `places` | local businesses from Google Maps: name, category, address, website, phone, rating | from $1.50 per 1,000 places |
+
+- **Cost cap first:**
+  - Every run has a hard cap that Apify can't go over (`maxTotalChargeUsd`).
+  - Jackson shows the cap and waits for your approval in **Approvals**. Inside an active Launch, its budget counts as the approval.
+  - The smallest cap is $0.05.
+- **Leads (`places`):** each business becomes a CRM lead with:
+  - source "public business listing"
+  - the Google Maps link as proof
+  - lawful basis "legitimate interest"
+
+  These are business numbers and websites only, never personal data. Nobody is contacted: outreach still follows the existing email rules and opt-outs.
+- **Ask with** `POST /tenants/{t}/research/web`, sending `{kind, terms, location (for places), items}`.
+
+### Click steps
+1. Sign in at **console.apify.com** → **Settings** → **API & Integrations** → **Personal API tokens** → **Create a new token**.
+2. Name it "Jackson". Leave the permissions at the default, or limit them to running Actors. Copy the token; it's shown only once.
+3. In Railway, add `APIFY_TOKEN` and **Seal** it.
+4. After the redeploy: **Connections → Web research → Test**. It shows your Apify account and plan.
+5. Optional: in Apify, set a **monthly usage limit** under **Billing** as a second safety net.
+
+### Variables
+| Name | What to paste |
+|---|---|
+| `APIFY_TOKEN` | the personal API token (secret, seal it) |
