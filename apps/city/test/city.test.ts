@@ -79,14 +79,16 @@ describe("envelopes and beams come only from events", () => {
 });
 
 describe("store", () => {
-  it("ticker keeps the last 20 real events, newest first, no duplicates", () => {
+  it("ticker keeps recent real events (shown 20 at a time), newest first, no duplicates", async () => {
+    const { TICKER_KEEP, collapse } = await import("../src/lib/effects");
     useCity.setState({ snapshot: snapshot(), ticker: [], queue: [], active: [], lastEventId: 0 });
-    for (let i = 1; i <= 25; i++) useCity.getState().onEvent(ev(i, "agent.log"), i);
-    useCity.getState().onEvent(ev(25, "agent.log"), 26);
+    for (let i = 1; i <= TICKER_KEEP + 5; i++) useCity.getState().onEvent(ev(i, "agent.log"), i);
+    useCity.getState().onEvent(ev(TICKER_KEEP + 5, "agent.log"), TICKER_KEEP + 6);
     const t = useCity.getState().ticker;
-    expect(t).toHaveLength(20);
-    expect(t[0]!.id).toBe(25);
-    expect(useCity.getState().lastEventId).toBe(25);
+    expect(t).toHaveLength(TICKER_KEEP);
+    expect(collapse(t)).toHaveLength(20);
+    expect(t[0]!.id).toBe(TICKER_KEEP + 5);
+    expect(useCity.getState().lastEventId).toBe(TICKER_KEEP + 5);
   });
 });
 
@@ -153,5 +155,25 @@ describe("replay", () => {
       to: { kind: "ceo", id: "steady" }, agent_id: "a1", payload: { message: "over limit" } });
     expect(effectsFor(e, snapshot(), 0)[0]).toMatchObject({ sealed: true, to: CEO_TOP });
     expect(describeEvent(e)).toBe("⚠ over limit");
+  });
+});
+
+describe("ticker collapse", () => {
+  it("folds a burst of offline events into one counted line and keeps real work visible", async () => {
+    const { collapse, describeItem } = await import("../src/lib/effects");
+    const cmd = ev(1, "command.issued", { payload: { text: "Replay me later" } });
+    const offline = Array.from({ length: 36 }, (_, i) => ev(100 + i, "agent.offline"));
+    const items = collapse([...offline, cmd]); // newest first
+    expect(items).toHaveLength(2);
+    expect(describeItem(items[0]!)).toBe("36 agents went offline");
+    expect(describeItem(items[1]!)).toBe("Steady → Jaxon: Replay me later");
+  });
+
+  it("never merges real work and caps the number of lines", async () => {
+    const { collapse } = await import("../src/lib/effects");
+    const done = Array.from({ length: 30 }, (_, i) =>
+      ev(i, "task.completed", { payload: { title: `t${i}` } }));
+    expect(collapse(done)).toHaveLength(20);
+    expect(collapse(done, 3).map((x) => x.n)).toEqual([1, 1, 1]);
   });
 });
