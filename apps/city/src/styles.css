@@ -57,7 +57,16 @@ button { font: inherit; }
   text-shadow: 0 0 6px rgba(0, 0, 0, 0.9); pointer-events: none; user-select: none;
 }
 .label.lot { color: var(--muted); font-weight: 400; }
-.label.ceo { color: var(--cyan); }
+.label.ceo { color: #ffd98a; letter-spacing: 0.08em; text-transform: uppercase; font-size: 0.72rem; }
+/* holographic department signs: crisp HTML text, a thin glass plate behind it */
+.label.holo {
+  font-size: 0.7rem; letter-spacing: 0.06em; text-transform: uppercase; color: #eaf6ff;
+  padding: 3px 9px; border-radius: 4px;
+  background: linear-gradient(180deg, rgba(40, 90, 160, 0.28), rgba(20, 30, 70, 0.18));
+  border: 1px solid rgba(120, 220, 255, 0.35);
+  box-shadow: 0 0 12px rgba(90, 200, 255, 0.18), inset 0 0 8px rgba(90, 200, 255, 0.12);
+  text-shadow: 0 0 4px rgba(120, 220, 255, 0.55);
+}
 .inbox-count { color: #fff; background: var(--red); border-radius: 999px; padding: 0 7px; margin-left: 4px; }
 
 .demo-banner {
@@ -240,4 +249,9 @@ button { font: inherit; }
 
 /* 15 departments: on a phone, unstaffed lots keep their outline but drop the label (the
    List view names every department). */
-@media (max-width: 600px) { .label.lot { display: none; } }
+@media (max-width: 600px) {
+  .label.lot { display: none; }
+  .label.holo { font-size: 0.5rem; padding: 1px 4px; letter-spacing: 0.02em; max-width: 12ch;
+    overflow: hidden; text-overflow: ellipsis; }
+  .label.ceo { font-size: 0.55rem; }
+}

@@ -18,7 +18,17 @@ The **scenery** may move and glow when nothing is happening: sky, stars, light, 
    - Dusk haze at the horizon.
 2. **Post:** bloom only above luminance 0.85 (strength 0.6, mipmap blur), so only emissive things glow. Plus ACES tone mapping, a light chromatic aberration (desktop only), a vignette and SMAA with 4× MSAA. Labels are HTML, so they never bloom.
 3. **Low mode** (phones, low memory, reduced motion, slow GPUs): no reflector, 1.5k stars, no post-processing.
-4. Later parts: architecture and the orb, life effects, the camera intro and interiors, and the HUD.
+4. **Architecture** (`scene/Architecture.tsx`):
+   - **Towers.** Every department is a dark-glass tower: `MeshPhysicalMaterial`, clearcoat 1, roughness 0.1, metalness 0.6, with edges that glow in the department's colour. Materials and geometries are shared, so draw cost stays low.
+   - **Silhouettes.** The square shaft holds the floors, which are real data. Above it sits the department's own crown, chosen from its slot so it never changes: setbacks, a spire, a helipad, twin antennas (aviation lights blink), a crown of light, or an antenna mast.
+   - **Signs.** A holographic sign carries the department name. It is a crisp HTML label and never blooms.
+   - **Windows.** There is one window per agent, coloured by its real status: cyan working, green done, amber waiting, red failed, gray offline, soft blue idle-but-online. Active states glow. Only online agents flicker.
+   - **Empty lots** show a wireframe footprint with a slow scan line.
+   - **Failure siren.** A department whose failure siren is sounding pulses a red glass shell.
+   - **CEO tower.** The tallest tower, in gold-trimmed glass, with a rotating crown of light.
+   - **Jaxon orb.** A core, a rotating wireframe shell and three orbiting particle rings. Brightness, spin and pulse come from the real events per minute.
+   - **Reflections.** Glass reflects a small cube map made from coloured light panels. Nothing is fetched over the network.
+5. Later parts: architecture and the orb, life effects, the camera intro and interiors, and the HUD.
 
 ## Proof
 `tests/city_shots.py` takes desktop (1440×900) and iPhone 15 screenshots, idle and right after a real command. They are saved under `docs/city-shots/<part>/`.
