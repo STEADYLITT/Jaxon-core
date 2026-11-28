@@ -1,6 +1,5 @@
 import { Html, OrbitControls, PerformanceMonitor } from "@react-three/drei";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Bloom, EffectComposer } from "@react-three/postprocessing";
 import { createContext, useContext, useMemo, useRef, useState, type RefObject } from "react";
 import * as THREE from "three";
 
@@ -14,6 +13,7 @@ import { seeded } from "../lib/rand";
 import { statusesAt, type PastStatus } from "../lib/replay";
 import { useCity, type Focus } from "../lib/store";
 import { Office } from "./Office";
+import { HAZE, Post, World } from "./World";
 import type { Department, Snapshot } from "../lib/types";
 
 // Labels portal into a stable overlay outside the canvas (drei's default target changes
@@ -41,7 +41,8 @@ function farFor(aspect: number): number {
 function AutoFog() {
   const { size } = useThree();
   const far = farFor(size.width / Math.max(size.height, 1));
-  return <fog attach="fog" args={["#07031a", 90 * far, 230 * far]} />;
+  // the far ground melts into a dusk purple that sits under the nebula's horizon band
+  return <fog attach="fog" args={[HAZE, 110 * far, 430 * far]} />;
 }
 
 /** Where the camera should be for what Steady is looking at. Portrait phones need the
@@ -49,7 +50,8 @@ function AutoFog() {
 function poseFor(focus: Focus, s: Snapshot, aspect: number, inOffice: boolean): Pose | null {
   const far = farFor(aspect);
   if (inOffice) return { pos: [0, 7 * far, 15 * far], target: [0, 2.2, 0], key: "office" };
-  if (!focus) return { pos: [0, 70 * far, 76 * far], target: [0, 4, 4], key: "city" };
+  // low enough that the horizon (and the galaxy above it) is in the shot
+  if (!focus) return { pos: [0, 44 * far, 92 * far], target: [0, 9, 0], key: "city" };
   if (focus.kind === "building") {
     const d = s.departments.find((x) => x.id === focus.id);
     if (!d) return null;
@@ -128,40 +130,14 @@ function pointer(on: boolean) {
   document.body.style.cursor = on ? "pointer" : "";
 }
 
-function Ground() {
+function RingRoad() {
   return (
-    <group>
-      <mesh rotation-x={-Math.PI / 2} position-y={-0.02}>
-        <circleGeometry args={[90, 64]} />
-        <meshBasicMaterial color="#0b0620" />
-      </mesh>
-      <gridHelper args={[180, 90, "#3a1d7a", "#1d1240"]} position-y={0} />
+    <group name="ring-road">
       <mesh rotation-x={-Math.PI / 2} position-y={0.02}>
         <ringGeometry args={[RING_R - 7.5, RING_R - 6.2, 96]} />
         <meshBasicMaterial color="#ff3df2" transparent opacity={0.55} toneMapped={false} />
       </mesh>
     </group>
-  );
-}
-
-function Stars({ count }: { count: number }) {
-  const geo = useMemo(() => {
-    const r = seeded(7);
-    const pos = new Float32Array(count * 3);
-    for (let i = 0; i < count; i++) {
-      const th = r() * Math.PI * 2, ph = Math.acos(r() * 0.9), d = 140 + r() * 60;
-      pos[i * 3] = d * Math.sin(ph) * Math.cos(th);
-      pos[i * 3 + 1] = d * Math.cos(ph);
-      pos[i * 3 + 2] = d * Math.sin(ph) * Math.sin(th);
-    }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-    return g;
-  }, [count]);
-  return (
-    <points geometry={geo}>
-      <pointsMaterial size={0.7} color="#bfc8ff" sizeAttenuation transparent opacity={0.8} />
-    </points>
   );
 }
 
@@ -401,20 +377,20 @@ export default function City({ mode }: { mode: Mode }) {
     <>
     <div ref={layer} className="label-layer" />
     <LabelLayer.Provider value={layer}>
-    <Canvas dpr={light ? 1 : [1, 2]} camera={{ position: [0, 38, 62], fov: 50 }}
+    <Canvas dpr={light ? 1 : [1, 2]} camera={{ position: [0, 38, 62], fov: 50, far: 1400 }}
       gl={{ antialias: mode !== "low", powerPreference: "high-performance" }}
       onCreated={() => { document.documentElement.dataset.cityRender = light ? "light" : "full"; }}>
       <color attach="background" args={["#07031a"]} />
       <AutoFog />
-      <ambientLight intensity={0.35} />
+      <ambientLight intensity={0.22} />
       <pointLight position={ORB} intensity={60} color="#9b5cff" distance={80} />
       <PerformanceMonitor onDecline={() => setSlow(true)} flipflops={1} />
       <CameraRig inOffice={!!floor} />
       <ScreenProbe />
-      <Stars count={mode === "low" ? 300 : 1500} />
+      <World light={light} />
       {floor ? <Office deptId={floor.deptId} floorId={floor.floorId} layer={layer} /> : (
         <group name="city" onPointerMissed={() => useCity.getState().setFocus(null)}>
-          <Ground />
+          <RingRoad />
           <Tower inbox={s.inbox.approvals.length} />
           <CeoLabel inbox={s.inbox.approvals.length} />
           <Orb />
@@ -425,11 +401,7 @@ export default function City({ mode }: { mode: Mode }) {
       )}
       <OrbitControls makeDefault target={[0, 13, 0]} enablePan={false} minDistance={20} maxDistance={260}
         maxPolarAngle={Math.PI / 2.1} />
-      {!light && (
-        <EffectComposer>
-          <Bloom intensity={1.1} luminanceThreshold={0.25} mipmapBlur />
-        </EffectComposer>
-      )}
+      {!light && <Post />}
     </Canvas>
     </LabelLayer.Provider>
     </>

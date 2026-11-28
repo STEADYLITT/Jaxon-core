@@ -53,7 +53,7 @@ function useDebugHook(mode: Mode) {
     });
     window.__city = {
       mode, lastEventId: st.lastEventId, windows: states,
-      envelopes: st.active.filter((e) => e.kind === "envelope").length,
+      envelopes: st.active.filter((e) => e.kind === "envelope").length, flown: st.flown,
       queued: st.queue.length, beams: st.active.filter((e) => e.kind === "beam").length,
       staffed: s?.departments.filter((d) => d.staffed).map((d) => d.key) ?? [],
       inbox: s?.inbox.approvals.length ?? 0, demo: s?.demo ?? false,
