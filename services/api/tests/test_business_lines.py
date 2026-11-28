@@ -94,7 +94,8 @@ def test_lines_api_shows_playbook_kpis_connectors_agents(client, world, make_tok
     assert whop["value"] is None and "WHOP_API_KEY" in courses["missing_variables"]
     assert courses["playbook"]["version"] == 1 and courses["playbook"]["rules"]
     trading = {k["name"]: k for k in lines["trading"]["kpis"]}
-    assert trading["Sim P&L"]["value"] is None and trading["Live orders placed"]["value"] == 0
+    assert trading["Paper P&L, last month (Alpaca paper)"]["value"] is None
+    assert trading["Live orders placed"]["value"] == 0
     assert any("never filed" in r.lower() for r in lines["legal"]["playbook"]["rules"])
     assert lines["ecommerce"]["launch"]["template"]["channels"]["shopify_publish"] is True
     creators = lines["creators"]

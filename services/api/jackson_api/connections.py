@@ -18,6 +18,7 @@ one real, harmless call (ADR-038).
     Telegram    getMe + getChat (the bot and the group, read-only)
     Netlify     GET /api/v1/user (the account behind the token)
     BatchData   no free endpoint: checks the token and price are set (no call, no charge)
+    Alpaca      GET paper-api /v2/account (the PAPER account; live is never called)
 """
 
 import os
@@ -32,7 +33,8 @@ SECRET_VARS = ("ANTHROPIC_API_KEY", "SHOPIFY_CLIENT_SECRET", "SHOPIFY_ADMIN_API_
                "CLERK_SECRET_KEY", "WHOP_API_KEY", "WHOP_WEBHOOK_SECRET",
                "ELEVENLABS_API_KEY", "APIFY_TOKEN",
                "DISCORD_BOT_TOKEN", "TELEGRAM_BOT_TOKEN",
-               "NETLIFY_AUTH_TOKEN", "BATCHDATA_API_TOKEN")
+               "NETLIFY_AUTH_TOKEN", "BATCHDATA_API_TOKEN",
+               "ALPACA_PAPER_SECRET_KEY")
 
 
 def _new_client() -> httpx.Client:
@@ -242,6 +244,18 @@ def test_batchdata(ctx: dict) -> dict:
                     "the real check"}
 
 
+def test_alpaca(ctx: dict) -> dict:
+    from .connectors.broker import AlpacaPaper
+
+    try:
+        a = AlpacaPaper(os.environ["ALPACA_PAPER_KEY_ID"], os.environ["ALPACA_PAPER_SECRET_KEY"],
+                        client=_new_client()).account()
+    except Exception as e:  # noqa: BLE001
+        raise TestFailed(str(e)) from None
+    return {"paper_account": a["account"], "status": a["status"], "equity": a["equity"],
+            "note": "PAPER only: live orders stay refused"}
+
+
 # --- The list -----------------------------------------------------------------------------------
 
 @dataclass
@@ -279,6 +293,8 @@ CONNECTORS = [
               ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"], test=test_telegram),
     Connector("realestate", "Real-estate data (BatchData)",
               ["BATCHDATA_API_TOKEN", "BATCHDATA_CENTS_PER_RECORD"], test=test_batchdata),
+    Connector("broker", "Trading: Alpaca PAPER + market data",
+              ["ALPACA_PAPER_KEY_ID", "ALPACA_PAPER_SECRET_KEY"], test=test_alpaca),
     Connector("dns", "Domain checks (DNS)", ["SITE_DOMAIN_VERIFY"],
               note="set to dns when you launch a site on your own domain; no key needed"),
     Connector("hosting", "Website hosting (Netlify)", ["NETLIFY_AUTH_TOKEN"],

@@ -296,9 +296,8 @@ LINES: list[Line] = [
           "controls exists.", "Results only from real backtest/sim data."],
          ("trading", "backtest", "apex", "apex-7", "mnq", "futures", "prop firm",
           "paper trade", "indicator", "trading strategy", "trading bot"),
-         ["models"],
-         [("APEX7_RESULTS_SOURCE", "real backtest/sim results from APEX-7"),
-          ("MARKET_DATA_API_KEY", "historical data for backtests"),
+         ["models", "broker"],
+         [("APEX7_RESULTS_SOURCE", "real backtest results from APEX-7"),
           ("BROKER_API_KEY", "live orders (restricted; not built)")],
          _ch(note="Launches cover research and simulation only"),
          restricted=["live_trade"], budget_monthly_cents=2_000,
@@ -544,9 +543,17 @@ def kpis(db: Session, tenant_id, key: str) -> list[dict]:  # noqa: C901 - one br
                 _kpi("Renewals this month", None, "", "",
                      "counted once Whop has reported a full month of payments")]
     if key == "trading":
+        paper = db.scalar(select(Artifact.meta).where(
+            Artifact.tenant_id == tenant_id,
+            Artifact.meta["type"].as_string() == "paper_account")
+            .order_by(Artifact.created_at.desc()).limit(1)) or {}
         return [_kpi("Backtests run", None, "", "",
                      "needs APEX7_RESULTS_SOURCE (real backtest/sim data)"),
-                _kpi("Sim P&L", None, "USD", "", "needs APEX7_RESULTS_SOURCE"),
+                _kpi("Paper P&L, last month (Alpaca paper)", paper.get("month_pl"), "USD",
+                     "artifacts (latest paper_account snapshot)",
+                     "no paper snapshot yet (connect Alpaca paper, then Snapshot)"),
+                _kpi("Paper equity", paper.get("equity"), "USD",
+                     "artifacts (latest paper_account snapshot)", "no paper snapshot yet"),
                 _kpi("Live orders placed", 0, "", "policy (refused until a broker connector "
                      "with loss caps and a kill switch exists)")]
     if key == "realestate":
