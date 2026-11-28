@@ -473,3 +473,34 @@ fal.ai keeps generated files on its own servers. Post a clip within a few days o
 | `TIKTOK_ADVERTISER_ID` | the advertiser id |
 | `TIKTOK_IDENTITY_ID` | the identity your ads post as |
 | `TIKTOK_IDENTITY_TYPE` | optional: `CUSTOMIZED_USER` (default), `TT_USER` or `BC_AUTH_TT` |
+
+---
+
+## GitHub repos (App / SaaS / Web Factory)
+
+**What Jackson does:**
+- `POST /tenants/{t}/factory/repos` takes either a tested site version (`site_id` + `version_id`) or a finished course (`course_id`).
+- After you approve, Jackson creates a **private** repo on your GitHub, or reuses the same one, named `jackson-site-…` or `jackson-course-…`. It commits all the files plus a README in one commit.
+- Jackson never pushes to a public repo, and only builds that passed every check can be pushed.
+- `GET /tenants/{t}/factory/repos` lists what was pushed.
+
+### Click steps
+1. On **github.com**: your avatar → **Settings** → **Developer settings** → **Personal access tokens** → **Fine-grained tokens** → **Generate new token**.
+2. Fill in the token form:
+   - Name: "Jackson".
+   - Resource owner: you, or your organization.
+   - Expiration: up to a year.
+   - **Repository access: All repositories**, so it can create new ones.
+3. Under **Repository permissions**, set:
+   - **Administration: Read and write**, to create repos.
+   - **Contents: Read and write**, to commit.
+   - **Metadata: Read**, which GitHub requires anyway.
+4. Generate it and copy the token. In Railway, add it as `GITHUB_APP_TOKEN` and **Seal** it. Add `GITHUB_OWNER` = your GitHub username (e.g. `STEADYLITT`) or your organization's name.
+5. **Connections → GitHub repos → Test** shows who the token signs in as.
+
+### Variables
+| Name | What to paste |
+|---|---|
+| `GITHUB_APP_TOKEN` | the fine-grained token (secret, seal it) |
+| `GITHUB_OWNER` | your GitHub username or organization |
+| `GITHUB_REPO_PREFIX` | optional: start of every repo name (default `jackson`) |

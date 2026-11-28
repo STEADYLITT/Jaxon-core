@@ -12,16 +12,8 @@ from sqlalchemy import select
 from jackson_api import connections as C
 from jackson_api.models import AuditEvent
 
-VARS = ["ANTHROPIC_API_KEY", "SHOPIFY_STORE_DOMAIN", "SHOPIFY_CLIENT_ID", "SHOPIFY_CLIENT_SECRET",
-        "SHOPIFY_ADMIN_API_TOKEN", "UPLOADPOST_API_KEY", "UPLOADPOST_USER", "RESEND_API_KEY",
-        "RESEND_FROM", "RESEND_WEBHOOK_SECRET", "FAL_KEY", "FAL_VIDEO_MODEL",
-        "FAL_VIDEO_CENTS_PER_SECOND", "SITE_DOMAIN_VERIFY", "S3_BUCKET", "WHOP_API_KEY",
-        "WHOP_WEBHOOK_SECRET", "ELEVENLABS_API_KEY", "APIFY_TOKEN", "DISCORD_BOT_TOKEN",
-        "DISCORD_GUILD_ID", "DISCORD_MEMBER_ROLE_ID", "DISCORD_ANNOUNCE_CHANNEL_ID",
-        "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "TELEGRAM_WEBHOOK_SECRET", "NETLIFY_AUTH_TOKEN",
-        "BATCHDATA_API_TOKEN",
-        "BATCHDATA_CENTS_PER_RECORD", "ALPACA_PAPER_KEY_ID", "ALPACA_PAPER_SECRET_KEY",
-        "META_ACCESS_TOKEN", "META_AD_ACCOUNT_ID", "TIKTOK_ACCESS_TOKEN", "TIKTOK_ADVERTISER_ID"]
+VARS = sorted({v for c in C.CONNECTORS
+               for v in [*c.needs, *c.optional, *(x for g in c.any_of for x in g)]})
 SECRETS = {"ANTHROPIC_API_KEY": "sk-ant-" + "a" * 24, "SHOPIFY_CLIENT_SECRET": "shpss_" + "b" * 24,
            "UPLOADPOST_API_KEY": "up-" + "c" * 24, "RESEND_API_KEY": "re_" + "d" * 24,
            "FAL_KEY": "fal-" + "e" * 24}

@@ -21,6 +21,7 @@ one real, harmless call (ADR-038).
     Alpaca      GET paper-api /v2/account (the PAPER account; live is never called)
     Meta ads    GET act_{id}?fields=name,account_status,currency,amount_spent
     TikTok ads  GET advertiser/info/ (the advertiser account)
+    GitHub      GET /user (who the token is)
 """
 
 import os
@@ -37,7 +38,8 @@ SECRET_VARS = ("ANTHROPIC_API_KEY", "SHOPIFY_CLIENT_SECRET", "SHOPIFY_ADMIN_API_
                "DISCORD_BOT_TOKEN", "TELEGRAM_BOT_TOKEN",
                "NETLIFY_AUTH_TOKEN", "BATCHDATA_API_TOKEN", "TELEGRAM_WEBHOOK_SECRET",
                "ALPACA_PAPER_SECRET_KEY",
-               "META_ACCESS_TOKEN", "TIKTOK_ACCESS_TOKEN")
+               "META_ACCESS_TOKEN", "TIKTOK_ACCESS_TOKEN",
+               "GITHUB_APP_TOKEN")
 
 
 def _new_client() -> httpx.Client:
@@ -280,6 +282,18 @@ def test_tiktok_ads(ctx: dict) -> dict:
     return {**a, "access": "drafts are disabled; ads only switch on inside an approved Launch"}
 
 
+def test_github(ctx: dict) -> dict:
+    from .connectors.github_repos import GitHub
+
+    try:
+        u = GitHub(os.environ["GITHUB_APP_TOKEN"], os.environ["GITHUB_OWNER"],
+                   client=_new_client()).user()
+    except Exception as e:  # noqa: BLE001
+        raise TestFailed(str(e)) from None
+    return {"signed_in_as": u.get("login"), "owner": os.environ["GITHUB_OWNER"],
+            "access": "creates PRIVATE repos only, after you approve each push"}
+
+
 # --- The list -----------------------------------------------------------------------------------
 
 @dataclass
@@ -325,6 +339,8 @@ CONNECTORS = [
               test=test_meta_ads),
     Connector("tiktok_ads", "Ads: TikTok", ["TIKTOK_ACCESS_TOKEN", "TIKTOK_ADVERTISER_ID"],
               optional=["TIKTOK_IDENTITY_ID", "TIKTOK_IDENTITY_TYPE"], test=test_tiktok_ads),
+    Connector("github", "GitHub repos (App Factory)", ["GITHUB_APP_TOKEN", "GITHUB_OWNER"],
+              optional=["GITHUB_REPO_PREFIX"], test=test_github),
     Connector("dns", "Domain checks (DNS)", ["SITE_DOMAIN_VERIFY"],
               note="set to dns when you launch a site on your own domain; no key needed"),
     Connector("hosting", "Website hosting (Netlify)", ["NETLIFY_AUTH_TOKEN"],

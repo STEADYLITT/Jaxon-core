@@ -28,7 +28,7 @@ Paste values only in **Railway → Jaxon-core → Variables**, and seal secrets.
 | | | (SMS and calls) | **not built yet**: call lists and scripts are drafts for your team |
 | 6 | **App / SaaS / Web Factory** | `SITE_DOMAIN_VERIFY` | built: domain checks |
 | | | `NETLIFY_AUTH_TOKEN` | built: approved sites and course pages go live on Netlify (https, your own domain) |
-| | | `GITHUB_APP_TOKEN` | **not built yet**: new repos for apps |
+| | | `GITHUB_APP_TOKEN`, `GITHUB_OWNER` | built: every approved build gets its own private GitHub repo |
 | 7 | **Content & Clip Farming** | `UPLOADPOST_API_KEY`, `UPLOADPOST_USER`, `FAL_KEY` | built: posting and video |
 | | | `YOUTUBE_API_KEY`, `TWITCH_CLIENT_ID` | **not built yet**: finding clippable moments |
 | | | `CLIP_PAYOUTS_SOURCE` | **not built yet**: real views and payouts |
@@ -73,6 +73,7 @@ Paste these in **Railway → Jaxon-core → Variables**. **Seal** every secret. 
 | Trading, PAPER only (Alpaca) | `ALPACA_PAPER_KEY_ID`, `ALPACA_PAPER_SECRET_KEY` | yes: the secret |
 | Meta ads | `META_ACCESS_TOKEN`, `META_AD_ACCOUNT_ID`, `META_PAGE_ID` | yes: the token |
 | TikTok ads | `TIKTOK_ACCESS_TOKEN`, `TIKTOK_ADVERTISER_ID`, `TIKTOK_IDENTITY_ID` (optional `TIKTOK_IDENTITY_TYPE`) | yes: the token |
+| GitHub repos (App Factory) | `GITHUB_APP_TOKEN`, `GITHUB_OWNER`; optional `GITHUB_REPO_PREFIX` | yes: the token |
 | Domain checks | `SITE_DOMAIN_VERIFY=dns` | no |
 | File storage (optional) | `S3_BUCKET` | no |
 
