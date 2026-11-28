@@ -30,13 +30,16 @@ class Channels(BaseModel):
     email_lists: list[str] = Field(default_factory=list, max_length=20,
                                    description="campaign list names (audience.list)")
     ads: bool = False
+    ad_platforms: list[Literal["meta", "tiktok"]] = Field(
+        default_factory=list, description="which ad platforms may spend (needs ads=true)")
 
     def stored(self) -> dict:
         return {"shopify_publish": self.shopify_publish,
                 "social": {"accounts": sorted({a.strip().lower() for a in self.social_accounts
                                                if a.strip()})},
                 "email": {"lists": sorted({x.strip() for x in self.email_lists if x.strip()})},
-                "ads": self.ads}
+                "ads": self.ads,
+                "ad_platforms": sorted(set(self.ad_platforms)) if self.ads else []}
 
 
 class KillRules(BaseModel):
@@ -75,7 +78,8 @@ def _out(db, la: Launch, with_metrics=True) -> dict:
          "channels": {"shopify_publish": bool(ch.get("shopify_publish")),
                       "social_accounts": (ch.get("social") or {}).get("accounts", []),
                       "email_lists": (ch.get("email") or {}).get("lists", []),
-                      "ads": bool(ch.get("ads"))},
+                      "ads": bool(ch.get("ads")),
+                      "ad_platforms": ch.get("ad_platforms") or []},
          "kill_rules": la.kill_rules, "starts_at": la.starts_at, "ends_at": la.ends_at,
          "version": la.version, "approved_by": str(la.approved_by) if la.approved_by else None,
          "approved_at": la.approved_at, "created_at": la.created_at}

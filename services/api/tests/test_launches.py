@@ -74,7 +74,7 @@ def test_owner_approves_a_launch_once_with_its_scope(client, world, alice, owner
     la = make_launch(client, world, alice)
     assert la["status"] == "active" and la["version"] == 1 and la["approved_by"]
     assert la["channels"] == {"shopify_publish": True, "social_accounts": ["instagram"],
-                              "email_lists": ["vip"], "ads": False}
+                              "email_lists": ["vip"], "ads": False, "ad_platforms": []}
     ends = datetime.fromisoformat(la["ends_at"]) - datetime.fromisoformat(la["starts_at"])
     assert ends == timedelta(days=30)
     assert owner_db.scalar(text("SELECT count(*) FROM audit_events WHERE entity_id = :i AND "
