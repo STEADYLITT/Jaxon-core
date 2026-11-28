@@ -146,6 +146,7 @@ def default_handlers() -> dict[str, Handler]:
     from .content import publish_handler as content_publish
     from .content import video_handler as content_video
     from .courses import build_handler as course_build
+    from .courses import publish_handler as course_publish
     from .crm import prepare_handler as outreach_prepare
     from .crm import send_handler as outreach_send
     from .dashboard import report_handler
@@ -169,7 +170,8 @@ def default_handlers() -> dict[str, Handler]:
             "daily_report": report_handler, "launch_propose": launch_propose,
             "course_build": course_build, "whop_sync": whop_sync,
             "voice_generate": voice_generate, "web_research": web_research,
-            "community_sync": community_sync, "community_announce": community_announce}
+            "community_sync": community_sync, "community_announce": community_announce,
+            "course_publish": course_publish}
 
 
 class ModelBudgetExhausted(NonRetryableError):

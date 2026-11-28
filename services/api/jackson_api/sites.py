@@ -339,16 +339,6 @@ def domain_verifier():
     return DnsVerifier() if os.environ.get("SITE_DOMAIN_VERIFY") == "dns" else MockDnsVerifier()
 
 
-class MockHost:
-    """MOCK hosting connector: nothing is deployed anywhere. Until a hosting account exists
-    the "live" URL is a mock:// address."""
-
-    backend = "mock"
-
-    def deploy(self, domain: str, number: int, files: dict[str, str]) -> str:
-        return f"mock://sites/{domain}/v{number}/"
-
-
 # --- Worker handlers ----------------------------------------------------------------------------
 
 def build_handler(ctx):
@@ -423,8 +413,10 @@ def launch_handler(ctx):
                                 f"{rec['name']} = {rec['value']} and launch again")
     # Going live is a production change: ALWAYS needs the owner's approval.
     ctx.authorize(Action(Category.PRODUCTION_CHANGE,
-                         f"launch site {sid} version {number} on {domain}"))
-    host = MockHost()
+                         f"launch site {sid} version {number} on {domain}",
+                         channel="site_publish"))
+    from .connectors.hosting import host as hosting_host
+    host = hosting_host()  # Netlify when NETLIFY_AUTH_TOKEN is set, else a labeled MOCK
     url = host.deploy(domain, number, files)
     with ctx.db_session() as db:
         site = db.get(SiteProject, sid)

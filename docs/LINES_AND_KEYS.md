@@ -15,6 +15,7 @@ Paste values only in **Railway → Jaxon-core → Variables**, and seal secrets.
 | | | `FAL_KEY` | built: AI video for lessons, always approved first |
 | | | `WHOP_API_KEY`, `WHOP_WEBHOOK_SECRET` | built: course checkout links, students with access, real course revenue |
 | | | `ELEVENLABS_API_KEY` | built: AI voice for lessons, cost approved first |
+| | | `NETLIFY_AUTH_TOKEN` | built: publishes the student platform and sales page after your approval |
 | 3 | **Marketing (all companies)** | `UPLOADPOST_API_KEY`, `UPLOADPOST_USER` | built: posting |
 | | | `RESEND_API_KEY`, `RESEND_FROM` | built: email |
 | | | `WHOP_API_KEY` | built: real sales for course offers |
@@ -24,7 +25,7 @@ Paste values only in **Railway → Jaxon-core → Variables**, and seal secrets.
 | | | `APIFY_TOKEN` | built: local business leads from Google Maps (public listings only) |
 | | | (SMS and calls) | **not built yet**: call lists and scripts are drafts for your team |
 | 6 | **App / SaaS / Web Factory** | `SITE_DOMAIN_VERIFY` | built: domain checks |
-| | | (website hosting) | **not built yet**: sites are built and tested, not published |
+| | | `NETLIFY_AUTH_TOKEN` | built: approved sites and course pages go live on Netlify (https, your own domain) |
 | | | `GITHUB_APP_TOKEN` | **not built yet**: new repos for apps |
 | 7 | **Content & Clip Farming** | `UPLOADPOST_API_KEY`, `UPLOADPOST_USER`, `FAL_KEY` | built: posting and video |
 | | | `YOUTUBE_API_KEY`, `TWITCH_CLIENT_ID` | **not built yet**: finding clippable moments |

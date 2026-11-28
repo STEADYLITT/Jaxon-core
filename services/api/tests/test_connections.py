@@ -18,7 +18,7 @@ VARS = ["ANTHROPIC_API_KEY", "SHOPIFY_STORE_DOMAIN", "SHOPIFY_CLIENT_ID", "SHOPI
         "FAL_VIDEO_CENTS_PER_SECOND", "SITE_DOMAIN_VERIFY", "S3_BUCKET", "WHOP_API_KEY",
         "WHOP_WEBHOOK_SECRET", "ELEVENLABS_API_KEY", "APIFY_TOKEN", "DISCORD_BOT_TOKEN",
         "DISCORD_GUILD_ID", "DISCORD_MEMBER_ROLE_ID", "DISCORD_ANNOUNCE_CHANNEL_ID",
-        "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"]
+        "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "NETLIFY_AUTH_TOKEN"]
 SECRETS = {"ANTHROPIC_API_KEY": "sk-ant-" + "a" * 24, "SHOPIFY_CLIENT_SECRET": "shpss_" + "b" * 24,
            "UPLOADPOST_API_KEY": "up-" + "c" * 24, "RESEND_API_KEY": "re_" + "d" * 24,
            "FAL_KEY": "fal-" + "e" * 24}
@@ -88,7 +88,7 @@ def test_everything_is_mock_with_the_missing_variable_names(client, world, make_
     assert s["shopify"]["missing"] == ["SHOPIFY_STORE_DOMAIN", "SHOPIFY_CLIENT_ID",
                                        "SHOPIFY_CLIENT_SECRET"]
     assert s["email"]["missing"] == ["RESEND_API_KEY", "RESEND_FROM"]
-    assert s["hosting"]["built"] is False and "not built" in s["hosting"]["note"]
+    assert s["hosting"]["built"] is True and s["hosting"]["missing"] == ["NETLIFY_AUTH_TOKEN"]
     r = client.post(f"/tenants/{world.tenant_a}/admin/connectors/video/test",
                     headers=auth(make_token, world.alice)).json()
     assert r["ok"] is False and "FAL_KEY" in r["error"]

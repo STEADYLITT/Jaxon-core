@@ -16,6 +16,7 @@ one real, harmless call (ADR-038).
     Apify       GET /v2/users/me (account and plan)
     Discord     GET /guilds/{id}?with_counts=true (the server, read-only)
     Telegram    getMe + getChat (the bot and the group, read-only)
+    Netlify     GET /api/v1/user (the account behind the token)
 """
 
 import os
@@ -29,7 +30,8 @@ SECRET_VARS = ("ANTHROPIC_API_KEY", "SHOPIFY_CLIENT_SECRET", "SHOPIFY_ADMIN_API_
                "UPLOADPOST_API_KEY", "RESEND_API_KEY", "RESEND_WEBHOOK_SECRET", "FAL_KEY",
                "CLERK_SECRET_KEY", "WHOP_API_KEY", "WHOP_WEBHOOK_SECRET",
                "ELEVENLABS_API_KEY", "APIFY_TOKEN",
-               "DISCORD_BOT_TOKEN", "TELEGRAM_BOT_TOKEN")
+               "DISCORD_BOT_TOKEN", "TELEGRAM_BOT_TOKEN",
+               "NETLIFY_AUTH_TOKEN")
 
 
 def _new_client() -> httpx.Client:
@@ -215,6 +217,17 @@ def test_telegram(ctx: dict) -> dict:
     return {"bot": me.get("username"), "chat": chat.get("title"), "type": chat.get("type")}
 
 
+def test_netlify(ctx: dict) -> dict:
+    from .connectors.hosting import NetlifyHost
+
+    try:
+        u = NetlifyHost(os.environ["NETLIFY_AUTH_TOKEN"], client=_new_client()).user()
+    except Exception as e:  # noqa: BLE001
+        raise TestFailed(str(e)) from None
+    return {"account": u.get("full_name") or u.get("slug"), "email": u.get("email"),
+            "access": "publishes only after you approve each launch"}
+
+
 # --- The list -----------------------------------------------------------------------------------
 
 @dataclass
@@ -252,8 +265,8 @@ CONNECTORS = [
               ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"], test=test_telegram),
     Connector("dns", "Domain checks (DNS)", ["SITE_DOMAIN_VERIFY"],
               note="set to dns when you launch a site on your own domain; no key needed"),
-    Connector("hosting", "Website hosting", [],
-              note="not built yet: sites are previewed and checked, not published"),
+    Connector("hosting", "Website hosting (Netlify)", ["NETLIFY_AUTH_TOKEN"],
+              optional=["NETLIFY_SITE_PREFIX"], test=test_netlify),
     Connector("sms", "SMS and calls", [], note="not built yet: outreach is email only"),
     Connector("artifacts", "File storage (S3)", ["S3_BUCKET"],
               note="optional: files live on the Railway disk until this is set"),
