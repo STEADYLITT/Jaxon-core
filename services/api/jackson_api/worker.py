@@ -158,6 +158,8 @@ def default_handlers() -> dict[str, Handler]:
     from .sites import build_handler as site_build
     from .sites import launch_handler as site_launch
     from .store_builder import publish_handler, store_build_handler
+    from .trading import order_handler as paper_order
+    from .trading import snapshot_handler as paper_snapshot
     from .voice import voice_handler as voice_generate
     from .webresearch import research_handler as web_research
     from .whop_sync import sync_handler as whop_sync
@@ -174,7 +176,8 @@ def default_handlers() -> dict[str, Handler]:
             "voice_generate": voice_generate, "web_research": web_research,
             "community_sync": community_sync, "community_announce": community_announce,
             "course_publish": course_publish, "property_comps": property_comps,
-            "skip_trace": skip_trace}
+            "skip_trace": skip_trace, "paper_snapshot": paper_snapshot,
+            "paper_order": paper_order}
 
 
 class ModelBudgetExhausted(NonRetryableError):

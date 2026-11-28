@@ -32,6 +32,7 @@ How to paste a variable into Railway (same every time):
 | 9 | **Telegram** (steps below) | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | your bot and group name |
 | 10 | **Netlify** (steps below) | `NETLIFY_AUTH_TOKEN` | your Netlify account name |
 | 11 | **BatchData** (steps below) | `BATCHDATA_API_TOKEN`, `BATCHDATA_CENTS_PER_RECORD` | that the token and your price are set (BatchData has no free test call) |
+| 12 | **Alpaca paper** (steps below) | `ALPACA_PAPER_KEY_ID`, `ALPACA_PAPER_SECRET_KEY` | your paper account number, status and equity |
 | — | **Claude** | `ANTHROPIC_API_KEY` (already set) | how many models your key can use (free call) |
 
 Not built yet: SMS/calls, so it always shows MOCK. File storage (S3) is optional, because files live on the Railway disk.
@@ -372,3 +373,30 @@ fal.ai keeps generated files on its own servers. Post a clip within a few days o
 |---|---|
 | `BATCHDATA_API_TOKEN` | the server-side token (secret, seal it) |
 | `BATCHDATA_CENTS_PER_RECORD` | your plan's price per record, in cents |
+
+---
+
+## Trading: Alpaca PAPER account and market data (APEX-7)
+
+**What Jackson does:**
+- **Snapshot** (`POST /tenants/{t}/trading/paper/snapshot`):
+  - Reads your Alpaca **paper** account: equity, cash, today's P&L, positions and last month's equity curve.
+  - Also reads 30 days of daily bars for the symbols you watch.
+  - Trading's KPIs show the real **Paper P&L** and **Paper equity** from the latest snapshot. They are never estimated.
+- **Paper orders** (`POST /tenants/{t}/trading/paper/orders`): market orders on the paper account only. Jackson's Alpaca connector has no way to reach a live account: the paper address is built in.
+- **MNQ and other futures:** Alpaca doesn't offer futures, neither trading nor data. Jackson tests APEX-7's MNQ ideas on **QQQ** (the Nasdaq-100 ETF) and says so on every result.
+  - For real MNQ paper trading, a futures broker (Tradovate, NinjaTrader or Interactive Brokers) would be a separate connector. Say which one you use.
+- **Live orders stay refused.** That needs a separate live broker connector with daily loss caps, a kill switch and your approval on every order.
+
+### Click steps
+1. Sign in at **app.alpaca.markets**. Top left, switch to your **Paper** account (the account number starts with PA). To start fresh, choose **Open New Paper Account** ($100k of paper money by default).
+2. On the paper dashboard, find **API Keys** on the right → **Generate New Keys**. Copy both the **Key ID** and the **Secret Key**; the secret is shown only once.
+   - These must be **paper** keys. Live keys won't work: Jackson only talks to the paper API.
+3. In Railway, add `ALPACA_PAPER_KEY_ID` and `ALPACA_PAPER_SECRET_KEY`. **Seal** both.
+4. **Connections → Trading: Alpaca PAPER → Test**. It shows your paper account number and equity.
+
+### Variables
+| Name | What to paste |
+|---|---|
+| `ALPACA_PAPER_KEY_ID` | the paper account's Key ID |
+| `ALPACA_PAPER_SECRET_KEY` | the paper account's Secret Key (secret, seal it) |

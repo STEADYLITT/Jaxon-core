@@ -41,7 +41,8 @@ Paste values only in **Railway → Jaxon-core → Variables**, and seal secrets.
 | 11 | **Community** | `WHOP_API_KEY` | built: paying members and their linked Discord accounts |
 | | | `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID`, `DISCORD_MEMBER_ROLE_ID`, `DISCORD_ANNOUNCE_CHANNEL_ID` | built: the member role follows Whop access; announcements approved first |
 | | | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | built: lapsed members removed, one-use invites for paying members, announcements approved first |
-| 12 | **Trading** | `APEX7_RESULTS_SOURCE`, `MARKET_DATA_API_KEY` | **not built yet**: real backtest and sim results |
+| 12 | **Trading** | `ALPACA_PAPER_KEY_ID`, `ALPACA_PAPER_SECRET_KEY` | built: market data and a PAPER account for APEX-7 (real paper P&L; MNQ tested on QQQ, since Alpaca has no futures) |
+| | | `APEX7_RESULTS_SOURCE` | **not built yet**: APEX-7's own backtest results |
 | | | `BROKER_API_KEY` | **not built, on purpose**: live orders stay refused until a broker connector with daily loss caps, a kill switch and your explicit approval per order exists |
 | 13 | **Real Estate (wholesaling)** | `BATCHDATA_API_TOKEN`, `BATCHDATA_CENTS_PER_RECORD` | built: comps and skip tracing (BatchData), research only, every lookup approved first |
 | 14 | **Legal & Admin** | none | Drafts only; always sent to you; never filed automatically |
