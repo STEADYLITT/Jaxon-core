@@ -63,6 +63,8 @@ BUILT_IN = {
                     "adds the creative and the ad to a paused campaign"),
     "ad_insights": ("marketing", "ads", "Ads Reporter",
                     "reads real spend and results back from Meta/TikTok"),
+    "clip_scout": ("clips", "scouting", "Clip Scout",
+                   "finds clippable YouTube/Twitch moments from permitted creators"),
     "opportunity_research": ("rnd", "board", "Research Scout",
                              "researches opportunities from cited sources"),
     "content_generate": ("marketing", "content", "Content Writer", "drafts posts in a voice"),

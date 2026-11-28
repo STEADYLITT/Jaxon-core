@@ -80,7 +80,8 @@ def test_lines_api_shows_playbook_kpis_connectors_agents(client, world, make_tok
                                               headers=h).json()}
     assert len(lines) == 15
     clips = lines["clips"]
-    assert clips["staffed"] is False  # nobody works there until Steady approves an agent
+    assert clips["staffed"] is True  # the built-in Clip Scout (ADR-052) works there
+    assert lines["legal"]["staffed"] is False  # nobody until Steady approves an agent
     assert {p["name"] for p in clips["proposed_agents"]} >= {"clip-scout", "clip-captioner"}
     assert "YOUTUBE_API_KEY" in clips["missing_variables"]
     assert "UPLOADPOST_API_KEY" in clips["missing_variables"]

@@ -30,7 +30,7 @@ Paste values only in **Railway → Jaxon-core → Variables**, and seal secrets.
 | | | `NETLIFY_AUTH_TOKEN` | built: approved sites and course pages go live on Netlify (https, your own domain) |
 | | | `GITHUB_APP_TOKEN`, `GITHUB_OWNER` | built: every approved build gets its own private GitHub repo |
 | 7 | **Content & Clip Farming** | `UPLOADPOST_API_KEY`, `UPLOADPOST_USER`, `FAL_KEY` | built: posting and video |
-| | | `YOUTUBE_API_KEY`, `TWITCH_CLIENT_ID` | **not built yet**: finding clippable moments |
+| | | `YOUTUBE_API_KEY`, `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`, `CLIP_ALLOWED_CREATORS` | built: finding clippable moments, with source links and clip rights |
 | | | `CLIP_PAYOUTS_SOURCE` | **not built yet**: real views and payouts |
 | 8 | **Creator Agency** | `UPLOADPOST_API_KEY`, `UPLOADPOST_USER`, `RESEND_API_KEY`, `RESEND_FROM` | built: always after approval, SFW only |
 | | | `CREATOR_EARNINGS_SOURCE` | **not built yet**: real creator earnings |
@@ -73,6 +73,7 @@ Paste these in **Railway → Jaxon-core → Variables**. **Seal** every secret. 
 | Trading, PAPER only (Alpaca) | `ALPACA_PAPER_KEY_ID`, `ALPACA_PAPER_SECRET_KEY` | yes: the secret |
 | Meta ads | `META_ACCESS_TOKEN`, `META_AD_ACCOUNT_ID`, `META_PAGE_ID` | yes: the token |
 | TikTok ads | `TIKTOK_ACCESS_TOKEN`, `TIKTOK_ADVERTISER_ID`, `TIKTOK_IDENTITY_ID` (optional `TIKTOK_IDENTITY_TYPE`) | yes: the token |
+| Clip scouting | `YOUTUBE_API_KEY`, `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`; optional `CLIP_ALLOWED_CREATORS` | yes: the key and the Twitch secret |
 | GitHub repos (App Factory) | `GITHUB_APP_TOKEN`, `GITHUB_OWNER`; optional `GITHUB_REPO_PREFIX` | yes: the token |
 | Domain checks | `SITE_DOMAIN_VERIFY=dns` | no |
 | File storage (optional) | `S3_BUCKET` | no |

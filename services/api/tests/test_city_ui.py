@@ -87,10 +87,10 @@ def test_desktop_draws_the_real_city_in_3d(client, world, make_token, maker, own
         assert s["mode"] == "high"
         assert sorted(s["staffed"]) == sorted(d["key"] for d in snap["departments"]
                                               if d["staffed"])
-        assert "clips" not in s["staffed"] and "creators" not in s["staffed"]
+        assert "legal" not in s["staffed"] and "creators" not in s["staffed"]
         page.wait_for_selector(".label.ceo", state="attached", timeout=10_000)
         labels = page.locator(".label").all_text_contents()
-        assert any("not staffed" in x and "Clip Farming" in x for x in labels)
+        assert any("not staffed" in x and "Legal & Admin" in x for x in labels)
         assert any("CEO · Steady" in x for x in labels), " | ".join(labels)
         hud = {k: page.text_content(f"[data-stat={k}] .v") for k in ("online", "flight")}
         assert hud["online"] == f"{snap['hud']['agents_online']}/{snap['hud']['agents_total']}"
@@ -137,7 +137,7 @@ def test_phone_gets_low_mode_and_a_list_with_the_same_data(client, world, make_t
         page.click("#list-toggle")
         page.wait_for_selector(".list")
         txt = page.text_content(".list")
-        assert "Clip Farming — not staffed" in txt and "Content Writer" in txt
+        assert "Legal & Admin — not staffed" in txt and "Content Writer" in txt
         assert "Steady's inbox" in txt
         width = page.evaluate("document.documentElement.scrollWidth")
         assert width <= page.viewport_size["width"]  # no sideways scroll on the phone
@@ -398,18 +398,18 @@ def test_a_building_shows_its_business_line(client, world, make_token, maker, ow
     from jackson_api.models import Business as B
     from jackson_api.seed import propose_line_agents
 
-    owner_db.add(B(tenant_id=world.tenant_a, name="Clip Farming", kind="clip_farming",
-                   line="clips"))
+    owner_db.add(B(tenant_id=world.tenant_a, name="Creator X Agency", kind="agency",
+                   line="creators"))
     owner_db.flush()
     propose_line_agents(owner_db, world.tenant_a, None)
     owner_db.commit()
     Worker(maker).city_heartbeat()
     with city(client, world, make_token(world.alice)) as (page, problems):
         page.wait_for_selector(".label.ceo", state="attached", timeout=20_000)
-        click3d(page, "lot-clips")
-        page.wait_for_selector("[data-panel=building] h2:has-text('Clip Farming')")
-        page.wait_for_selector("[data-line=clips] .proposed li:has-text('clip-scout')")
-        txt = page.text_content("[data-line=clips]")
-        assert "not measured" in txt and "YOUTUBE_API_KEY" in txt
-        assert "Only creators whose terms allow clipping" in txt
+        click3d(page, "lot-creators")
+        page.wait_for_selector("[data-panel=building] h2:has-text('Creator Agency')")
+        page.wait_for_selector("[data-line=creators] .proposed li:has-text('creator-planner')")
+        txt = page.text_content("[data-line=creators]")
+        assert "not measured" in txt and "CREATOR_EARNINGS_SOURCE" in txt
+        assert "Agents never generate explicit content" in txt
         assert problems == [], problems
