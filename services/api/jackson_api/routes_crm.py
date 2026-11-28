@@ -495,7 +495,12 @@ async def twilio_inbound(tenant_id: uuid.UUID, request: Request, db: DB):
 
     token = os.environ.get("TWILIO_AUTH_TOKEN", "")
     base = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/")
-    form = {k: str(v) for k, v in (await request.form()).items()}
+    from urllib.parse import parse_qsl
+
+    # Twilio posts application/x-www-form-urlencoded; parsed here so no multipart library
+    # is needed (blank values kept: they are part of the signature)
+    form = dict(parse_qsl((await request.body()).decode("utf-8", "replace"),
+                          keep_blank_values=True))
     url = f"{base}/webhooks/twilio/{tenant_id}"
     if not token or not telephony.valid_signature(
             token, url, form, request.headers.get("x-twilio-signature", "")):
