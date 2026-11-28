@@ -4,7 +4,7 @@ invites for paying members, and approved announcements."""
 import uuid
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
@@ -97,3 +97,81 @@ def announce(tenant_id: uuid.UUID, body: AnnounceIn, writer: TenantWriter, db: D
     return _run(db, tenant_id, writer, "community_announce",
                 f"{body.platform} announcement: {body.text[:100]}",
                 {"platform": body.platform, "text": body.text}, body.idempotency_key)
+
+
+# --- Telegram auto-invite (ADR-049) -------------------------------------------------------------
+
+@router.post("/tenants/{tenant_id}/community/telegram/setup", status_code=201)
+def telegram_setup(tenant_id: uuid.UUID, writer: TenantWriter, db: DB) -> dict:
+    """Turn on auto-invite: one shareable join link; Telegram asks Jackson about each join,
+    and only paying Whop members are let in."""
+    import os
+
+    secret = os.environ.get("TELEGRAM_WEBHOOK_SECRET", "")
+    base = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/")
+    if not K.telegram_configured():
+        raise HTTPException(409, "set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in Railway")
+    if len(secret) < 16 or not secret.replace("-", "").replace("_", "").isalnum():
+        raise HTTPException(409, "set TELEGRAM_WEBHOOK_SECRET in Railway (16+ letters, digits, "
+                                 "- or _)")
+    if not base.startswith("https://"):
+        raise HTTPException(409, "PUBLIC_BASE_URL must be the app's https address")
+    t = K.telegram()
+    try:
+        t.set_webhook(f"{base}/webhooks/telegram/{tenant_id}", secret)
+        link = t.join_request_link("Paying members (Jackson)")
+    except Exception as e:  # noqa: BLE001
+        from .connections import scrub
+        raise HTTPException(502, scrub(str(e))) from None
+    audit(db, tenant_id, writer.user_id, "community.telegram_auto_invite", "tenant", tenant_id)
+    db.commit()
+    return {"join_link": link, "how": "Share this link (e.g. on your Whop welcome page). "
+            "Paying members who linked Telegram on Whop are let in automatically; anyone "
+            "else is declined and told why."}
+
+
+TELEGRAM_NOT_LINKED = ("To join, link your Telegram account in Whop (Settings -> Connected "
+                       "accounts) using an active membership, then tap the invite link again.")
+
+
+@router.post("/webhooks/telegram/{tenant_id}", include_in_schema=False)
+async def telegram_webhook(tenant_id: uuid.UUID, request: Request, db: DB):
+    import hmac
+    import os
+
+    from .db import bind_tenant
+
+    secret = os.environ.get("TELEGRAM_WEBHOOK_SECRET", "")
+    got = request.headers.get("x-telegram-bot-api-secret-token", "")
+    if not secret or not hmac.compare_digest(secret, got):
+        raise HTTPException(401, "bad secret")
+    try:
+        update = await request.json()
+        req = update.get("chat_join_request") or {}
+        user = req.get("from") or {}
+        chat_id = str((req.get("chat") or {}).get("id") or "")
+    except (ValueError, AttributeError):
+        raise HTTPException(400, "not a Telegram update") from None
+    if not req or not user.get("id"):
+        return {"ok": True, "ignored": True}
+    if not K.telegram_configured() or chat_id != os.environ.get("TELEGRAM_CHAT_ID"):
+        return {"ok": True, "ignored": "another chat"}
+    bind_tenant(db, tenant_id)
+    m = db.scalar(select(WhopMember).where(WhopMember.tenant_id == tenant_id,
+                                           WhopMember.telegram_id == str(user["id"]),
+                                           WhopMember.status.in_(ACCESS)).limit(1))
+    t = K.telegram()
+    if m is None:
+        t.decline(user["id"])
+        if req.get("user_chat_id"):
+            try:
+                t.tell(req["user_chat_id"], TELEGRAM_NOT_LINKED)
+            except Exception:  # noqa: BLE001 - the decline is what matters
+                pass
+        return {"ok": True, "decision": "declined"}
+    t.approve(user["id"])
+    m.telegram_synced = "joined"
+    audit(db, tenant_id, None, "community.telegram_join_approved", "whop_member", m.id,
+          membership_id=m.membership_id)
+    db.commit()
+    return {"ok": True, "decision": "approved"}

@@ -272,7 +272,9 @@ fal.ai keeps generated files on its own servers. Post a clip within a few days o
   - It runs after every Whop sync, or on demand (`POST /tenants/{t}/community/sync`). It only touches members whose access changed.
 - **Telegram:**
   - Members who lose access are removed from your group. They can rejoin if they pay again.
-  - A paying member gets a one-person invite link that expires in 48 hours (`POST /tenants/{t}/community/telegram/invite`).
+  - **Auto-invite:** one shareable join link (`POST /tenants/{t}/community/telegram/setup`). When someone taps it, Telegram asks Jackson. If their Telegram account is linked to an active Whop membership, they're let in at once. Otherwise they're declined and told to link Telegram in Whop.
+    - A bot can't add people to a group by itself, so this "request to join" link is how it's done automatically.
+  - You can still make a one-person invite link that expires in 48 hours (`POST /tenants/{t}/community/telegram/invite`).
 - **Announcements** (`POST /tenants/{t}/community/announce`):
   - Checked for income promises and fake claims first.
   - Then each one waits for your approval in **Approvals**. A Launch whose social accounts include `discord` or `telegram` also counts.
@@ -301,6 +303,10 @@ fal.ai keeps generated files on its own servers. Post a clip within a few days o
    - Open `https://api.telegram.org/bot<token>/getUpdates` in your browser.
    - Copy `chat.id`. It starts with `-100`. That's `TELEGRAM_CHAT_ID`.
 4. **Connections → Telegram → Test**. It shows the bot and the group name.
+5. **Auto-invite:**
+   - In Railway, add `TELEGRAM_WEBHOOK_SECRET`: any 16 to 64 random letters and digits. **Seal** it.
+   - Then call `POST /tenants/{t}/community/telegram/setup` once. It returns your join link to put on your Whop welcome page.
+   - The bot also needs the admin right **Invite users via link**, which it already has from step 2.
 
 ### Variables
 | Name | What to paste |
@@ -311,6 +317,7 @@ fal.ai keeps generated files on its own servers. Post a clip within a few days o
 | `DISCORD_ANNOUNCE_CHANNEL_ID` | optional: where announcements go |
 | `TELEGRAM_BOT_TOKEN` | the BotFather token (secret, seal it) |
 | `TELEGRAM_CHAT_ID` | your group's id (starts with -100) |
+| `TELEGRAM_WEBHOOK_SECRET` | auto-invite: 16 to 64 random letters/digits you make up (secret, seal it) |
 
 ---
 
