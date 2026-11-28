@@ -118,6 +118,58 @@ def test_anthropic_errors_are_classified():
         anthropic_provider(Recorder(500, err)).complete(REQ, "claude-opus-5-5")
 
 
+def _env_client(monkeypatch, handler, key=FAKE_KEY, base=None):
+    from jackson_api.models_ai import anthropic_provider as ap
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", key)
+    monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+    if base is None:
+        monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
+    else:
+        monkeypatch.setenv("ANTHROPIC_BASE_URL", base)
+    http = anthropic.DefaultHttpxClient(transport=httpx2.MockTransport(handler))
+    return AnthropicProvider(client=ap.make_client(max_retries=0, http_client=http))
+
+
+def test_a_pasted_key_with_a_newline_or_quotes_still_works(monkeypatch):
+    rec = Recorder(body=anthropic_message(json.dumps(PLAN)))
+    p = _env_client(monkeypatch, rec, key=f' "{FAKE_KEY}"\n')
+    p.complete(REQ, "claude-opus-5-5")
+    h = rec.requests[-1].headers  # this SDK version sends the key as a Bearer credential
+    assert h.get("x-api-key", h.get("authorization", "").removeprefix("Bearer ")) == FAKE_KEY
+    assert rec.requests[-1].url.host == "api.anthropic.com"
+
+
+def test_a_bad_base_url_is_ignored_not_used(monkeypatch):
+    from jackson_api.models_ai.anthropic_provider import config_report
+
+    rec = Recorder(body=anthropic_message(json.dumps(PLAN)))
+    _env_client(monkeypatch, rec, base="api.anthropic.com/").complete(REQ, "claude-opus-5-5")
+    assert rec.requests[-1].url.host == "api.anthropic.com"
+    assert config_report()["base_url_ignored_invalid"] is True
+
+
+def test_a_network_failure_names_its_real_cause_without_the_key(monkeypatch):
+    from jackson_api.models_ai.anthropic_provider import ModelUnreachable
+
+    def down(request):
+        raise httpx2.ConnectError(f"[Errno -3] Temporary failure in name resolution {FAKE_KEY}")
+
+    with pytest.raises(ModelUnreachable) as e:
+        _env_client(monkeypatch, down).complete(REQ, "claude-opus-5-5")
+    msg = str(e.value)
+    assert "ConnectError" in msg and "name resolution" in msg and FAKE_KEY not in msg
+    assert not isinstance(e.value, ModelRequestInvalid)  # retryable
+
+
+def test_an_illegal_header_is_a_clear_permanent_error(monkeypatch):
+    def bad(request):
+        raise httpx2.LocalProtocolError("Illegal header value b'x'")
+
+    with pytest.raises(ModelRequestInvalid, match="Re-paste the key"):
+        _env_client(monkeypatch, bad).complete(REQ, "claude-opus-5-5")
+
+
 def test_cost_math():
     assert cost_micros("claude-opus-5-5", 1_000_000, 0) == 4_000_000  # $4 per MTok in
     assert cost_micros("claude-opus-5-5", 0, 1_000_000) == 20_000_000  # $20 per MTok out

@@ -962,6 +962,8 @@ class Worker:
 
     def serve(self, idle_sleep: float = 1.0) -> None:
         log.info("worker %s started", self.worker_id)
+        from .models_ai.anthropic_provider import config_report
+        log.info("claude connection settings (no secrets): %s", config_report())
         threading.Thread(target=self._heartbeat_loop, name="city-heartbeat",
                          daemon=True).start()
         every = float(os.environ.get("LAUNCH_SWEEP_SECONDS", "60"))

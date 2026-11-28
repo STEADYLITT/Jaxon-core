@@ -6,6 +6,7 @@ import re
 from contextlib import contextmanager
 from pathlib import Path
 
+import pytest
 from conftest import auth, new_run
 from sqlalchemy import select, text, update
 
@@ -468,4 +469,38 @@ def test_glass_hud_renders_with_its_fonts_and_adaptive_resolution(client, world,
         until(page, "document.documentElement.dataset.cityDpr")
         dpr = float(page.evaluate("document.documentElement.dataset.cityDpr"))
         assert 0.75 <= dpr <= 2
+        assert problems == [], problems
+
+
+OVERLAPS_JS = """(() => {
+  const r = [...document.querySelectorAll('.label-layer .label:not(.ticker-holo)')]
+    .map(e => [e.textContent, e.getBoundingClientRect()]).filter(([, b]) => b.width > 0);
+  const out = [];
+  for (let i = 0; i < r.length; i++) for (let j = i + 1; j < r.length; j++) {
+    const a = r[i][1], b = r[j][1];
+    if (a.left < b.right - 1 && b.left < a.right - 1 &&
+        a.top < b.bottom - 1 && b.top < a.bottom - 1)
+      out.push(r[i][0] + ' x ' + r[j][0]);
+  }
+  return out;
+})()"""
+
+
+@pytest.mark.parametrize("where", ["desktop", "phone"])
+def test_every_sign_is_readable_no_two_labels_overlap(client, world, make_token, maker,
+                                                      owner_db, drain, where):
+    import time
+
+    Worker(maker).city_heartbeat()
+    kw = {"device": "iPhone 15"} if where == "phone" else {}
+    with city(client, world, make_token(world.alice), **kw) as (page, problems):
+        page.wait_for_selector(".label.ceo", state="attached", timeout=20_000)
+        until(page, "document.querySelectorAll('.label-layer .label').length > 10")
+        end, left = time.monotonic() + 25, None
+        while time.monotonic() < end:  # the declutter settles within a few passes
+            left = page.evaluate(OVERLAPS_JS)
+            if not left:
+                break
+            page.wait_for_timeout(500)
+        assert left == [], left
         assert problems == [], problems

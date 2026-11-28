@@ -100,3 +100,39 @@ export function describe(ev: CityEvent): string {
     default: return ev.type;
   }
 }
+
+/** One ticker line. When the worker stops, every agent reports "offline" at once; dozens of
+ *  identical lines would push every real event off the ring road. Runs of the same
+ *  status event collapse into one line with a count (each still a real event). */
+export type TickerItem = { e: CityEvent; n: number };
+
+function groupKey(e: CityEvent): string | null {
+  if (e.type === "agent.offline") return "offline";
+  if (e.type === "agent.heartbeat" && e.payload["back_online"]) return "back";
+  return null;
+}
+
+export function collapse(events: CityEvent[], max = 20): TickerItem[] {
+  const out: TickerItem[] = [];
+  for (const e of events) {
+    const k = groupKey(e);
+    const last = out[out.length - 1];
+    if (k && last && groupKey(last.e) === k) last.n += 1;
+    else {
+      if (out.length === max) break;
+      out.push({ e, n: 1 });
+    }
+  }
+  return out;
+}
+
+export function describeItem(it: TickerItem): string {
+  if (it.n > 1 && groupKey(it.e) === "offline") return `${it.n} agents went offline`;
+  if (it.n > 1 && groupKey(it.e) === "back") return `${it.n} agents back online`;
+  return describe(it.e);
+}
+
+/** How many raw events the live ticker keeps, so a burst of status events can't evict real
+ *  work before it is collapsed for display. */
+export const TICKER_KEEP = 150;
+

@@ -57,9 +57,12 @@ def _new_client() -> httpx.Client:
 def scrub(text: str) -> str:
     out = str(text)
     for name in SECRET_VARS:
-        v = os.environ.get(name)
-        if v and len(v) >= 6:
-            out = out.replace(v, "•••")
+        raw = os.environ.get(name) or ""
+        # also the trimmed and escaped forms: a pasted key with a stray newline shows up
+        # in error messages without it, or as "\n"
+        for v in {raw, raw.strip(), raw.strip().strip("\"'").strip(), repr(raw)[1:-1]}:
+            if v and len(v) >= 6:
+                out = out.replace(v, "•••")
     return out[:500]
 
 
@@ -85,14 +88,25 @@ def _msg(body: dict, r: httpx.Response) -> str:
 # --- The real, harmless test calls -------------------------------------------------------------
 
 def test_models(ctx: dict) -> dict:
-    with _new_client() as c:
-        r = c.get("https://api.anthropic.com/v1/models", params={"limit": 20}, headers={
-            "x-api-key": os.environ["ANTHROPIC_API_KEY"], "anthropic-version": "2023-06-01"})
+    """Uses the worker's own settings (cleaned key, base URL check), so a pass here means
+    Jaxon's brain can reach Claude. A failure names the real cause, never the key."""
+    from .models_ai.anthropic_provider import base_url, clean_key, config_report
+
+    cfg = config_report()
+    root = base_url() or "https://api.anthropic.com"
+    try:
+        with _new_client() as c:
+            r = c.get(f"{root}/v1/models", params={"limit": 20}, headers={
+                "x-api-key": clean_key(os.environ["ANTHROPIC_API_KEY"]),
+                "anthropic-version": "2023-06-01"})
+    except httpx.HTTPError as e:
+        raise TestFailed(f"Can't reach {cfg['base_url_host']}: {type(e).__name__}: {e} "
+                         f"[{cfg}]") from None
     body = _json(r)
     if r.status_code != 200:
-        raise TestFailed(f"Anthropic refused the key: {_msg(body, r)}")
+        raise TestFailed(f"Anthropic refused the key: {_msg(body, r)} [{cfg}]")
     ids = [m.get("id") for m in body.get("data", []) if isinstance(m, dict)]
-    return {"models_available": len(ids), "examples": ids[:3]}
+    return {"models_available": len(ids), "examples": ids[:3], **cfg}
 
 
 def test_shopify(ctx: dict) -> dict:

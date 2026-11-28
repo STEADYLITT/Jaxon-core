@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-import { admit, effectsFor, type Effect } from "./effects";
+import { TICKER_KEEP, admit, effectsFor, type Effect } from "./effects";
 import type { CityEvent, Snapshot } from "./types";
 
 export type Focus =
@@ -63,7 +63,7 @@ export const useCity = create<CityState>((set, get) => ({
     // The stream cursor is set from the first snapshot only; after that only streamed
     // events move it, so no event between a refetch and the stream is ever skipped.
     set((st) => st.snapshot === null
-      ? { snapshot: s, lastEventId: s.last_event_id, ticker: s.ticker.slice(0, 20) }
+      ? { snapshot: s, lastEventId: s.last_event_id, ticker: s.ticker.slice(0, TICKER_KEEP) }
       : { snapshot: s });
   },
   onEvent(e, now = performance.now()) {
@@ -72,7 +72,7 @@ export const useCity = create<CityState>((set, get) => ({
     const fx = st.snapshot ? effectsFor(e, st.snapshot, now) : [];
     set({
       lastEventId: Math.max(st.lastEventId, e.id),
-      ticker: [e, ...st.ticker.filter((t) => t.id !== e.id)].slice(0, 20),
+      ticker: [e, ...st.ticker.filter((t) => t.id !== e.id)].slice(0, TICKER_KEEP),
       queue: [...st.queue, ...fx],
       pulseAt: now,
       pulses: [...st.pulses.filter((t) => now - t < 60_000), now],

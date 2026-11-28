@@ -166,8 +166,10 @@ def snapshot(db: Session, tenant_id: uuid.UUID) -> dict:
                       "agent_id": str(a.id) if a else None, "created_at": _iso(ap.created_at)})
     from .dashboard import alerts
 
+    # 150, not 20: a burst of per-agent status events (the worker stopping) must not push
+    # real work out; the City collapses those runs into one counted line for display.
     ticker = db.scalars(select(Event).where(Event.tenant_id == tenant_id)
-                        .order_by(Event.id.desc()).limit(20)).all()
+                        .order_by(Event.id.desc()).limit(150)).all()
     raised = db.scalars(select(Event).where(Event.tenant_id == tenant_id,
                                             Event.type == "alert.raised",
                                             Event.ts >= now - timedelta(hours=24))

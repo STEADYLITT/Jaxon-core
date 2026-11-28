@@ -51,3 +51,8 @@ The **scenery** may move and glow when nothing is happening: sky, stars, light, 
 
 ## Proof
 `tests/city_shots.py` takes desktop (1440×900) and iPhone 15 screenshots, idle and right after a real command. They are saved under `docs/city-shots/<part>/`.
+
+## Follow-up (owner notes)
+- **Labels:** labels never overlap. `LabelDeclutter` (in `scene/labels.tsx`) runs about 6 times a second and nudges a sign up when it would cover another. The CEO sign keeps its place first, then department signs, then empty lots. A test checks desktop and phone.
+- **Floor:** the hex etching is toned down (alpha 0.17 → 0.055, a tighter fade), and the office grid to 0.13.
+- **Ticker floods:** when the worker stops, every agent emits `agent.offline` at once. Runs of those (and of "back online") now collapse into one counted line, e.g. "36 agents went offline", on the ring road, the List feed and the holographic ticker. The client keeps 150 raw events and the snapshot sends 150, so real work is never evicted by a status burst. This was the root cause of the intermittent replay test failure: under a slow run the heartbeat lapsed and the burst pushed the command out of the 20 visible lines.

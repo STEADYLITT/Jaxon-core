@@ -239,10 +239,11 @@ function Etching() {
             float w = fwidth(e);
             float line = 1.0 - smoothstep(0.0, w * 1.5, e - 0.006);
             line *= smoothstep(0.12, 0.02, w); // far away the lines would alias: let them go
-            float fade = exp(-pow(dist / 85.0, 2.0));
+            float fade = exp(-pow(dist / 65.0, 2.0));
             float inner = smoothstep(12.0, 24.0, dist); // keep the plaza under the tower clean
             vec3 col = mix(uGold, uCyan, smoothstep(30.0, 110.0, dist)) * line;
-            float a = line * 0.17 * fade * mix(0.3, 1.0, inner);
+            // a faint etching: the towers are the subject, the grid only hints at the floor
+            float a = line * 0.055 * fade * mix(0.2, 1.0, inner);
             gl_FragColor = vec4(col, a);
             #include <colorspace_fragment>
           }`} />

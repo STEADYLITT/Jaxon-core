@@ -6,7 +6,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { useMemo, useRef } from "react";
 import * as THREE from "three";
 
-import { beamMs, describe, envelopeMs, type Beam, type Envelope } from "../lib/effects";
+import { beamMs, collapse, describeItem, envelopeMs, type Beam, type Envelope } from "../lib/effects";
 import { RING_R } from "../lib/layout";
 import { useCity } from "../lib/store";
 import { Label } from "./labels";
@@ -209,18 +209,18 @@ export function RingRoad({ light }: { light: boolean }) {
 function TickerRing() {
   const ticker = useCity((st) => st.ticker);
   const replay = useCity((st) => st.replay);
-  const items = (replay ? replay.events.slice(Math.max(0, replay.index - 2), replay.index + 1).reverse()
-    : ticker).slice(0, 3);
+  const items = collapse(replay
+    ? replay.events.slice(Math.max(0, replay.index - 499), replay.index + 1).reverse() : ticker, 3);
   const group = useRef<THREE.Group>(null);
   useFrame((_, dt) => { if (group.current) group.current.rotation.y += dt * 0.03; });
   return (
     <group ref={group}>
-      {items.map((e, i) => {
+      {items.map((it, i) => {
         const a = Math.PI / 2 + (i - 1) * 0.42; // in front of the default view
         const r = RING_R - 6.8;
         return (
-          <Label key={e.id} position={[Math.cos(a) * r, 2.2, Math.sin(a) * r]}
-            className="label holo ticker-holo">{describe(e).slice(0, 64)}</Label>
+          <Label key={it.e.id} position={[Math.cos(a) * r, 2.2, Math.sin(a) * r]}
+            className="label holo ticker-holo">{describeItem(it).slice(0, 64)}</Label>
         );
       })}
     </group>

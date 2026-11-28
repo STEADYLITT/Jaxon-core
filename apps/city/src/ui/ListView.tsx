@@ -1,4 +1,4 @@
-import { describe } from "../lib/effects";
+import { collapse, describeItem } from "../lib/effects";
 import { windowState } from "../lib/layout";
 import { useCity } from "../lib/store";
 
@@ -49,7 +49,7 @@ export function ListView() {
       ))}
       <section>
         <h2>Live feed</h2>
-        <ol className="feed">{ticker.map((e) => <li key={e.id}>{describe(e)}</li>)}</ol>
+        <ol className="feed">{collapse(ticker).map((it) => <li key={it.e.id}>{describeItem(it)}</li>)}</ol>
       </section>
     </main>
   );
