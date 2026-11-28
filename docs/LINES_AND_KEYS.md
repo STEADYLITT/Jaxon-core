@@ -20,8 +20,8 @@ Paste values only in **Railway → Jaxon-core → Variables**, and seal secrets.
 | | | `RESEND_API_KEY`, `RESEND_FROM` | built: email |
 | | | `WHOP_API_KEY` | built: real sales for course offers |
 | | | `ELEVENLABS_API_KEY` | built: ad voiceovers, cost approved first |
-| | | `META_ACCESS_TOKEN`, `META_AD_ACCOUNT_ID` | built: Meta (Facebook/Instagram) ads, drafted paused; they spend only inside an approved Launch |
-| | | `TIKTOK_ACCESS_TOKEN`, `TIKTOK_ADVERTISER_ID` | built: TikTok ads, drafted off; they spend only inside an approved Launch |
+| | | `META_ACCESS_TOKEN`, `META_AD_ACCOUNT_ID`, `META_PAGE_ID` | built: Meta (Facebook/Instagram) ads end to end: paused draft, image or video ad, real spend and clicks read back; spends only inside an approved Launch |
+| | | `TIKTOK_ACCESS_TOKEN`, `TIKTOK_ADVERTISER_ID`, `TIKTOK_IDENTITY_ID` | built: TikTok ads end to end: draft plus ad group switched off, video ad, real spend and clicks read back; spends only inside an approved Launch |
 | 4 | **Agency** | `UPLOADPOST_API_KEY`, `UPLOADPOST_USER`, `RESEND_API_KEY`, `RESEND_FROM` | built: client deliverables and outreach |
 | 5 | **Sales & Lead Gen** | `RESEND_API_KEY`, `RESEND_FROM` | built: outreach email (opt-outs respected) |
 | | | `APIFY_TOKEN` | built: local business leads from Google Maps (public listings only) |
@@ -71,8 +71,8 @@ Paste these in **Railway → Jaxon-core → Variables**. **Seal** every secret. 
 | Website hosting (Netlify) | `NETLIFY_AUTH_TOKEN`; optional `NETLIFY_SITE_PREFIX` | yes: the token |
 | Real-estate data (BatchData) | `BATCHDATA_API_TOKEN`, `BATCHDATA_CENTS_PER_RECORD` | yes: the token |
 | Trading, PAPER only (Alpaca) | `ALPACA_PAPER_KEY_ID`, `ALPACA_PAPER_SECRET_KEY` | yes: the secret |
-| Meta ads | `META_ACCESS_TOKEN`, `META_AD_ACCOUNT_ID` | yes: the token |
-| TikTok ads | `TIKTOK_ACCESS_TOKEN`, `TIKTOK_ADVERTISER_ID` | yes: the token |
+| Meta ads | `META_ACCESS_TOKEN`, `META_AD_ACCOUNT_ID`, `META_PAGE_ID` | yes: the token |
+| TikTok ads | `TIKTOK_ACCESS_TOKEN`, `TIKTOK_ADVERTISER_ID`, `TIKTOK_IDENTITY_ID` (optional `TIKTOK_IDENTITY_TYPE`) | yes: the token |
 | Domain checks | `SITE_DOMAIN_VERIFY=dns` | no |
 | File storage (optional) | `S3_BUCKET` | no |
 

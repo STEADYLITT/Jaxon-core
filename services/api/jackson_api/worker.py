@@ -140,7 +140,9 @@ Handler = Callable[[TaskContext], TaskResult]
 
 def default_handlers() -> dict[str, Handler]:
     from .ads import activate_handler as ad_activate
+    from .ads import creative_handler as ad_creative
     from .ads import draft_handler as ad_draft
+    from .ads import insights_handler as ad_insights
     from .ads import pause_handler as ad_pause
     from .agent_handlers import agent_handler, eval_handler, factory_handler
     from .community import announce_handler as community_announce
@@ -181,7 +183,7 @@ def default_handlers() -> dict[str, Handler]:
             "course_publish": course_publish, "property_comps": property_comps,
             "skip_trace": skip_trace, "paper_snapshot": paper_snapshot,
             "paper_order": paper_order, "ad_draft": ad_draft, "ad_activate": ad_activate,
-            "ad_pause": ad_pause}
+            "ad_pause": ad_pause, "ad_creative": ad_creative, "ad_insights": ad_insights}
 
 
 class ModelBudgetExhausted(NonRetryableError):
@@ -913,13 +915,15 @@ class Worker:
 
     def sweep_launches(self) -> list:
         """Auto-pause / kill / expire launches whose rules fire (phase 21)."""
-        from .ads import pause_orphans
+        from .ads import pause_orphans, sync_insights
         from .launches import sweep
 
         with self.maker() as db:
+            paused = sync_insights(db)  # real reported ad spend first, then the rules
+            db.commit()
             changed = sweep(db)
             db.commit()
-            paused = pause_orphans(db)  # live ads whose Launch stopped or ended
+            paused += pause_orphans(db)  # live ads whose Launch stopped or ended
             db.commit()
         for aid in paused:
             log.warning("ad %s paused: its launch is no longer active", aid)

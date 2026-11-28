@@ -32,6 +32,12 @@ class FakeAds:
         self.calls.append(req)
         p = req.url.path
         if req.url.host == "graph.facebook.com":
+            if req.method == "GET" and p.endswith("/insights"):
+                return httpx.Response(200, json={"data": [{
+                    "spend": "12.34", "impressions": "1500", "clicks": "40",
+                    "actions": [{"action_type": "link_click", "value": "37"}]}]})
+            if req.method == "GET" and p == "/v27.0/v555":
+                return httpx.Response(200, json={"status": {"video_status": "ready"}})
             if req.method == "GET":
                 return httpx.Response(200, json={"name": "Steady Ads", "account_status": 1,
                                                  "currency": "USD", "amount_spent": "0"})
@@ -41,8 +47,20 @@ class FakeAds:
                 assert form["status"] == ["PAUSED"]
                 return httpx.Response(200, json={"id": "c111"})
             if p.endswith("/adsets"):
-                assert form["status"] == ["PAUSED"]
+                assert form["status"] == ["PAUSED"] and form["destination_type"] == ["WEBSITE"]
+                t = json.loads(form["targeting"][0])
+                assert t["targeting_automation"] == {"advantage_audience": 0}
                 return httpx.Response(200, json={"id": "s222"})
+            if p.endswith("/adcreatives"):
+                spec = json.loads(form["object_story_spec"][0])
+                assert spec["page_id"] == "PAGE1"
+                return httpx.Response(200, json={"id": "cr333"})
+            if p.endswith("/ads"):
+                assert form["status"] == ["PAUSED"]
+                assert json.loads(form["creative"][0]) == {"creative_id": "cr333"}
+                return httpx.Response(200, json={"id": "ad444"})
+            if p.endswith("/advideos"):
+                return httpx.Response(200, json={"id": "v555"})
             return httpx.Response(200, json={"success": True})
         if req.url.host == "business-api.tiktok.com":
             assert req.headers["access-token"] == TT
@@ -52,6 +70,23 @@ class FakeAds:
             if p.endswith("/campaign/create/"):
                 assert json.loads(req.content)["operation_status"] == "DISABLE"
                 return httpx.Response(200, json={"code": 0, "data": {"campaign_id": 1800}})
+            if p.endswith("/adgroup/create/"):
+                b = json.loads(req.content)
+                assert b["operation_status"] == "DISABLE" and b["location_ids"] == ["6252001"]
+                return httpx.Response(200, json={"code": 0, "data": {"adgroup_id": 1900}})
+            if p.endswith("/file/video/ad/upload/"):
+                return httpx.Response(200, json={"code": 0, "data": [{"video_id": "vtt"}]})
+            if p.endswith("/file/image/ad/upload/"):
+                return httpx.Response(200, json={"code": 0, "data": {"image_id": "itt"}})
+            if p.endswith("/ad/create/"):
+                cr = json.loads(req.content)["creatives"][0]
+                assert cr["video_id"] == "vtt" and cr["image_ids"] == ["itt"]
+                return httpx.Response(200, json={"code": 0, "data": {"ad_ids": ["2000"]}})
+            if p.endswith("/report/integrated/get/"):
+                return httpx.Response(200, json={"code": 0, "data": {"list": [
+                    {"dimensions": {"campaign_id": "1800"},
+                     "metrics": {"spend": "5.50", "impressions": "900", "clicks": "21",
+                                 "conversion": "2"}}]}})
             return httpx.Response(200, json={"code": 0, "data": {}})
         return httpx.Response(404, json={"error": {"message": "nope"}})
 
@@ -59,7 +94,8 @@ class FakeAds:
 @pytest.fixture()
 def live(monkeypatch):
     fake = FakeAds()
-    for k, v in {"META_ACCESS_TOKEN": MT, "META_AD_ACCOUNT_ID": "12345",
+    for k, v in {"META_ACCESS_TOKEN": MT, "META_AD_ACCOUNT_ID": "12345", "META_PAGE_ID": "PAGE1",
+                 "TIKTOK_IDENTITY_ID": "ID1",
                  "TIKTOK_ACCESS_TOKEN": TT, "TIKTOK_ADVERTISER_ID": "777"}.items():
         monkeypatch.setenv(k, v)
     mk = lambda: httpx.Client(transport=httpx.MockTransport(fake))  # noqa: E731
@@ -108,6 +144,17 @@ def activate(client, world, alice, maker, owner_db, aid, launch_id):
     return r, run_state(owner_db, r.json()["run_id"])
 
 
+def add_creative(client, world, alice, maker, owner_db, aid, **kw):
+    body = {"link": "https://steadytrades.example/course", "headline": "AI for Traders",
+            "text": "A research routine with AI. Education only.",
+            "image_url": "https://cdn.example/ad.jpg", "idempotency_key": uuid.uuid4().hex, **kw}
+    r = client.post(f"/tenants/{world.tenant_a}/ads/{aid}/creative", headers=alice, json=body)
+    assert r.status_code == 202, r.text
+    Worker(maker, retry_base_seconds=0).run_once()
+    run, tasks = run_state(owner_db, r.json()["run_id"])
+    return run, tasks[0]
+
+
 def test_connection_tests(client, world, alice, live):
     for cid in ("meta_ads", "tiktok_ads"):
         r = client.post(f"/tenants/{world.tenant_a}/admin/connectors/{cid}/test", headers=alice)
@@ -139,6 +186,10 @@ def test_spend_only_inside_an_active_launch_for_that_platform(client, world, ali
                                                               owner_db, drain, live):
     _, t = draft(client, world, alice, maker, owner_db)
     aid = t.output["ad_campaign_id"]
+    no_ad = launch(owner_db, world)
+    r, (run, tasks) = activate(client, world, alice, maker, owner_db, aid, no_ad.id)
+    assert tasks[0].status == "failed" and "creative" in tasks[0].error  # nothing to serve
+    add_creative(client, world, alice, maker, owner_db, aid)
     proposed = launch(owner_db, world, status="proposed")
     r, _ = activate(client, world, alice, maker, owner_db, aid, proposed.id)
     assert r.status_code == 409  # not an approved, active Launch
@@ -155,8 +206,8 @@ def test_spend_only_inside_an_active_launch_for_that_platform(client, world, ali
     assert run.status == "succeeded", tasks[0].error
     posts = live.meta()
     assert any(f.get("end_time") for _, f in posts)  # stops by itself at the launch end
-    assert [p for p, f in posts if f.get("status") == ["ACTIVE"]] == ["/v27.0/c111",
-                                                                      "/v27.0/s222"]
+    assert [p for p, f in posts if f.get("status") == ["ACTIVE"]] == [
+        "/v27.0/c111", "/v27.0/s222", "/v27.0/ad444"]
     owner_db.expire_all()
     assert owner_db.get(AdCampaign, uuid.UUID(aid)).status == "active"
 
@@ -166,8 +217,8 @@ def test_spend_only_inside_an_active_launch_for_that_platform(client, world, ali
     Worker(maker, retry_base_seconds=0).sweep_launches()
     owner_db.expire_all()
     assert owner_db.get(AdCampaign, uuid.UUID(aid)).status == "paused"
-    assert [p for p, f in live.meta() if f.get("status") == ["PAUSED"]][-2:] == [
-        "/v27.0/c111", "/v27.0/s222"]
+    assert [p for p, f in live.meta() if f.get("status") == ["PAUSED"]][-3:] == [
+        "/v27.0/c111", "/v27.0/s222", "/v27.0/ad444"]
 
 
 def test_mock_drafts_can_never_go_live(client, world, alice, maker, owner_db, drain,
@@ -179,3 +230,54 @@ def test_mock_drafts_can_never_go_live(client, world, alice, maker, owner_db, dr
     r, (run, tasks) = activate(client, world, alice, maker, owner_db,
                                t.output["ad_campaign_id"], la.id)
     assert tasks[0].status == "failed" and "MOCK" in tasks[0].error
+
+
+def test_meta_creative_then_real_insights_and_budget_stop(client, world, alice, maker,
+                                                          owner_db, drain, live):
+    _, t = draft(client, world, alice, maker, owner_db)
+    aid = t.output["ad_campaign_id"]
+    run, ct = add_creative(client, world, alice, maker, owner_db, aid,
+                           text="Get rich with this one trick")
+    assert ct.status == "failed" and "claims check" in ct.error
+    run, ct = add_creative(client, world, alice, maker, owner_db, aid)
+    assert run.status == "succeeded", ct.error
+    assert ct.output["ad_id"] == "ad444" and ct.output["status"] == "paused"
+    la = launch(owner_db, world, total=1_200, daily=1_200, platforms=("meta",))
+    owner_db.execute(update(AdCampaign).where(AdCampaign.id == uuid.UUID(aid))
+                     .values(daily_budget_cents=1_000))
+    owner_db.commit()
+    r, (run, tasks) = activate(client, world, alice, maker, owner_db, aid, la.id)
+    assert run.status == "succeeded", tasks[0].error
+    changed = Worker(maker, retry_base_seconds=0).sweep_launches()  # $12.34 >= $12 budget
+    assert changed == [(str(la.id), "completed")]
+    owner_db.expire_all()
+    c = owner_db.get(AdCampaign, uuid.UUID(aid))
+    assert c.spend_cents_reported == 1234 and c.results == 37 and c.clicks == 40
+    assert c.status == "paused"  # real spend used up the launch budget: the ad stops
+    from jackson_api.launches import metrics
+    assert metrics(owner_db, owner_db.get(Launch, la.id))["ad_spend_reported_cents"] == 1234
+    listed = client.get(f"/tenants/{world.tenant_a}/ads", headers=alice).json()
+    assert listed["campaigns"][0]["reported"]["spend_cents"] == 1234
+
+
+def test_tiktok_video_ad_and_report(client, world, alice, maker, owner_db, drain, live):
+    _, t = draft(client, world, alice, maker, owner_db, platform="tiktok", objective="TRAFFIC")
+    assert t.output["adset_id"] == "1900"
+    aid = t.output["ad_campaign_id"]
+    run, ct = add_creative(client, world, alice, maker, owner_db, aid, image_url=None)
+    assert ct.status == "failed" and "video" in ct.error
+    run, ct = add_creative(client, world, alice, maker, owner_db, aid, image_url=None,
+                           video_url="https://v3.fal.media/clip.mp4",
+                           thumbnail_url="https://cdn.example/cover.jpg")
+    assert run.status == "succeeded", ct.error and ct.output["ad_id"] == "2000"
+    la = launch(owner_db, world, platforms=("tiktok",))
+    r, (run, tasks) = activate(client, world, alice, maker, owner_db, aid, la.id)
+    assert run.status == "succeeded", tasks[0].error
+    paths = [c.url.path for c in live.calls]
+    assert any(p.endswith("/adgroup/status/update/") for p in paths)
+    r = client.post(f"/tenants/{world.tenant_a}/ads/{aid}/insights", headers=alice,
+                    json={"idempotency_key": uuid.uuid4().hex})
+    Worker(maker, retry_base_seconds=0).run_once()
+    run, tasks = run_state(owner_db, r.json()["run_id"])
+    assert run.status == "succeeded", tasks[0].error
+    assert tasks[0].output["spend_cents"] == 550 and tasks[0].output["results"] == 21

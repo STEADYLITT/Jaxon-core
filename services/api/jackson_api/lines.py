@@ -476,6 +476,12 @@ def kpis(db: Session, tenant_id, key: str) -> list[dict]:  # noqa: C901 - one br
                  "no Whop members reported yet (connect WHOP_API_KEY, then Sync)"),
         ]
     if key == "marketing":
+        from .models import AdCampaign
+        reported = db.execute(select(func.sum(AdCampaign.spend_cents_reported),
+                                     func.sum(AdCampaign.clicks), func.count()).where(
+            AdCampaign.tenant_id == tenant_id, AdCampaign.insights_at.is_not(None))).one()
+        ad_spend = reported[0] / 100 if reported[2] else None
+        ad_clicks = int(reported[1] or 0) if reported[2] else None
         brands = count(select(func.count(func.distinct(ContentItem.business_id))).where(
             ContentItem.tenant_id == tenant_id, ContentItem.status == "published",
             ContentItem.updated_at >= month))
@@ -483,7 +489,11 @@ def kpis(db: Session, tenant_id, key: str) -> list[dict]:  # noqa: C901 - one br
                      "content_items"),
                 _kpi("Brands with posts this month", brands, "", "content_items"),
                 _kpi("Emails sent this month (all brands)", emails(scope=None), "",
-                     "outreach_messages")]
+                     "outreach_messages"),
+                _kpi("Ad spend reported by Meta/TikTok", ad_spend, "USD",
+                     "ad_campaigns (platform reports)", "no ad has reported spend yet"),
+                _kpi("Ad clicks reported", ad_clicks, "", "ad_campaigns (platform reports)",
+                     "no ad has reported results yet")]
     if key == "agency":
         return [_kpi("Active clients", stage("won"), "", "contacts (stage won)"),
                 _kpi("Open proposals", stage("proposal"), "", "contacts (stage proposal)"),

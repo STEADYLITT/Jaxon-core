@@ -99,7 +99,7 @@ def covers(db: Session, launch_id: uuid.UUID, business_id, action: Action,
     if not ok:
         return False, why
     if action.amount_cents:
-        total = spend_so_far(db, launch.id)
+        total = spend_so_far(db, launch.id) + (_ad_spend(db, launch.id) or 0)
         day_start = t.replace(hour=0, minute=0, second=0, microsecond=0)
         today = spend_so_far(db, launch.id, since=day_start)
         if total + action.amount_cents > launch.total_budget_cents:
@@ -122,17 +122,28 @@ def _signals(db: Session, launch_id, since: datetime | None = None) -> dict:
             for k, n, a in db.execute(q.group_by(LaunchSignal.kind))}
 
 
+def _ad_spend(db: Session, launch_id) -> int | None:
+    """What Meta/TikTok report this launch's ads actually spent (None: no report yet)."""
+    from .models import AdCampaign
+
+    rows = db.scalars(select(AdCampaign.spend_cents_reported).where(
+        AdCampaign.launch_id == launch_id, AdCampaign.spend_cents_reported.is_not(None))).all()
+    return sum(rows) if rows else None
+
+
 def metrics(db: Session, launch: Launch) -> dict:
     t = now()
     sig = _signals(db, launch.id)
     sales = sig.get("sale", {}).get("count", 0)
-    spend = spend_so_far(db, launch.id)
+    ads = _ad_spend(db, launch.id)
+    spend = spend_so_far(db, launch.id) + (ads or 0)  # ledger + what ad platforms report
     return {
         "spend_cents": spend,
         "spend_today_cents": spend_so_far(
             db, launch.id, since=t.replace(hour=0, minute=0, second=0, microsecond=0)),
         "spend_last_hour_cents": spend_so_far(db, launch.id, since=t - timedelta(hours=1)),
         "budget_left_cents": max(launch.total_budget_cents - spend, 0),
+        "ad_spend_reported_cents": ads,
         "sales": sales, "revenue_cents": sig.get("sale", {}).get("amount_cents", 0),
         "refunds": sig.get("refund", {}).get("count", 0),
         "sends": sig.get("send", {}).get("count", 0),

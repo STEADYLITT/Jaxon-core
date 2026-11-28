@@ -78,6 +78,9 @@ def activate_handler(ctx):
         if la is None or la.status != "active":
             raise NonRetryableError("ads only go live inside an ACTIVE Launch you approved: "
                                     "approve a Launch whose channels include ads")
+        if not c.external_ad_id:
+            raise NonRetryableError("add the ad (creative) first: a campaign with no ad "
+                                    "serves nothing")
         if la.business_id != c.business_id:
             raise NonRetryableError("this ad belongs to a different business than the Launch")
         ch = la.channels or {}
@@ -85,20 +88,37 @@ def activate_handler(ctx):
         if c.platform not in platforms:
             raise NonRetryableError(f"the Launch doesn't allow {c.platform} ads "
                                     f"(its ads channel lists {platforms or 'nothing'})")
-        ids = [x for x in (c.external_campaign_id, c.external_adset_id) if x]
+        ids = _ids(c)
         platform, budget, ends = c.platform, c.daily_budget_cents, la.ends_at
         name = c.name
         db.rollback()
     desc = (f"Turn on {platform} ad '{name[:80]}' at ${budget / 100:.2f}/day until "
             f"{ends:%Y-%m-%d}")
     # Only a Launch can cover this: outside one it would just ask, and we refused above.
+    # The launch's daily cap must hold every live ad's daily budget together, and the
+    # budget left must hold at least one more day. What's actually spent is what the
+    # platforms report (sync_insights): it counts against the launch budget as it happens.
     ctx.authorize(Action(Category.SPEND, desc, budget, channel="ads", target=platform))
-    reservation = ctx.reserve_budget(budget, desc)
+    with ctx.db_session() as db:
+        from sqlalchemy import func
+
+        from .launches import metrics
+        live = int(db.scalar(select(func.coalesce(func.sum(AdCampaign.daily_budget_cents), 0))
+                             .where(AdCampaign.launch_id == launch_id,
+                                    AdCampaign.status == "active",
+                                    AdCampaign.id != cid)) or 0)
+        left = metrics(db, db.get(Launch, launch_id))["budget_left_cents"]
+        cap = db.get(Launch, launch_id).daily_cap_cents
+        db.rollback()
+    if live + budget > cap:
+        raise NonRetryableError(f"live ads would spend ${(live + budget) / 100:.2f}/day, over "
+                                f"the launch's daily cap of ${cap / 100:.2f}")
+    if budget > left:
+        raise NonRetryableError(f"only ${left / 100:.2f} of the launch budget is left")
     be = A.backend(platform)
     if platform == "meta" and len(ids) > 1:
         be.set_end_time(ids[1], ends)
     be.set_status(ids, True)
-    ctx.settle_spend(reservation, budget, desc)  # today's budget is committed exposure
     with ctx.db_session() as db:
         c = db.get(AdCampaign, cid)
         c.status, c.launch_id = "active", launch_id
@@ -118,7 +138,7 @@ def pause_handler(ctx):
         c = db.get(AdCampaign, cid)
         if c is None or c.tenant_id != ctx.tenant_id:
             raise NonRetryableError("ad campaign not found")
-        ids = [x for x in (c.external_campaign_id, c.external_adset_id) if x]
+        ids = _ids(c)
         platform, was = c.platform, c.status
         db.rollback()
     if was == "active":
@@ -149,7 +169,7 @@ def pause_orphans(db) -> list[str]:
     for c, la in rows:
         if la.status == "active" and now < la.ends_at:
             continue
-        ids = [x for x in (c.external_campaign_id, c.external_adset_id) if x]
+        ids = _ids(c)
         try:
             A.backend(c.platform).set_status(ids, False)
         except Exception:  # noqa: BLE001 - retried on the next sweep
@@ -157,3 +177,148 @@ def pause_orphans(db) -> list[str]:
         c.status = "paused"
         out.append(str(c.id))
     return out
+
+
+# --- Creatives and insights (ADR-051) ----------------------------------------------------------
+
+def _https(u) -> str:
+    u = str(u or "").strip()
+    if u and not u.startswith("https://"):
+        raise NonRetryableError(f"{u[:60]} must be an https:// link")
+    return u
+
+
+def creative_handler(ctx):
+    """Add the creative and the ad to a draft, still paused. Copy is claims-checked."""
+    from .connectors import ads as A
+    from .connectors.claims import check_claims
+    from .models import AdCampaign, ContentItem
+    from .policy import Action, Category
+    from .worker import TaskResult
+
+    inp = ctx.input or {}
+    cid = uuid.UUID(str(inp["ad_campaign_id"]))
+    with ctx.db_session() as db:
+        c = db.get(AdCampaign, cid)
+        if c is None or c.tenant_id != ctx.tenant_id:
+            raise NonRetryableError("ad campaign not found")
+        if c.status == "mock":
+            raise NonRetryableError("this draft is a MOCK: connect the ad account and draft it "
+                                    "again")
+        if c.external_ad_id:
+            raise NonRetryableError("this campaign already has its ad")
+        video = inp.get("video_url")
+        text = str(inp.get("text") or c.copy or "")
+        if inp.get("content_id"):  # an approved content draft supplies the video and text
+            item = db.get(ContentItem, uuid.UUID(str(inp["content_id"])))
+            if item is None or item.tenant_id != ctx.tenant_id:
+                raise NonRetryableError("content not found")
+            if item.status not in ("approved", "published"):
+                raise NonRetryableError("approve the content draft before using it in an ad")
+            vids = [a["url"] for a in item.assets or [] if a.get("kind") == "video"
+                    and str(a.get("url", "")).startswith("https://")]
+            video = video or (vids[0] if vids else None)
+            text = text or item.body
+        platform, adset, name = c.platform, c.external_adset_id, c.name
+        db.rollback()
+    cr = {"image_url": _https(inp.get("image_url")), "video_url": _https(video),
+          "thumbnail_url": _https(inp.get("thumbnail_url")), "link": _https(inp.get("link")),
+          "headline": str(inp.get("headline") or name)[:100], "text": text[:2000],
+          "description": str(inp.get("description") or "")[:200],
+          "cta": inp.get("cta") or "LEARN_MORE"}
+    if not cr["link"]:
+        raise NonRetryableError("an ad needs the https link it sends people to")
+    if cr["cta"] not in A.CTAS:
+        raise NonRetryableError(f"call to action must be one of {A.CTAS}")
+    if not (cr["image_url"] or cr["video_url"]):
+        raise NonRetryableError("give an image_url or a video (video_url / an approved "
+                                "content draft with a video)")
+    if cr["video_url"] and not cr["thumbnail_url"]:
+        raise NonRetryableError("a video ad needs a thumbnail_url (its cover image)")
+    problems = check_claims(f"{cr['headline']}\n{cr['text']}\n{cr['description']}")
+    if problems:
+        raise NonRetryableError("the ad fails the claims check: " + "; ".join(problems))
+    ctx.authorize(Action(Category.DRAFT, f"add the ad to {platform} campaign '{name[:80]}' "
+                         "(paused, spends nothing)"))
+    res = A.backend(platform).add_ad(name, adset, cr)
+    with ctx.db_session() as db:
+        c = db.get(AdCampaign, cid)
+        c.external_ad_id, c.creative = res["ad_id"], {**cr, **res}
+        db.commit()
+    return TaskResult({"ad_campaign_id": str(cid), **res, "status": "paused",
+                       "summary": f"{platform} ad created (paused): {cr['headline'][:60]}"})
+
+
+def refresh(db, c, backend=None) -> dict:
+    from datetime import UTC, datetime
+
+    from .connectors import ads as A
+
+    m = (backend or A.backend(c.platform)).insights(c.external_campaign_id)
+    c.spend_cents_reported, c.impressions = m["spend_cents"], m["impressions"]
+    c.clicks, c.results, c.insights_at = m["clicks"], m["results"], datetime.now(UTC)
+    return m
+
+
+def insights_handler(ctx):
+    from .models import AdCampaign
+    from .worker import TaskResult
+
+    cid = uuid.UUID(str((ctx.input or {})["ad_campaign_id"]))
+    with ctx.db_session() as db:
+        c = db.get(AdCampaign, cid)
+        if c is None or c.tenant_id != ctx.tenant_id:
+            raise NonRetryableError("ad campaign not found")
+        if c.status in ("mock", "draft") and not c.launch_id:
+            raise NonRetryableError("this ad has never run: there's nothing to report")
+        m = refresh(db, c)
+        db.commit()
+    return TaskResult({"ad_campaign_id": str(cid), **m,
+                       "summary": f"Reported: ${m['spend_cents'] / 100:.2f} spent, "
+                                  f"{m['results']} {m['result_name']}"})
+
+
+def sync_insights(db, every_s: int = 1800) -> list[str]:
+    """On every launch sweep: refresh live ads' reported spend and results (at most every
+    30 minutes each), and pause a Launch's ads once REPORTED spend reaches its total budget.
+    Returns the ads paused for budget."""
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import func, select
+
+    from .connectors import ads as A
+    from .models import AdCampaign, Launch
+
+    now = datetime.now(UTC)
+    for c in db.scalars(select(AdCampaign).where(AdCampaign.status == "active")).all():
+        if c.insights_at and c.insights_at > now - timedelta(seconds=every_s):
+            continue
+        try:
+            refresh(db, c)
+        except Exception as e:  # noqa: BLE001 - tried again on the next sweep
+            import logging
+            logging.getLogger(__name__).warning("ad insights for %s failed: %s", c.id, e)
+            continue
+    db.flush()
+    paused = []
+    rows = db.execute(select(AdCampaign.launch_id,
+                             func.coalesce(func.sum(AdCampaign.spend_cents_reported), 0))
+                      .where(AdCampaign.launch_id.is_not(None))
+                      .group_by(AdCampaign.launch_id)).all()
+    for lid, spent in rows:
+        la = db.get(Launch, lid)
+        if la is None or int(spent) < la.total_budget_cents:
+            continue
+        for c in db.scalars(select(AdCampaign).where(AdCampaign.launch_id == lid,
+                                                     AdCampaign.status == "active")).all():
+            try:
+                A.backend(c.platform).set_status(_ids(c), False)
+            except Exception:  # noqa: BLE001
+                continue
+            c.status = "paused"
+            paused.append(str(c.id))
+    return paused
+
+
+def _ids(c) -> list[str]:
+    return [x for x in (c.external_campaign_id, c.external_adset_id, c.external_ad_id) if x]
