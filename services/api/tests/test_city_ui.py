@@ -414,3 +414,26 @@ def test_a_building_shows_its_business_line(client, world, make_token, maker, ow
         assert "not measured" in txt and "CREATOR_EARNINGS_SOURCE" in txt
         assert "Agents never generate explicit content" in txt
         assert problems == [], problems
+
+
+def test_cinematic_intro_flies_in_from_space_and_any_key_skips_it(client, world, make_token,
+                                                                  maker, owner_db, drain):
+    Worker(maker).city_heartbeat()
+    with city(client, world, make_token(world.alice), query="?intro&fxslow") as (page, problems):
+        until(page, "document.documentElement.dataset.cityIntro === 'playing'")
+        until(page, "window.__cityCamera")
+        x, y, z = page.evaluate("window.__cityCamera()")
+        assert (x * x + y * y + z * z) ** 0.5 > 150  # starts out in deep space
+        page.keyboard.press("Escape")  # any key skips
+        until(page, "document.documentElement.dataset.cityIntro === 'done'", 10_000)
+        x, y, z = page.evaluate("window.__cityCamera()")
+        assert abs(x) < 1 and 40 < y < 50 and 85 < z < 100  # landed on the overview
+        assert problems == [], problems
+
+
+def test_automation_and_reduced_motion_skip_the_intro(client, world, make_token, maker,
+                                                      owner_db, drain):
+    Worker(maker).city_heartbeat()
+    with city(client, world, make_token(world.alice)) as (page, problems):
+        until(page, "document.documentElement.dataset.cityIntro === 'off'")
+        assert problems == [], problems

@@ -255,3 +255,7 @@ button { font: inherit; }
     overflow: hidden; text-overflow: ellipsis; }
   .label.ceo { font-size: 0.55rem; }
 }
+
+/* during the opening fly-in the names would crowd a tiny far-off city: they fade in on arrival */
+.label-layer .label { transition: opacity 0.8s ease; }
+html[data-city-intro="playing"] .label-layer .label { opacity: 0; }
