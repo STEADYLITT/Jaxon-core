@@ -28,6 +28,7 @@ one real, harmless call (ADR-038).
     eBay        app token + one Browse search (limit 1)
     Databento   GET metadata.list_datasets (free)
     APEX-7      GET APEX7_RESULTS_URL (reads the runs it publishes)
+    Clip payouts GET the CLIP_PAYOUTS_SOURCE feed (reads it; records nothing)
 """
 
 import os
@@ -47,7 +48,7 @@ SECRET_VARS = ("ANTHROPIC_API_KEY", "SHOPIFY_CLIENT_SECRET", "SHOPIFY_ADMIN_API_
                "META_ACCESS_TOKEN", "TIKTOK_ACCESS_TOKEN",
                "GITHUB_APP_TOKEN", "YOUTUBE_API_KEY", "TWITCH_CLIENT_SECRET",
                "AMAZON_SP_CLIENT_SECRET", "AMAZON_SP_REFRESH_TOKEN", "EBAY_CLIENT_SECRET",
-               "DATABENTO_API_KEY", "APEX7_RESULTS_TOKEN")
+               "DATABENTO_API_KEY", "APEX7_RESULTS_TOKEN", "CLIP_PAYOUTS_TOKEN")
 
 
 def _new_client() -> httpx.Client:
@@ -370,6 +371,31 @@ def test_databento(ctx: dict) -> dict:
             "note": "free check; every data pull shows Databento's own price first"}
 
 
+def test_clip_payouts(ctx: dict) -> dict:
+    return _test_payouts("clips")
+
+
+def _test_payouts(line: str) -> dict:
+    """Reads the feed (nothing is recorded) and reports what an import would see."""
+    from .connectors import payouts as P
+
+    if not P.feed_url(line):
+        if P.source(line) == "import":
+            return {"mode": "import", "feed": False,
+                    "note": f"upload statements at POST /payouts/{line}/import"}
+        raise TestFailed(f"{P.LINES[line]['source']} must be an https feed address or "
+                         f"'import'")
+    from .worker_errors import NonRetryableError
+    try:
+        raw = P.pull(line)
+    except NonRetryableError as e:
+        raise TestFailed(str(e)) from None
+    rows, skipped = P.normalize(raw, line)
+    return {"mode": "feed", "payouts_in_feed": len(raw), "usable": len(rows),
+            "skipped": skipped, "total_usd": round(sum(r["amount_cents"] for r in rows) / 100,
+                                                   2)}
+
+
 def test_apex7(ctx: dict) -> dict:
     from .connectors.apex7 import pull_results
 
@@ -446,6 +472,9 @@ CONNECTORS = [
               note="set to dns when you launch a site on your own domain; no key needed"),
     Connector("hosting", "Website hosting (Netlify)", ["NETLIFY_AUTH_TOKEN"],
               optional=["NETLIFY_SITE_PREFIX"], test=test_netlify),
+    Connector("clip_payouts", "Clip views & payouts", ["CLIP_PAYOUTS_SOURCE"],
+              optional=["CLIP_PAYOUTS_TOKEN"], test=test_clip_payouts,
+              note="an https feed, or import: upload a CSV at POST /payouts/clips/import"),
     Connector("sms", "SMS and calls", [], note="not built yet: outreach is email only"),
     Connector("artifacts", "File storage (S3)", ["S3_BUCKET"],
               note="optional: files live on the Railway disk until this is set"),

@@ -160,6 +160,7 @@ def default_handlers() -> dict[str, Handler]:
     from .dashboard import report_handler
     from .factory_repos import push_handler as repo_push
     from .marketplace_research import research_handler as marketplace_research
+    from .payouts import import_handler as payouts_import
     from .planner import plan_handler  # lazy: planner imports TaskResult from here
     from .realestate import comps_handler as property_comps
     from .realestate import skip_trace_handler as skip_trace
@@ -191,6 +192,7 @@ def default_handlers() -> dict[str, Handler]:
             "ad_pause": ad_pause, "ad_creative": ad_creative, "ad_insights": ad_insights,
             "repo_push": repo_push, "clip_scout": clip_scout,
             "marketplace_research": marketplace_research, "apex7_import": apex7_import,
+            "clip_payouts_import": payouts_import, "creator_earnings_import": payouts_import,
             "futures_bars": futures_bars}
 
 

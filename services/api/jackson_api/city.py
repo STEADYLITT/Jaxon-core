@@ -67,6 +67,8 @@ BUILT_IN = {
                     "adds the creative and the ad to a paused campaign"),
     "ad_insights": ("marketing", "ads", "Ads Reporter",
                     "reads real spend and results back from Meta/TikTok"),
+    "clip_payouts_import": ("clips", "posting", "Payout Recorder",
+                            "records real clip views and payouts (never estimated)"),
     "clip_scout": ("clips", "scouting", "Clip Scout",
                    "finds clippable YouTube/Twitch moments from permitted creators"),
     "opportunity_research": ("rnd", "board", "Research Scout",

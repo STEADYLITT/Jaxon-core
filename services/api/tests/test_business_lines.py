@@ -86,7 +86,8 @@ def test_lines_api_shows_playbook_kpis_connectors_agents(client, world, make_tok
     assert "YOUTUBE_API_KEY" in clips["missing_variables"]
     assert "UPLOADPOST_API_KEY" in clips["missing_variables"]
     assert {c["mode"] for c in clips["connectors"]} == {"MOCK"}
-    views = next(k for k in clips["kpis"] if k["name"] == "Views")
+    assert "CLIP_PAYOUTS_SOURCE" in clips["missing_variables"]  # built (ADR-057), not set
+    views = next(k for k in clips["kpis"] if k["name"] == "Views paid on this month")
     assert views["value"] is None and "needs" in views["note"]  # never estimated
     mk = lines["marketing"]
     assert mk["staffed"] and any(a["name"] == "Content Writer" for a in mk["agents"])

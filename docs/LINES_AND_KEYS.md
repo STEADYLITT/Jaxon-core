@@ -31,7 +31,7 @@ Paste values only in **Railway → Jaxon-core → Variables**, and seal secrets.
 | | | `GITHUB_APP_TOKEN`, `GITHUB_OWNER` | built: every approved build gets its own private GitHub repo |
 | 7 | **Content & Clip Farming** | `UPLOADPOST_API_KEY`, `UPLOADPOST_USER`, `FAL_KEY` | built: posting and video |
 | | | `YOUTUBE_API_KEY`, `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`, `CLIP_ALLOWED_CREATORS` | built: finding clippable moments, with source links and clip rights |
-| | | `CLIP_PAYOUTS_SOURCE` | **not built yet**: real views and payouts |
+| | | `CLIP_PAYOUTS_SOURCE` (an https feed, or `import`); optional `CLIP_PAYOUTS_TOKEN` | built: real views and payouts from your campaign statements (feed or CSV upload), recorded once each and counted as revenue |
 | 8 | **Creator Agency** | `UPLOADPOST_API_KEY`, `UPLOADPOST_USER`, `RESEND_API_KEY`, `RESEND_FROM` | built: always after approval, SFW only |
 | | | `CREATOR_EARNINGS_SOURCE` | **not built yet**: real creator earnings |
 | 9 | **AI Influencers** | `FAL_KEY`, `UPLOADPOST_API_KEY`, `UPLOADPOST_USER` | built: generation (cost approved first) and posting labeled as AI |
@@ -81,7 +81,8 @@ Paste these in **Railway → Jaxon-core → Variables**. **Seal** every secret. 
 | GitHub repos (App Factory) | `GITHUB_APP_TOKEN`, `GITHUB_OWNER`; optional `GITHUB_REPO_PREFIX` | yes: the token |
 | APEX-7 results feed | `APEX7_RESULTS_URL`; optional `APEX7_RESULTS_TOKEN` (or upload results, no key needed) | yes: the token |
 | Futures data (Databento) | `DATABENTO_API_KEY` | yes |
+| Clip payouts | `CLIP_PAYOUTS_SOURCE` (an https feed address, or `import` to upload CSV statements); optional `CLIP_PAYOUTS_TOKEN` | yes: the token |
 | Domain checks | `SITE_DOMAIN_VERIFY=dns` | no |
 | File storage (optional) | `S3_BUCKET` | no |
 
-Still not built: SMS/calls, clip payouts (`CLIP_PAYOUTS_SOURCE`), creator earnings (`CREATOR_EARNINGS_SOURCE`), platform follower analytics (`PLATFORM_ANALYTICS`), and live trading (on purpose).
+Still not built: SMS/calls, creator earnings (`CREATOR_EARNINGS_SOURCE`), platform follower analytics (`PLATFORM_ANALYTICS`), and live trading (on purpose).

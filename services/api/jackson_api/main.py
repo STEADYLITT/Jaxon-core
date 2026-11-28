@@ -30,6 +30,7 @@ from .routes_lines import router as lines_router
 from .routes_marketplaces import router as marketplaces_router
 from .routes_memory import router as memory_router
 from .routes_opportunities import router as opportunities_router
+from .routes_payouts import router as payouts_router
 from .routes_policy import router as policy_router
 from .routes_realestate import router as realestate_router
 from .routes_research_web import router as web_research_router
@@ -69,6 +70,7 @@ app.include_router(web_research_router)
 app.include_router(community_router)
 app.include_router(realestate_router)
 app.include_router(trading_router)
+app.include_router(payouts_router)
 app.include_router(ads_router)
 app.include_router(factory_repos_router)
 app.include_router(clips_router)
