@@ -34,7 +34,12 @@ The **scenery** may move and glow when nothing is happening: sky, stars, light, 
    - **Revenue.** A gold beam and a burst of 36 instanced gold coins along a fixed spiral (no randomness).
    - **Ring road.** A glowing two-lane gold and cyan track. Above it, the three newest real ticker events float as holographic text (desktop).
    - **Debugging hooks.** `__city.flown` counts the envelopes sent, so tests don't race a short flight. `?fxslow` stretches effect durations 8× for screenshots on a slow software renderer.
-6. Later parts: architecture and the orb, life effects, the camera intro and interiors, and the HUD.
+6. **Camera** (`CameraRig` in `scene/City.tsx`):
+   - **Cinematic intro.** On first load the camera flies in from deep space through the nebula band on a curved path and settles on the overview in 3.6 s (eased). Any key, click, touch or wheel skips it (finishes in 0.35 s). Labels fade in on arrival. It is off for reduced motion and under automation (tests opt in with `?intro`). `html[data-city-intro]` reads `playing` / `done` / `off`.
+   - **Fly-to.** Clicking a building, the orb, the CEO tower or a floor flies there in a fixed 1.5 s eased curve instead of a drifting lerp.
+   - **Idle drift.** After 12 s without input on the overview, the orbit turns very slowly (`autoRotateSpeed` 0.25, about 4 minutes a lap). Any input stops it. This is scenery motion, not data.
+7. **Interiors** (`scene/Office.tsx`): glass desks with edges lit in the agent's status colour, holographic monitors (lit frame, additive pane), robots in clearcoat with glowing status-coloured eyes that blink only while the agent is really working, a mirrored floor on desktop (plain on phones), a gold grid, smoked-glass walls and warm/department-coloured fill lights.
+8. Later: the HUD (glass panels, type, command pill) and adaptive resolution.
 
 ## Proof
 `tests/city_shots.py` takes desktop (1440×900) and iPhone 15 screenshots, idle and right after a real command. They are saved under `docs/city-shots/<part>/`.

@@ -11,6 +11,7 @@ const SLOW = typeof location !== "undefined" && new URLSearchParams(location.sea
   ? 8 : 1;
 export const envelopeMs = () => ENVELOPE_MS * SLOW;
 export const beamMs = () => BEAM_MS * SLOW;
+export const slowFactor = () => SLOW;
 
 export const ENVELOPE_COLOR: Record<string, string> = {
   command: "#00e5ff", task: "#ff3df2", report: "#39ff88", failed: "#ff3355",

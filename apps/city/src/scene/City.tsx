@@ -1,6 +1,6 @@
 import { OrbitControls, PerformanceMonitor } from "@react-three/drei";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 
 import {
@@ -11,6 +11,7 @@ import type { Mode } from "../lib/mode";
 import { seeded } from "../lib/rand";
 import { statusesAt, type PastStatus } from "../lib/replay";
 import { useCity, type Focus } from "../lib/store";
+import { slowFactor } from "../lib/effects";
 import { BeamColumn, CoinBurst, EnvelopeFlight, RingRoad } from "./Life";
 import { CeoTower, HoloLot, JaxonOrb, Tower as DeptTower, crownH } from "./Architecture";
 import { Office } from "./Office";
@@ -53,26 +54,109 @@ function poseFor(focus: Focus, s: Snapshot, aspect: number, inOffice: boolean): 
   return null; // an agent panel: stay where we are
 }
 
+const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+const INTRO_MS = 3600;
+const FLY_MS = 1500;
+const IDLE_DRIFT_MS = 12000;
+
+/** Whether the opening fly-in plays: not for reduced motion, and not under automation unless
+ *  a test asks for it with ?intro (so every other test starts at the overview, as before). */
+function introWanted(): boolean {
+  const q = new URLSearchParams(window.location.search);
+  if (q.has("intro")) return true;
+  if (q.has("nointro") || navigator.webdriver) return false;
+  return !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+}
+
+function driftWanted(): boolean {
+  const q = new URLSearchParams(window.location.search);
+  if (q.has("drift")) return true;
+  return !navigator.webdriver && !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+}
+
+type Tween = { from: THREE.Vector3; to: THREE.Vector3; tFrom: THREE.Vector3; tTo: THREE.Vector3;
+  via: THREE.Vector3 | null; start: number; ms: number };
+
+/** The camera: a cinematic fly-in from deep space on first load (any key, click, touch or
+ *  wheel skips it), eased fixed-length flights between views, and a slow orbit drift when
+ *  Steady has left the overview alone for a while. Scenery motion only, never data. */
 function CameraRig({ inOffice }: { inOffice: boolean }) {
   const { camera, size, controls } = useThree();
   const focus = useCity((st) => st.focus);
   const s = useCity((st) => st.snapshot);
   const pose = s ? poseFor(focus, s, size.width / Math.max(size.height, 1), inOffice) : null;
-  const flying = useRef<Pose | null>(null);
+  const tween = useRef<Tween | null>(null);
   const lastKey = useRef("");
+  const introDone = useRef(false);
+  const lastInput = useRef(performance.now());
+
+  const begin = (p: Pose, ms: number, via: THREE.Vector3 | null, from?: THREE.Vector3) => {
+    const c = controls as unknown as { target: THREE.Vector3 } | null;
+    tween.current = {
+      from: (from ?? camera.position).clone(), to: new THREE.Vector3(...p.pos),
+      tFrom: c ? c.target.clone() : new THREE.Vector3(...p.target), tTo: new THREE.Vector3(...p.target),
+      via, start: performance.now(), ms,
+    };
+  };
+
   if (pose && pose.key !== lastKey.current) {
+    const first = lastKey.current === "";
     lastKey.current = pose.key;
-    flying.current = pose;
+    if (first && !introDone.current && introWanted()) {
+      // from deep space, through the nebula band, swinging round onto the city
+      const far = farFor(size.width / Math.max(size.height, 1));
+      const startAt = new THREE.Vector3(-140 * far, 300 * far, 430 * far);
+      camera.position.copy(startAt);
+      begin(pose, INTRO_MS * slowFactor(), new THREE.Vector3(120 * far, 120 * far, 260 * far), startAt);
+      document.documentElement.dataset.cityIntro = "playing";
+    } else {
+      if (!introDone.current) document.documentElement.dataset.cityIntro = "off";
+      introDone.current = true;
+      begin(pose, first ? 1 : FLY_MS, null);
+    }
   }
-  useFrame((_, dt) => {
-    const p = flying.current;
-    const c = controls as unknown as { target: THREE.Vector3; update(): void } | null;
-    if (!p) return;
-    const k = 1 - Math.exp(-dt * 4);
-    camera.position.lerp(new THREE.Vector3(...p.pos), k);
-    if (c) { c.target.lerp(new THREE.Vector3(...p.target), k); c.update(); }
-    else camera.lookAt(...p.target);
-    if (camera.position.distanceTo(new THREE.Vector3(...p.pos)) < 0.05) flying.current = null;
+
+  useEffect(() => {
+    const touch = () => {
+      lastInput.current = performance.now();
+      const t = tween.current;
+      if (t && t.ms === INTRO_MS * slowFactor()) { // skip: finish the fly-in in a quick beat
+        const pose = { pos: t.to.toArray() as Vec3, target: t.tTo.toArray() as Vec3, key: "skip" };
+        begin(pose, 350, null);
+      }
+    };
+    const evs = ["pointerdown", "wheel", "keydown", "touchstart"] as const;
+    evs.forEach((e) => window.addEventListener(e, touch, { passive: true }));
+    return () => evs.forEach((e) => window.removeEventListener(e, touch));
+  });
+
+  const drift = useMemo(driftWanted, []);
+  useFrame(() => {
+    const c = controls as unknown as { target: THREE.Vector3; update(): void; autoRotate: boolean;
+      autoRotateSpeed: number } | null;
+    const t = tween.current;
+    if (c) {
+      const idle = performance.now() - lastInput.current > IDLE_DRIFT_MS;
+      c.autoRotate = drift && !t && !focus && !inOffice && idle;
+      c.autoRotateSpeed = 0.25;
+    }
+    if (!t) { if (c?.autoRotate) c.update(); return; }
+    const k = Math.min((performance.now() - t.start) / t.ms, 1);
+    const e = easeInOut(k);
+    if (t.via) { // a quadratic arc through `via`
+      const a = t.from.clone().lerp(t.via, e), b = t.via.clone().lerp(t.to, e);
+      camera.position.copy(a.lerp(b, e));
+    } else camera.position.lerpVectors(t.from, t.to, e);
+    const target = t.tFrom.clone().lerp(t.tTo, e);
+    if (c) { c.target.copy(target); c.update(); } else camera.lookAt(target);
+    if (k >= 1) {
+      tween.current = null;
+      if (!introDone.current) {
+        introDone.current = true;
+        document.documentElement.dataset.cityIntro = "done";
+      }
+      lastInput.current = performance.now();
+    }
   });
   return null;
 }
@@ -90,6 +174,7 @@ function ScreenProbe() {
         const v = box.getCenter(new THREE.Vector3()).project(camera);
         return [(v.x + 1) / 2 * size.width, (1 - v.y) / 2 * size.height];
       };
+    (window as unknown as { __cityCamera?: () => number[] }).__cityCamera = () => camera.position.toArray();
   });
   return null;
 }
@@ -286,7 +371,7 @@ export default function City({ mode }: { mode: Mode }) {
       <CameraRig inOffice={!!floor} />
       <ScreenProbe />
       <World light={light} />
-      {floor ? <Office deptId={floor.deptId} floorId={floor.floorId} layer={layer} /> : (
+      {floor ? <Office deptId={floor.deptId} floorId={floor.floorId} layer={layer} light={light} /> : (
         <group name="city" onPointerMissed={() => useCity.getState().setFocus(null)}>
           <RingRoad light={light} />
           <Tower inbox={s.inbox.approvals.length} />
