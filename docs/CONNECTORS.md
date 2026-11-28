@@ -425,6 +425,17 @@ fal.ai keeps generated files on its own servers. Post a clip within a few days o
   - one day of the ad's budget fits the Launch's daily cap and what's left of its total budget.
 
   On Meta, the ad set also gets the Launch's end date, so Meta stops it on its own. Outside a Launch, nothing can switch an ad on.
+- **The ad itself** (`POST /tenants/{t}/ads/{id}/creative`):
+  - You give the link people go to, a headline, the text, and either an image link or a video link.
+  - For a video you also give a cover-image link. Instead of a video link, you can name an approved content draft that has a video.
+  - The ad is created switched off and spends nothing. Its text gets the same claims check.
+  - On TikTok an ad must be a video.
+- **Real results:**
+  - Every 30 minutes Jackson reads what Meta and TikTok say each live ad actually spent, plus impressions, clicks and link clicks.
+  - The Launch counts that real spend against its budget. When the budget is used up, the Launch completes and its ads stop.
+  - The console's Marketing building shows "Ad spend reported" and "Ad clicks reported".
+  - `POST /tenants/{t}/ads/{id}/insights` refreshes the numbers on demand.
+- **Daily cap:** the daily budgets of all of a Launch's live ads, added together, must fit inside its daily cap.
 - **Kill switch:**
   - `POST /tenants/{t}/ads/{id}/pause` pauses an ad at any time.
   - Jackson also pauses every live ad whose Launch was paused, killed, revoked or expired, on its next check (every few minutes).
@@ -436,6 +447,10 @@ fal.ai keeps generated files on its own servers. Post a clip within a few days o
 3. **Generate new token:** pick your app, set it to never expire, and tick **ads_management** and **ads_read**. Copy it into Railway as `META_ACCESS_TOKEN` and **Seal** it.
 4. Your ad account id is in **Ads Manager** → account dropdown, the number after `act_`. Add it as `META_AD_ACCOUNT_ID`; just the number is fine.
 5. **Connections → Ads: Meta → Test** shows the ad account's name, status and currency.
+6. Your **Facebook Page** id:
+   - Open the Page → **About** → **Page transparency**, or go to **Business settings** → **Accounts** → **Pages**. Copy the Page id.
+   - Add it as `META_PAGE_ID`. Ads run as this Page.
+   - The system user also needs the Page assigned to it, with **Create ads** access.
 
 ### TikTok click steps
 1. At **business-api.tiktok.com**, register as a developer and **create an app** with the **Ads Management** and **Reporting** permissions. TikTok reviews new apps, which can take a few days.
@@ -443,11 +458,18 @@ fal.ai keeps generated files on its own servers. Post a clip within a few days o
 3. Exchange the code for a long-term token. It's one request with the app id, secret and code, shown on TikTok's "Obtain a long-term access token" page. Paste the `access_token` into Railway as `TIKTOK_ACCESS_TOKEN` and **Seal** it.
 4. Your advertiser id is in **TikTok Ads Manager**, top right under the account name. Add it as `TIKTOK_ADVERTISER_ID`.
 5. **Connections → Ads: TikTok → Test** shows the advertiser name and status.
+6. **Identity** (the name and avatar your ads show):
+   - In TikTok Ads Manager → **Tools** → **Identities**, create one or use your linked TikTok account. Copy its id and add it as `TIKTOK_IDENTITY_ID`.
+   - If it's your linked TikTok account rather than a custom identity, also set `TIKTOK_IDENTITY_TYPE` to `TT_USER` or `BC_AUTH_TT`.
+   - TikTok is phasing out custom identities for some advertisers.
 
 ### Variables
 | Name | What to paste |
 |---|---|
 | `META_ACCESS_TOKEN` | the system user token (secret, seal it) |
 | `META_AD_ACCOUNT_ID` | the ad account number (with or without `act_`) |
+| `META_PAGE_ID` | the Facebook Page the ads run as |
 | `TIKTOK_ACCESS_TOKEN` | the long-term access token (secret, seal it) |
 | `TIKTOK_ADVERTISER_ID` | the advertiser id |
+| `TIKTOK_IDENTITY_ID` | the identity your ads post as |
+| `TIKTOK_IDENTITY_TYPE` | optional: `CUSTOMIZED_USER` (default), `TT_USER` or `BC_AUTH_TT` |

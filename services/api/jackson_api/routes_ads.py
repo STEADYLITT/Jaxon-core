@@ -19,7 +19,11 @@ def _row(c: AdCampaign) -> dict:
     return {"id": str(c.id), "platform": c.platform, "name": c.name, "status": c.status,
             "objective": c.objective, "daily_budget_cents": c.daily_budget_cents,
             "launch_id": str(c.launch_id) if c.launch_id else None,
-            "external_campaign_id": c.external_campaign_id,
+            "external_campaign_id": c.external_campaign_id, "has_ad": bool(c.external_ad_id),
+            "reported": None if c.insights_at is None else {
+                "spend_cents": c.spend_cents_reported, "impressions": c.impressions,
+                "clicks": c.clicks, "results": c.results,
+                "as_of": c.insights_at.isoformat()},
             "business_id": str(c.business_id) if c.business_id else None}
 
 
@@ -104,5 +108,38 @@ def pause(tenant_id: uuid.UUID, aid: uuid.UUID, body: OneIn, writer: TenantWrite
           db: DB) -> dict:
     c = _campaign(db, tenant_id, aid)
     return _start(db, tenant_id, writer, "ad_pause", f"Pause {c.platform} ad: {c.name}",
+                  {"ad_campaign_id": str(c.id)}, body.idempotency_key,
+                  business_id=c.business_id)
+
+
+class CreativeIn(OneIn):
+    link: str = Field(pattern=r"^https://", max_length=500)
+    headline: str = Field(default="", max_length=100)
+    text: str = Field(default="", max_length=2000)
+    description: str = Field(default="", max_length=200)
+    image_url: str | None = Field(default=None, pattern=r"^https://", max_length=1000)
+    video_url: str | None = Field(default=None, pattern=r"^https://", max_length=1000)
+    thumbnail_url: str | None = Field(default=None, pattern=r"^https://", max_length=1000)
+    content_id: uuid.UUID | None = None
+    cta: Literal["LEARN_MORE", "SHOP_NOW", "SIGN_UP", "ORDER_NOW"] = "LEARN_MORE"
+
+
+@router.post("/tenants/{tenant_id}/ads/{aid}/creative", status_code=202)
+def creative(tenant_id: uuid.UUID, aid: uuid.UUID, body: CreativeIn, writer: TenantWriter,
+             db: DB) -> dict:
+    """Add the ad itself (image or video, text, link). Still paused: spends nothing."""
+    c = _campaign(db, tenant_id, aid)
+    inp = {"ad_campaign_id": str(c.id),
+           **body.model_dump(exclude={"idempotency_key"}, mode="json")}
+    return _start(db, tenant_id, writer, "ad_creative", f"Ad for {c.platform}: {c.name}",
+                  inp, body.idempotency_key, business_id=c.business_id)
+
+
+@router.post("/tenants/{tenant_id}/ads/{aid}/insights", status_code=202)
+def insights(tenant_id: uuid.UUID, aid: uuid.UUID, body: OneIn, writer: TenantWriter,
+             db: DB) -> dict:
+    """Read real spend and results now (the worker also refreshes live ads every 30 min)."""
+    c = _campaign(db, tenant_id, aid)
+    return _start(db, tenant_id, writer, "ad_insights", f"Ad results: {c.name}",
                   {"ad_campaign_id": str(c.id)}, body.idempotency_key,
                   business_id=c.business_id)
