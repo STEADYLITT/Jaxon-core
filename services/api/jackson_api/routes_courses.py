@@ -49,7 +49,8 @@ def get_course(tenant_id: uuid.UUID, cid: uuid.UUID, member: TenantMember, db: D
             "checks": c.checks, "platform_pages": sorted(c.platform_files),
             "sales_pages": sorted(c.sales_files),
             "launch_plan": la.plan if la else None,
-            "checkout_url": checkout_url(db, tenant_id, c.id)}
+            "checkout_url": checkout_url(db, tenant_id, c.id),
+            "published": published(db, tenant_id, c.id)}
 
 
 @router.get("/tenants/{tenant_id}/courses/{cid}/files/{which}/{path}")
@@ -92,3 +93,40 @@ def build_course(tenant_id: uuid.UUID, body: BuildIn, writer: TenantWriter, db: 
         raise HTTPException(e.status, {"code": e.code, "message": e.message}) from None
     db.commit()
     return {"run_id": str(run.id)}
+
+
+class PublishIn(BaseModel):
+    idempotency_key: str = Field(min_length=8, max_length=200)
+
+
+@router.post("/tenants/{tenant_id}/courses/{cid}/publish", status_code=202)
+def publish_course(tenant_id: uuid.UUID, cid: uuid.UUID, body: PublishIn, writer: TenantWriter,
+                   db: DB) -> dict:
+    """Publish the student platform and sales page (ADR-045). It waits for your approval,
+    unless the course's Launch is active and allows site publishing."""
+    from .runs import CommandError, create_run
+
+    c = _course(db, tenant_id, cid)
+    if c.status != "ready":
+        raise HTTPException(409, "this course didn't pass its checks")
+    la = db.get(Launch, c.launch_id) if c.launch_id else None
+    try:
+        run, _ = create_run(db, tenant_id, writer.user_id, {
+            "type": "BUILD", "objective": f"Publish course: {c.title}"[:300],
+            "idempotency_key": f"publish-{body.idempotency_key}", "business_id": c.business_id},
+            first_task={"kind": "course_publish", "title": f"Publish course: {c.title}"[:200],
+                        "tool_scope": [], "input": {"course_id": str(c.id)}},
+            launch_id=la.id if la is not None and la.status == "active" else None)
+    except CommandError as e:
+        db.rollback()
+        raise HTTPException(e.status, {"code": e.code, "message": e.message}) from None
+    db.commit()
+    return {"run_id": str(run.id)}
+
+
+def published(db, tenant_id, cid) -> dict | None:
+    from .models import RunEvent
+    ev = db.scalar(select(RunEvent.data).where(
+        RunEvent.tenant_id == tenant_id, RunEvent.type == "course.published",
+        RunEvent.data["course_id"].as_string() == str(cid)).order_by(RunEvent.id.desc()).limit(1))
+    return ev

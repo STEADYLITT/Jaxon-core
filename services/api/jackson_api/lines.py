@@ -96,7 +96,7 @@ LINES: list[Line] = [
           "AI video/voice only where Steady approved it, labeled as AI."],
          ("course", "lesson", "curriculum", "student platform", "academy", "university",
           "blueprint", "education", "teach"),
-         ["models", "video", "email", "whop", "voice"],
+         ["models", "video", "email", "whop", "voice", "hosting"],
          [],
          _ch(social=("instagram", "tiktok", "youtube_shorts"), email=("course-leads",)),
          budget_monthly_cents=15_000,
@@ -503,8 +503,11 @@ def kpis(db: Session, tenant_id, key: str) -> list[dict]:  # noqa: C901 - one br
             SiteProject.tenant_id == tenant_id))
         live = count(select(func.count()).select_from(SiteProject).where(
             SiteProject.tenant_id == tenant_id, SiteProject.status == "live"))
+        hosted = count(select(func.count()).select_from(SiteProject).where(
+            SiteProject.tenant_id == tenant_id, SiteProject.status == "live",
+            SiteProject.live_url.like("https://%")))
         return [_kpi("Sites & apps", sites, "", "sites"), _kpi("Live", live, "", "sites"),
-                _kpi("Hosting", None, "", "", "website hosting isn't built yet")]
+                _kpi("Published on real hosting", hosted, "", "sites (https live URL)")]
     if key == "clips":
         return [_kpi("Clips posted this month", posts(channels=("tiktok", "youtube_shorts",
                                                                  "instagram")), "",

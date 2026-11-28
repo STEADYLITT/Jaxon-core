@@ -45,6 +45,8 @@ def _channel_ok(launch: Launch, action: Action) -> tuple[bool, str]:
     if c == Category.PRODUCTION_CHANGE:
         if action.channel == "shopify_publish" and ch.get("shopify_publish"):
             return True, "Shopify publishing is allowed by the launch"
+        if action.channel == "site_publish" and ch.get("site_publish"):
+            return True, "publishing the launch's site is allowed by the launch"
         return False, "this production change isn't one of the launch's channels"
     if c == Category.PUBLIC_POST:
         accounts = (ch.get("social") or {}).get("accounts") or []

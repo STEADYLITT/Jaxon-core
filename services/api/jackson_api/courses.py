@@ -364,3 +364,47 @@ def build_handler(ctx):
                        "passed": passed, "mode": "mock" if mock else "live",
                        "model_calls": calls,
                        "problems": platform_checks["problems"] + sales_checks["problems"]})
+
+
+def publish_handler(ctx):
+    """Publish a course's student platform and sales page (ADR-045). A PRODUCTION change:
+    the owner approves it (or a Launch whose channels allow site publishing covers it).
+    Only a course that passed every check, built by the live model, can go out."""
+    import uuid
+
+    from .connectors import hosting
+    from .models import Course, RunEvent
+    from .policy import Action, Category
+    from .routes_whop import checkout_url
+    from .worker import TaskResult
+
+    cid = uuid.UUID(str((ctx.input or {})["course_id"]))
+    with ctx.db_session() as db:
+        c = db.get(Course, cid)
+        if c is None or c.tenant_id != ctx.tenant_id:
+            raise NonRetryableError("course not found")
+        if c.status != "ready":
+            raise NonRetryableError("this course didn't pass its checks: fix it and rebuild")
+        if c.mode == "mock":
+            raise NonRetryableError("this course was drafted by the MOCK model: rebuild it with "
+                                    "ANTHROPIC_API_KEY before publishing")
+        title, platform = c.title, dict(c.platform_files)
+        url = checkout_url(db, ctx.tenant_id, c.id)
+        sales = {k: with_checkout(v, url) for k, v in c.sales_files.items()}
+        db.rollback()
+    ctx.authorize(Action(Category.PRODUCTION_CHANGE, f"publish course '{title[:80]}' "
+                         "(student platform + sales page)", channel="site_publish"))
+    h = hosting.host()
+    slug = f"{title[:40]}-{str(cid)[:6]}"
+    site = h.publish(hosting.site_name(f"{slug}-learn"), platform)
+    page = h.publish(hosting.site_name(slug), sales)
+    out = {"course_id": str(cid), "platform_url": site["url"], "sales_url": page["url"],
+           "host": h.backend, "checkout_live": bool(url)}
+    with ctx.db_session() as db:
+        db.add(RunEvent(tenant_id=ctx.tenant_id, run_id=ctx.run_id, type="course.published",
+                        data=out))
+        db.commit()
+    out["summary"] = (f"Published '{title[:60]}' on {h.backend}: {page['url']}"
+                      if h.backend != "mock" else
+                      f"[MOCK] '{title[:60]}' not published: set NETLIFY_AUTH_TOKEN")
+    return TaskResult(out)

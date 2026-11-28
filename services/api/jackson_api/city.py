@@ -34,6 +34,8 @@ BUILT_IN = {
     "launch_propose": ("jaxon", None, "Launch Planner", "proposes launches for approval"),
     "course_build": ("courses", "design", "Course Builder",
                      "builds course drafts: outline, lessons, student platform, sales page"),
+    "course_publish": ("courses", "launch", "Course Publisher",
+                       "publishes approved courses (student platform + sales page)"),
     "voice_generate": ("courses", "lessons", "Voice Narrator",
                        "narrates lessons and ad scripts with AI voice (cost approved first)"),
     "whop_sync": ("courses", "launch", "Sales Recorder",

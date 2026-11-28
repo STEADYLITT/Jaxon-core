@@ -30,9 +30,10 @@ How to paste a variable into Railway (same every time):
 | 7 | **Apify** (steps below) | `APIFY_TOKEN` | your Apify account and plan |
 | 8 | **Discord** (steps below) | `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID`, `DISCORD_MEMBER_ROLE_ID`, `DISCORD_ANNOUNCE_CHANNEL_ID` | your server, member count and the member role's name |
 | 9 | **Telegram** (steps below) | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | your bot and group name |
+| 10 | **Netlify** (steps below) | `NETLIFY_AUTH_TOKEN` | your Netlify account name |
 | — | **Claude** | `ANTHROPIC_API_KEY` (already set) | how many models your key can use (free call) |
 
-Never needed yet: website hosting and SMS/calls aren't built, so they always show MOCK. File storage (S3) is optional, because files live on the Railway disk.
+Not built yet: SMS/calls, so it always shows MOCK. File storage (S3) is optional, because files live on the Railway disk.
 
 ---
 
@@ -306,3 +307,38 @@ fal.ai keeps generated files on its own servers. Post a clip within a few days o
 | `DISCORD_ANNOUNCE_CHANNEL_ID` | optional: where announcements go |
 | `TELEGRAM_BOT_TOKEN` | the BotFather token (secret, seal it) |
 | `TELEGRAM_CHAT_ID` | your group's id (starts with -100) |
+
+---
+
+## Website hosting via Netlify (sites and student platforms)
+
+**Why Netlify:**
+- Jackson's sites and course pages are plain HTML, and Netlify publishes that in one call.
+- Every site gets HTTPS straight away, and connecting your own domain is a single setting.
+- The free plan has a hard limit and never bills you by surprise.
+- Cloudflare Pages needs its command-line tool for uploads. Vercel adds a build step these pages don't need.
+
+**What Jackson does:**
+- **Websites:** when you approve a site launch, the tested version is published to its own Netlify site on your domain. The previous version is kept so you can roll back.
+- **Courses:**
+  - `POST /tenants/{t}/courses/{id}/publish` publishes two sites: the student platform (`…-learn.netlify.app`) and the sales page.
+  - The sales page shows the real Whop **Enroll now** link if you linked a plan.
+  - Only a course that passed every check and was written by the real model can be published.
+- **Always approved first:** every publish waits in **Approvals**. The one exception is a Launch you approved with site publishing turned on (`channels.site_publish`).
+- **Limits on the free plan:**
+  - 3 deploys a minute, 100 a day.
+  - If the account runs out of monthly credits, every site on it pauses until the next month.
+
+### Click steps
+1. Sign up or sign in at **app.netlify.com** (free plan is fine).
+2. Click your avatar → **User settings** → **Applications** → **Personal access tokens** → **New access token**.
+3. Name it "Jackson", pick an expiry (or "No expiration"), click **Generate token**, and copy it. It's shown only once.
+4. In Railway, add `NETLIFY_AUTH_TOKEN` and **Seal** it.
+5. After the redeploy: **Connections → Website hosting → Test**. It shows your Netlify account.
+6. **Your own domain:** when a site launches on `yourdomain.com`, Netlify sets that as the site's domain. At your domain registrar, point the domain to Netlify. Netlify's **Domain management** page for the site shows the exact DNS records to add.
+
+### Variables
+| Name | What to paste |
+|---|---|
+| `NETLIFY_AUTH_TOKEN` | the personal access token (secret, seal it) |
+| `NETLIFY_SITE_PREFIX` | optional: the start of every Netlify site name (default `jackson`) |
