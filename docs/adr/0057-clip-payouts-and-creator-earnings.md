@@ -30,3 +30,9 @@ There is no single API for these. What every one of them does provide is a state
 Either:
 - set `CLIP_PAYOUTS_SOURCE=import` and upload the campaign's CSV statement, or
 - point it at the https feed your clip programme or agency gives you, plus `CLIP_PAYOUTS_TOKEN` if the feed needs one.
+
+## Creator earnings (follow-up PR)
+- **Source.** `CREATOR_EARNINGS_SOURCE` (an https feed or `import`), with optional `CREATOR_EARNINGS_TOKEN`. Same rules as clip payouts.
+- **Imports.** Statements are uploaded at `POST /payouts/creators/import` or pulled with `/payouts/creators/pull`. Each row is one creator's payout: creator name, platform (Fanvue, OnlyFans, …), net amount, date, transaction id.
+- **Task.** `creator_earnings_import`, done by the "Earnings Recorder" on the Creator Agency's Earnings floor. The Creator Agency building is therefore staffed; the City tests now use Agency as the unstaffed example.
+- **KPIs.** "Creator earnings this month" (sum) and "Creators paid this month" (distinct creators with money). Both come only from recorded statements.

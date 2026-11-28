@@ -153,7 +153,7 @@ def test_only_real_agents_are_registered(client, world, maker, owner_db):
     depts = {d.key: d.id for d in owner_db.scalars(select(Department).where(
         Department.tenant_id == world.tenant_a))}
     # lines with no active agent yet (only proposed ones) are not staffed: dark lots
-    assert depts["legal"] not in staffed and depts["creators"] not in staffed
+    assert depts["legal"] not in staffed and depts["agency"] not in staffed
     assert depts["marketing"] in staffed and depts["ecommerce"] in staffed
 
 
