@@ -446,7 +446,8 @@ def test_glass_hud_fonts_are_self_hosted_and_allowed(client):
     r = client.get("/city")
     assert "font-src 'self'" in r.headers["content-security-policy"]
     fonts = sorted(p.name for p in (CITY / "assets").glob("*.woff2"))
-    assert any("space-grotesk" in f for f in fonts) and any("montserrat" in f for f in fonts)
+    assert any("spacegrotesk" in f.lower() for f in fonts)
+    assert any("montserrat" in f.lower() for f in fonts)
     for f in fonts:
         a = client.get(f"/city/assets/{f}")
         assert a.status_code == 200 and a.headers["content-type"] == "font/woff2"
