@@ -1186,5 +1186,7 @@ class WhopMember(Base):
     discord_id: Mapped[str | None] = mapped_column(String(64))
     telegram_id: Mapped[str | None] = mapped_column(String(64))
     period_end: Mapped[str | None] = mapped_column(String(40))
+    discord_synced: Mapped[str | None] = mapped_column(String(16))  # granted / revoked
+    telegram_synced: Mapped[str | None] = mapped_column(String(16))  # revoked
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = _updated()

@@ -275,9 +275,8 @@ LINES: list[Line] = [
          ["Roles only from real payment records.", "DMs only from approved templates."],
          ("discord", "telegram", "community", "members", "role sync", "renewal",
           "onboarding"),
-         ["models", "whop"],
-         [("DISCORD_BOT_TOKEN", "Discord role sync"),
-          ("TELEGRAM_BOT_TOKEN", "Telegram access")],
+         ["models", "whop", "discord", "telegram"],
+         [],
          _ch(note="role sync and DMs run inside an approved scope"),
          budget_monthly_cents=1_000,
          proposed=[_spec("community-manager", "community: onboarding and renewals",
@@ -425,8 +424,9 @@ def kpis(db: Session, tenant_id, key: str) -> list[dict]:  # noqa: C901 - one br
         if scope is not None:
             q = q.where(WhopMember.business_id.in_(scope))
         for col, want in where.items():
-            q = q.where(getattr(WhopMember, col).is_not(None) if want else
-                        getattr(WhopMember, col).is_(None))
+            c = getattr(WhopMember, col)
+            q = q.where(c == want if isinstance(want, str) else
+                        c.is_not(None) if want else c.is_(None))
         return count(q)
 
     def posts(statuses=("published",), channels=None, since=month, scope=biz):
@@ -535,6 +535,8 @@ def kpis(db: Session, tenant_id, key: str) -> list[dict]:  # noqa: C901 - one br
         return [_kpi("Paying members (Whop, all businesses)", members(scope=None), "",
                      "whop_members", "no Whop members reported yet"),
                 _kpi("Members with Discord linked", members(scope=None, discord_id=True), "",
+                     "whop_members", "no Whop members reported yet"),
+                _kpi("Discord roles granted", members(scope=None, discord_synced="granted"), "",
                      "whop_members", "no Whop members reported yet"),
                 _kpi("Renewals this month", None, "", "",
                      "counted once Whop has reported a full month of payments")]

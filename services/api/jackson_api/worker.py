@@ -140,6 +140,8 @@ Handler = Callable[[TaskContext], TaskResult]
 
 def default_handlers() -> dict[str, Handler]:
     from .agent_handlers import agent_handler, eval_handler, factory_handler
+    from .community import announce_handler as community_announce
+    from .community import sync_handler as community_sync
     from .content import generate_handler as content_generate
     from .content import publish_handler as content_publish
     from .content import video_handler as content_video
@@ -166,7 +168,8 @@ def default_handlers() -> dict[str, Handler]:
             "outreach_prepare": outreach_prepare, "outreach_send": outreach_send,
             "daily_report": report_handler, "launch_propose": launch_propose,
             "course_build": course_build, "whop_sync": whop_sync,
-            "voice_generate": voice_generate, "web_research": web_research}
+            "voice_generate": voice_generate, "web_research": web_research,
+            "community_sync": community_sync, "community_announce": community_announce}
 
 
 class ModelBudgetExhausted(NonRetryableError):

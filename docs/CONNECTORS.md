@@ -28,6 +28,8 @@ How to paste a variable into Railway (same every time):
 | 5 | **Whop** (steps below) | `WHOP_API_KEY`, then `WHOP_WEBHOOK_SECRET` | your Whop account id and name (read-only) |
 | 6 | **ElevenLabs** (steps below) | `ELEVENLABS_API_KEY` | your plan and characters left |
 | 7 | **Apify** (steps below) | `APIFY_TOKEN` | your Apify account and plan |
+| 8 | **Discord** (steps below) | `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID`, `DISCORD_MEMBER_ROLE_ID`, `DISCORD_ANNOUNCE_CHANNEL_ID` | your server, member count and the member role's name |
+| 9 | **Telegram** (steps below) | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | your bot and group name |
 | — | **Claude** | `ANTHROPIC_API_KEY` (already set) | how many models your key can use (free call) |
 
 Never needed yet: website hosting and SMS/calls aren't built, so they always show MOCK. File storage (S3) is optional, because files live on the Railway disk.
@@ -253,3 +255,54 @@ fal.ai keeps generated files on its own servers. Post a clip within a few days o
 | Name | What to paste |
 |---|---|
 | `APIFY_TOKEN` | the personal API token (secret, seal it) |
+
+---
+
+## Discord and Telegram (member access from Whop, announcements)
+
+**What Jackson does:**
+- **Discord role:**
+  - Anyone Whop says has access (active, trialing or completed) and who linked Discord on Whop gets your member role.
+  - Anyone whose membership ended loses it.
+  - It runs after every Whop sync, or on demand (`POST /tenants/{t}/community/sync`). It only touches members whose access changed.
+- **Telegram:**
+  - Members who lose access are removed from your group. They can rejoin if they pay again.
+  - A paying member gets a one-person invite link that expires in 48 hours (`POST /tenants/{t}/community/telegram/invite`).
+- **Announcements** (`POST /tenants/{t}/community/announce`):
+  - Checked for income promises and fake claims first.
+  - Then each one waits for your approval in **Approvals**. A Launch whose social accounts include `discord` or `telegram` also counts.
+- Roles only ever come from real Whop memberships.
+
+### Discord click steps
+1. Go to **discord.com/developers/applications** → **New Application** → name it "Jackson".
+2. Open the **Bot** tab → **Reset Token** → copy it. That's `DISCORD_BOT_TOKEN`; seal it in Railway.
+3. Open **OAuth2** → **URL Generator**:
+   - Tick **bot**.
+   - Under permissions, tick **Manage Roles**, **View Channels** and **Send Messages**.
+   - Open the generated link and add the bot to your server.
+4. In your server: **Server Settings** → **Roles** → drag the **Jackson** role **above** your member role. A bot can only give roles below its own.
+5. Copy the ids:
+   - Turn on Discord **User Settings** → **Advanced** → **Developer Mode**.
+   - Right-click the server → **Copy Server ID** → `DISCORD_GUILD_ID`.
+   - Right-click the member role → **Copy Role ID** → `DISCORD_MEMBER_ROLE_ID`.
+   - Right-click your announcements channel → **Copy Channel ID** → `DISCORD_ANNOUNCE_CHANNEL_ID`.
+6. **Connections → Discord → Test**. It shows the server, the member count and the role's name.
+
+### Telegram click steps
+1. In Telegram, message **@BotFather** → `/newbot` → follow the prompts. Copy the token it gives you: that's `TELEGRAM_BOT_TOKEN`. Seal it.
+2. Add the bot to your group, then make it an **admin** with **Ban users** and **Invite users via link**.
+3. Get the group's id:
+   - Post any message in the group.
+   - Open `https://api.telegram.org/bot<token>/getUpdates` in your browser.
+   - Copy `chat.id`. It starts with `-100`. That's `TELEGRAM_CHAT_ID`.
+4. **Connections → Telegram → Test**. It shows the bot and the group name.
+
+### Variables
+| Name | What to paste |
+|---|---|
+| `DISCORD_BOT_TOKEN` | the bot token (secret, seal it) |
+| `DISCORD_GUILD_ID` | your server id |
+| `DISCORD_MEMBER_ROLE_ID` | the role paying members get |
+| `DISCORD_ANNOUNCE_CHANNEL_ID` | optional: where announcements go |
+| `TELEGRAM_BOT_TOKEN` | the BotFather token (secret, seal it) |
+| `TELEGRAM_CHAT_ID` | your group's id (starts with -100) |

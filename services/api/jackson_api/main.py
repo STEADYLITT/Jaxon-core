@@ -16,6 +16,7 @@ from .routes import router
 from .routes_agents import router as agents_router
 from .routes_browser import router as browser_router
 from .routes_city import router as city_router
+from .routes_community import router as community_router
 from .routes_connections import router as connections_router
 from .routes_content import router as content_router
 from .routes_courses import router as courses_router
@@ -59,6 +60,7 @@ app.include_router(courses_router)
 app.include_router(whop_router)
 app.include_router(voice_router)
 app.include_router(web_research_router)
+app.include_router(community_router)
 app.include_router(sites_router)
 app.include_router(city_router)
 app.include_router(connections_router)
