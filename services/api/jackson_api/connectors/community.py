@@ -14,6 +14,13 @@ Telegram (core.telegram.org/bots/api):
 - https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/<method> -> {ok, result | description}
 - getMe (test), getChat, sendMessage {chat_id, text}
 - createChatInviteLink {chat_id, member_limit: 1, expire_date} -> one-person invite link
+- auto-invite (ADR-049): a Bot API bot can't add a user to a group by itself, so Jackson
+  uses a join-request link (createChatInviteLink creates_join_request=true) plus a webhook
+  (setWebhook allowed_updates=["chat_join_request"], secret_token checked on every call).
+  When someone taps the link, Telegram sends chat_join_request {chat, from, user_chat_id};
+  Jackson approves it (approveChatJoinRequest) only if that Telegram id belongs to a Whop
+  member with access, otherwise declines it (declineChatJoinRequest) and tells them why
+  (sendMessage to user_chat_id, allowed while the request is open)
 - banChatMember + unbanChatMember {only_if_banned: true} removes a member who can rejoin
   later if they pay again
 
@@ -114,6 +121,26 @@ class Telegram:
         res = self._call("createChatInviteLink", chat_id=self.chat, name=name[:32],
                          member_limit=1, expire_date=int(time.time()) + hours * 3600)
         return str(res.get("invite_link") or "")
+
+    def join_request_link(self, name: str) -> str:
+        """A reusable link whose joins wait for the bot's yes/no (auto-invite, ADR-049)."""
+        res = self._call("createChatInviteLink", chat_id=self.chat, name=name[:32],
+                         creates_join_request=True)
+        return str(res.get("invite_link") or "")
+
+    def set_webhook(self, url: str, secret: str) -> None:
+        self._call("setWebhook", url=url, secret_token=secret,
+                   allowed_updates=["chat_join_request"], drop_pending_updates=False)
+
+    def approve(self, user_id: int) -> None:
+        self._call("approveChatJoinRequest", chat_id=self.chat, user_id=int(user_id))
+
+    def decline(self, user_id: int) -> None:
+        self._call("declineChatJoinRequest", chat_id=self.chat, user_id=int(user_id))
+
+    def tell(self, user_chat_id: int, text: str) -> None:
+        """Message the person who asked to join (allowed while their request is open)."""
+        self._call("sendMessage", chat_id=int(user_chat_id), text=text[:4096])
 
     def remove(self, user_id: str) -> None:
         self._call("banChatMember", chat_id=self.chat, user_id=int(user_id))

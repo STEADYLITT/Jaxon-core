@@ -35,7 +35,7 @@ SECRET_VARS = ("ANTHROPIC_API_KEY", "SHOPIFY_CLIENT_SECRET", "SHOPIFY_ADMIN_API_
                "CLERK_SECRET_KEY", "WHOP_API_KEY", "WHOP_WEBHOOK_SECRET",
                "ELEVENLABS_API_KEY", "APIFY_TOKEN",
                "DISCORD_BOT_TOKEN", "TELEGRAM_BOT_TOKEN",
-               "NETLIFY_AUTH_TOKEN", "BATCHDATA_API_TOKEN",
+               "NETLIFY_AUTH_TOKEN", "BATCHDATA_API_TOKEN", "TELEGRAM_WEBHOOK_SECRET",
                "ALPACA_PAPER_SECRET_KEY",
                "META_ACCESS_TOKEN", "TIKTOK_ACCESS_TOKEN")
 
@@ -314,7 +314,8 @@ CONNECTORS = [
               ["DISCORD_BOT_TOKEN", "DISCORD_GUILD_ID", "DISCORD_MEMBER_ROLE_ID"],
               optional=["DISCORD_ANNOUNCE_CHANNEL_ID"], test=test_discord),
     Connector("telegram", "Telegram (group access, announcements)",
-              ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"], test=test_telegram),
+              ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"], optional=["TELEGRAM_WEBHOOK_SECRET"],
+              test=test_telegram),
     Connector("realestate", "Real-estate data (BatchData)",
               ["BATCHDATA_API_TOKEN", "BATCHDATA_CENTS_PER_RECORD"], test=test_batchdata),
     Connector("broker", "Trading: Alpaca PAPER + market data",

@@ -158,3 +158,50 @@ def test_not_connected(client, world, alice, monkeypatch):
     r = client.post(f"/tenants/{world.tenant_a}/community/sync", headers=alice,
                     json={"idempotency_key": uuid.uuid4().hex})
     assert r.status_code == 409 and "DISCORD_BOT_TOKEN" in r.text
+
+
+# --- Auto-invite (ADR-049) ----------------------------------------------------------------------
+
+SECRET = "tg-hook-" + "x" * 24
+
+
+def join(client, world, uid, chat=CHAT, secret=SECRET):
+    return client.post(f"/webhooks/telegram/{world.tenant_a}",
+                       headers={"X-Telegram-Bot-Api-Secret-Token": secret},
+                       json={"update_id": 1, "chat_join_request": {
+                           "chat": {"id": int(chat), "type": "supergroup"},
+                           "from": {"id": uid, "is_bot": False, "first_name": "S"},
+                           "user_chat_id": uid, "date": 1}})
+
+
+def test_setup_registers_the_webhook_and_a_join_request_link(client, world, alice, live,
+                                                             monkeypatch):
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET", SECRET)
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://jackson.example.com")
+    r = client.post(f"/tenants/{world.tenant_a}/community/telegram/setup", headers=alice)
+    assert r.status_code == 201, r.text
+    hook = live.tg("setWebhook")[0]
+    assert hook["url"] == f"https://jackson.example.com/webhooks/telegram/{world.tenant_a}"
+    assert hook["secret_token"] == SECRET and hook["allowed_updates"] == ["chat_join_request"]
+    assert live.tg("createChatInviteLink")[0]["creates_join_request"] is True
+    assert SECRET not in r.text
+
+
+def test_join_requests_paying_members_in_everyone_else_declined(client, world, owner_db,
+                                                                 live, monkeypatch):
+    monkeypatch.setenv("TELEGRAM_WEBHOOK_SECRET", SECRET)
+    members(owner_db, world)  # mem_off (expired) has telegram 333
+    owner_db.add(WhopMember(tenant_id=world.tenant_a, membership_id="mem_tg", status="active",
+                            telegram_id="444"))
+    owner_db.commit()
+    assert join(client, world, 444, secret="wrong" * 5).status_code == 401
+    assert join(client, world, 444).json()["decision"] == "approved"
+    assert live.tg("approveChatJoinRequest")[0] == {"chat_id": CHAT, "user_id": 444}
+    assert join(client, world, 333).json()["decision"] == "declined"  # membership expired
+    assert join(client, world, 999).json()["decision"] == "declined"  # not a member
+    assert [d["user_id"] for d in live.tg("declineChatJoinRequest")] == [333, 999]
+    assert "link your Telegram" in live.tg("sendMessage")[0]["text"]
+    assert join(client, world, 444, chat="-100999").json()["ignored"] == "another chat"
+    owner_db.expire_all()
+    assert owner_db.scalar(select(WhopMember.telegram_synced).where(
+        WhopMember.membership_id == "mem_tg")) == "joined"
