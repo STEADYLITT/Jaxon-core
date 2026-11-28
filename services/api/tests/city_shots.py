@@ -36,7 +36,8 @@ def test_shots(client, world, make_token, maker, owner_db, drain, where):
     seed(owner_db, world, maker)
     kw = {"device": "iPhone 15"} if where == "phone" else {"viewport": {"width": 1440,
                                                                          "height": 900}}
-    with city(client, world, make_token(world.alice), **kw) as (page, problems):
+    # ?fxslow: effects last 8x longer so the slow software renderer can photograph them
+    with city(client, world, make_token(world.alice), query="?fxslow", **kw) as (page, problems):
         page.wait_for_selector(".label.ceo", state="attached", timeout=30_000)
         page.wait_for_timeout(5000)  # let the intro / camera settle
         page.screenshot(path=str(OUT / f"{where}-idle.png"))
@@ -45,9 +46,11 @@ def test_shots(client, world, make_token, maker, owner_db, drain, where):
                         json={"type": "PLAN", "objective": "AI trading course is trending, "
                               "build it", "route": True, "idempotency_key": uuid.uuid4().hex})
         assert r.status_code == 201, r.text
-        Worker(maker, retry_base_seconds=0).run_once()
-        until(page, "window.__city && (window.__city.envelopes > 0 || window.__city.beams > 0)",
-              timeout=20_000)
-        page.wait_for_timeout(500)
-        page.screenshot(path=str(OUT / f"{where}-event.png"))
+        w = Worker(maker, retry_base_seconds=0)
+        w.run_once()  # Jaxon plans and routes (envelopes fly)
+        w.run_once()  # the department does the work (a beam rises, a report flies back)
+        until(page, "window.__city && window.__city.beams > 0", timeout=30_000)
+        for k in range(4):  # a short burst while the effects are in the air
+            page.screenshot(path=str(OUT / f"{where}-event{'' if k == 0 else k}.png"))
+            page.wait_for_timeout(1500)
         assert not [p for p in problems if "WebGL" not in p], problems

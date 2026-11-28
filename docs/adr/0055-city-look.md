@@ -28,7 +28,13 @@ The **scenery** may move and glow when nothing is happening: sky, stars, light, 
    - **CEO tower.** The tallest tower, in gold-trimmed glass, with a rotating crown of light.
    - **Jaxon orb.** A core, a rotating wireframe shell and three orbiting particle rings. Brightness, spin and pulse come from the real events per minute.
    - **Reflections.** Glass reflects a small cube map made from coloured light panels. Nothing is fetched over the network.
-5. Later parts: architecture and the orb, life effects, the camera intro and interiors, and the HUD.
+5. **Life** (`scene/Life.tsx`). Every effect is caused by a real event:
+   - **Envelopes.** Each envelope rides a low-poly courier drone: emissive rotors, the card hanging below, and a light trail on desktop. Approvals carry a red wax-seal glow and land on the CEO tower. Flight time is 2.6 s on an eased arc.
+   - **Task done or failed.** A green or red light column (core plus halo) rises from the department's roof, with a shockwave ring at its base. It lasts 2.2 s.
+   - **Revenue.** A gold beam and a burst of 36 instanced gold coins along a fixed spiral (no randomness).
+   - **Ring road.** A glowing two-lane gold and cyan track. Above it, the three newest real ticker events float as holographic text (desktop).
+   - **Debugging hooks.** `__city.flown` counts the envelopes sent, so tests don't race a short flight. `?fxslow` stretches effect durations 8× for screenshots on a slow software renderer.
+6. Later parts: architecture and the orb, life effects, the camera intro and interiors, and the HUD.
 
 ## Proof
 `tests/city_shots.py` takes desktop (1440×900) and iPhone 15 screenshots, idle and right after a real command. They are saved under `docs/city-shots/<part>/`.

@@ -3,8 +3,14 @@ import { CEO_TOP, anchor, roof, type Vec3 } from "./layout";
 import type { CityEvent, Snapshot } from "./types";
 
 export const MAX_ENVELOPES = 60;
-export const ENVELOPE_MS = 1800;
-export const BEAM_MS = 1600;
+export const ENVELOPE_MS = 2600;
+export const BEAM_MS = 2200;
+/** `?fxslow` stretches every effect 8x so a slow screenshot renderer can capture it.
+ *  Effects still come only from real events; only their speed changes. */
+const SLOW = typeof location !== "undefined" && new URLSearchParams(location.search).has("fxslow")
+  ? 8 : 1;
+export const envelopeMs = () => ENVELOPE_MS * SLOW;
+export const beamMs = () => BEAM_MS * SLOW;
 
 export const ENVELOPE_COLOR: Record<string, string> = {
   command: "#00e5ff", task: "#ff3df2", report: "#39ff88", failed: "#ff3355",
@@ -56,7 +62,7 @@ export function effectsFor(ev: CityEvent, s: Snapshot, now: number): Effect[] {
 
 /** At most MAX_ENVELOPES fly at once; the rest wait their turn (FIFO). */
 export function admit(active: Effect[], queue: Effect[], now: number): { active: Effect[]; queue: Effect[] } {
-  const alive = active.filter((e) => now - e.start < (e.kind === "beam" ? BEAM_MS : ENVELOPE_MS));
+  const alive = active.filter((e) => now - e.start < (e.kind === "beam" ? beamMs() : envelopeMs()));
   if (alive.length === active.length && !queue.length) return { active, queue };
   const q = [...queue];
   let flying = alive.filter((e) => e.kind === "envelope").length;
