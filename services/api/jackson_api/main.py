@@ -30,6 +30,7 @@ from .routes_runs import router as runs_router
 from .routes_shop import router as shop_router
 from .routes_sites import router as sites_router
 from .routes_tools import router as tools_router
+from .routes_voice import router as voice_router
 from .routes_whop import router as whop_router
 from .security import SecurityMiddleware, assert_production_ready, is_production
 from .settings import load_settings
@@ -55,6 +56,7 @@ app.include_router(launches_router)
 app.include_router(lines_router)
 app.include_router(courses_router)
 app.include_router(whop_router)
+app.include_router(voice_router)
 app.include_router(sites_router)
 app.include_router(city_router)
 app.include_router(connections_router)

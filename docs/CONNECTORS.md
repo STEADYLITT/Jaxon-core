@@ -26,6 +26,7 @@ How to paste a variable into Railway (same every time):
 | 3 | **Resend** (steps below) | `RESEND_API_KEY`, `RESEND_FROM`, then `RESEND_WEBHOOK_SECRET` | sends one test email **to you only** |
 | 4 | **fal.ai** (steps below) | `FAL_KEY` | your credit balance (or "key accepted") |
 | 5 | **Whop** (steps below) | `WHOP_API_KEY`, then `WHOP_WEBHOOK_SECRET` | your Whop account id and name (read-only) |
+| 6 | **ElevenLabs** (steps below) | `ELEVENLABS_API_KEY` | your plan and characters left |
 | — | **Claude** | `ANTHROPIC_API_KEY` (already set) | how many models your key can use (free call) |
 
 Never needed yet: website hosting and SMS/calls aren't built, so they always show MOCK. File storage (S3) is optional, because files live on the Railway disk.
@@ -184,3 +185,34 @@ fal.ai keeps generated files on its own servers. Post a clip within a few days o
 |---|---|
 | `WHOP_API_KEY` | the Account API key (secret, seal it) |
 | `WHOP_WEBHOOK_SECRET` | the webhook's Secret, starting `ws_` (secret, seal it) |
+
+---
+
+## AI voice via ElevenLabs (lesson narration, ad voiceovers)
+
+**What Jackson does:** turns a course lesson's script, or an ad script you give it, into an mp3. The clip is labeled **AI voice**.
+- **Script check first:** income promises, "guaranteed", fake reviews and similar claims stop the request before anything costs money.
+- **Cost before generation:**
+  - Ask with `POST /tenants/{t}/voice`, giving a `voice_id` and either `text` or a `course_id` with `module` and `lesson`. You see the character count and price straight away.
+  - The request waits in **Approvals** for that exact amount. Inside an active Launch, the launch's budget counts as your approval.
+- **Price:** Multilingual v2 is about $0.08 per 1,000 characters. A 1,500-word lesson is about 9,000 characters, or about $0.72. Flash v2.5 is half that.
+  - Choose Flash with `ELEVENLABS_MODEL=eleven_flash_v2_5`.
+  - If your plan's price is different, set `ELEVENLABS_CENTS_PER_1K_CHARS`.
+- **Voices:** Jackson only uses voices already in your ElevenLabs library (`GET /tenants/{t}/voice/voices`). It never clones anyone's voice. ElevenLabs forbids cloning a real person without their consent.
+- A course drafted by the MOCK model is refused, so you never pay to narrate placeholder text.
+
+### Click steps
+1. Sign in at **elevenlabs.io** → left sidebar **Developers** → **API Keys** → **Create API key**. Name it "Jackson".
+2. Turn on **Restrict key**, then:
+   - **Text to Speech**: Access
+   - **Voices**: Read
+   - **User**: Read (lets the Test show your characters left)
+3. Copy the key, add it in Railway as `ELEVENLABS_API_KEY`, and **Seal** it.
+4. After the redeploy: **Connections → AI voice → Test**. It shows your plan and characters left.
+
+### Variables
+| Name | What to paste |
+|---|---|
+| `ELEVENLABS_API_KEY` | the API key (secret, seal it) |
+| `ELEVENLABS_MODEL` | optional: `eleven_flash_v2_5` for the cheaper, faster voice (default `eleven_multilingual_v2`) |
+| `ELEVENLABS_CENTS_PER_1K_CHARS` | optional: your plan's real price, if different |

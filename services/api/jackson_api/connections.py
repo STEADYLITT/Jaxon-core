@@ -12,6 +12,7 @@ one real, harmless call (ADR-038).
     Resend      one email to the signed-in owner's own address
     fal.ai      GET /v1/account/billing?expand=credits (balance)
     Whop        GET /api/v1/accounts/me (the account behind the key)
+    ElevenLabs  GET /v1/user/subscription (plan and characters left)
 """
 
 import os
@@ -23,7 +24,8 @@ import httpx
 
 SECRET_VARS = ("ANTHROPIC_API_KEY", "SHOPIFY_CLIENT_SECRET", "SHOPIFY_ADMIN_API_TOKEN",
                "UPLOADPOST_API_KEY", "RESEND_API_KEY", "RESEND_WEBHOOK_SECRET", "FAL_KEY",
-               "CLERK_SECRET_KEY", "WHOP_API_KEY", "WHOP_WEBHOOK_SECRET")
+               "CLERK_SECRET_KEY", "WHOP_API_KEY", "WHOP_WEBHOOK_SECRET",
+               "ELEVENLABS_API_KEY")
 
 
 def _new_client() -> httpx.Client:
@@ -152,6 +154,20 @@ def test_whop(ctx: dict) -> dict:
             "access": "reads members and sales; makes checkout links only for plans you name"}
 
 
+def test_elevenlabs(ctx: dict) -> dict:
+    from .connectors.voice import ElevenLabs
+
+    try:
+        el = ElevenLabs(os.environ["ELEVENLABS_API_KEY"], client=_new_client())
+        sub = el.subscription()
+    except Exception as e:  # noqa: BLE001
+        raise TestFailed(str(e)) from None
+    used, limit = sub.get("character_count"), sub.get("character_limit")
+    return {"plan": sub.get("tier"), "characters_used": used, "character_limit": limit,
+            "characters_left": (limit - used) if isinstance(used, int) and isinstance(
+                limit, int) else None, "model": el.model}
+
+
 # --- The list -----------------------------------------------------------------------------------
 
 @dataclass
@@ -178,6 +194,9 @@ CONNECTORS = [
               optional=["FAL_VIDEO_MODEL", "FAL_VIDEO_CENTS_PER_SECOND"], test=test_fal),
     Connector("whop", "Whop (checkout, members, sales)", ["WHOP_API_KEY"],
               optional=["WHOP_WEBHOOK_SECRET"], test=test_whop),
+    Connector("voice", "AI voice (ElevenLabs)", ["ELEVENLABS_API_KEY"],
+              optional=["ELEVENLABS_MODEL", "ELEVENLABS_CENTS_PER_1K_CHARS"],
+              test=test_elevenlabs),
     Connector("dns", "Domain checks (DNS)", ["SITE_DOMAIN_VERIFY"],
               note="set to dns when you launch a site on your own domain; no key needed"),
     Connector("hosting", "Website hosting", [],
