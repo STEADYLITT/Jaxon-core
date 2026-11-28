@@ -1,9 +1,8 @@
-import { Html, OrbitControls, PerformanceMonitor } from "@react-three/drei";
+import { OrbitControls, PerformanceMonitor } from "@react-three/drei";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { createContext, useContext, useMemo, useRef, useState, type RefObject } from "react";
+import { useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 
-import { BEAM_MS, ENVELOPE_MS, type Beam, type Envelope } from "../lib/effects";
 import {
   BUILDING_W, FLOOR_H, ORB, ORB_Y, RING_R, TOWER_H, TOWER_W, buildingHeight, buildingPos, facing,
   windowColor, windows, type Vec3,
@@ -12,24 +11,13 @@ import type { Mode } from "../lib/mode";
 import { seeded } from "../lib/rand";
 import { statusesAt, type PastStatus } from "../lib/replay";
 import { useCity, type Focus } from "../lib/store";
+import { BeamColumn, CoinBurst, EnvelopeFlight, RingRoad } from "./Life";
 import { CeoTower, HoloLot, JaxonOrb, Tower as DeptTower, crownH } from "./Architecture";
 import { Office } from "./Office";
 import { HAZE, Post, World } from "./World";
 import type { Department, Snapshot } from "../lib/types";
 
-// Labels portal into a stable overlay outside the canvas (drei's default target changes
-// when the canvas connects its events, which can drop an early label's content).
-const LabelLayer = createContext<RefObject<HTMLDivElement | null> | null>(null);
-
-function Label({ position, className, children }: {
-  position: [number, number, number]; className: string; children: React.ReactNode;
-}) {
-  const layer = useContext(LabelLayer);
-  return (
-    <Html position={position} center className={className} pointerEvents="none"
-      portal={layer as RefObject<HTMLElement> | undefined}>{children}</Html>
-  );
-}
+import { Label, LabelLayer } from "./labels";
 
 type Pose = { pos: Vec3; target: Vec3; key: string };
 
@@ -126,17 +114,6 @@ function Siren({ id, h }: { id: string; h: number }) {
 
 function pointer(on: boolean) {
   document.body.style.cursor = on ? "pointer" : "";
-}
-
-function RingRoad() {
-  return (
-    <group name="ring-road">
-      <mesh rotation-x={-Math.PI / 2} position-y={0.02}>
-        <ringGeometry args={[RING_R - 7.5, RING_R - 6.2, 96]} />
-        <meshBasicMaterial color="#ff3df2" transparent opacity={0.55} toneMapped={false} />
-      </mesh>
-    </group>
-  );
 }
 
 function Tower({ inbox }: { inbox: number }) {
@@ -266,67 +243,19 @@ function Windows({ s }: { s: Snapshot }) {
   );
 }
 
-function EnvelopeMesh({ e }: { e: Envelope }) {
-  const ref = useRef<THREE.Mesh>(null);
-  const { camera } = useThree();
-  const curve = useMemo(() => {
-    const a = new THREE.Vector3(...e.from), b = new THREE.Vector3(...e.to);
-    const mid = a.clone().lerp(b, 0.5);
-    mid.y = Math.max(a.y, b.y) + 2 + a.distanceTo(b) * 0.06; // stays in frame
-    return new THREE.QuadraticBezierCurve3(a, mid, b);
-  }, [e]);
-  useFrame(() => {
-    if (!ref.current) return;
-    const t = Math.min((performance.now() - e.start) / ENVELOPE_MS, 1);
-    ref.current.position.copy(curve.getPoint(t));
-    ref.current.quaternion.copy(camera.quaternion); // always face the viewer
-  });
-  return (
-    <mesh ref={ref} name="envelope" position={e.from}
-      onClick={(ev) => { ev.stopPropagation(); if (e.runId) useCity.getState().setFocus({ kind: "trace", runId: e.runId }); }}
-      onPointerOver={() => pointer(!!e.runId)} onPointerOut={() => pointer(false)}>
-      <planeGeometry args={[2.4, 1.6]} />
-      <meshBasicMaterial color={e.color} toneMapped={false} side={THREE.DoubleSide} />
-      {e.sealed && (
-        <mesh position-z={0.02}>
-          <circleGeometry args={[0.4, 20]} />
-          <meshBasicMaterial color="#8b0010" toneMapped={false} />
-        </mesh>
-      )}
-    </mesh>
-  );
-}
-
-const BEAM_H = 26;
-
-function BeamMesh({ b }: { b: Beam }) {
-  const group = useRef<THREE.Group>(null);
-  const mat = useRef<THREE.MeshBasicMaterial>(null);
-  useFrame(() => {
-    const t = Math.min((performance.now() - b.start) / BEAM_MS, 1);
-    if (group.current) group.current.scale.y = Math.min(0.05 + t * 3, 1); // shoots up fast
-    if (mat.current) mat.current.opacity = t < 0.5 ? 0.95 : 0.95 * (1 - (t - 0.5) * 2);
-  });
-  // rises from the roof: green success, red fail, gold revenue
-  return (
-    <group ref={group} position={b.at} name="beam">
-      <mesh position-y={BEAM_H / 2}>
-        <cylinderGeometry args={[0.45, 0.8, BEAM_H, 14, 1, true]} />
-        <meshBasicMaterial ref={mat} color={b.color} transparent opacity={0.95}
-          toneMapped={false} side={THREE.DoubleSide} depthWrite={false} />
-      </mesh>
-    </group>
-  );
-}
-
-function Effects() {
+function Effects({ light }: { light: boolean }) {
   const active = useCity((st) => st.active);
   useFrame(() => useCity.getState().step(performance.now()));
   return (
     <group>
       {active.map((e) => e.kind === "envelope"
-        ? <EnvelopeMesh key={`e${e.eventId}-${e.label}`} e={e} />
-        : <BeamMesh key={`b${e.eventId}`} b={e} />)}
+        ? <EnvelopeFlight key={`e${e.eventId}-${e.label}`} e={e} light={light} />
+        : (
+          <group key={`b${e.eventId}`}>
+            <BeamColumn b={e} />
+            {e.color === "#ffd166" && !light && <CoinBurst b={e} />}
+          </group>
+        ))}
     </group>
   );
 }
@@ -359,13 +288,13 @@ export default function City({ mode }: { mode: Mode }) {
       <World light={light} />
       {floor ? <Office deptId={floor.deptId} floorId={floor.floorId} layer={layer} /> : (
         <group name="city" onPointerMissed={() => useCity.getState().setFocus(null)}>
-          <RingRoad />
+          <RingRoad light={light} />
           <Tower inbox={s.inbox.approvals.length} />
           <CeoLabel inbox={s.inbox.approvals.length} />
           <Orb />
           {s.departments.map((d) => <Building key={d.id} d={d} n={n} />)}
           <Windows s={s} />
-          <Effects />
+          <Effects light={light} />
         </group>
       )}
       <OrbitControls makeDefault target={[0, 13, 0]} enablePan={false} minDistance={20} maxDistance={260}
