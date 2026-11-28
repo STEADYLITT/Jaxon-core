@@ -71,6 +71,8 @@ BUILT_IN = {
                             "records real clip views and payouts (never estimated)"),
     "creator_earnings_import": ("creators", "earnings", "Earnings Recorder",
                                 "records each signed creator's real earnings"),
+    "follower_snapshot": ("influencers", "growth", "Growth Tracker",
+                          "reads real follower counts from YouTube, Instagram and TikTok"),
     "clip_scout": ("clips", "scouting", "Clip Scout",
                    "finds clippable YouTube/Twitch moments from permitted creators"),
     "opportunity_research": ("rnd", "board", "Research Scout",

@@ -159,6 +159,7 @@ def default_handlers() -> dict[str, Handler]:
     from .crm import send_handler as outreach_send
     from .dashboard import report_handler
     from .factory_repos import push_handler as repo_push
+    from .followers import snapshot_handler as follower_snapshot
     from .marketplace_research import research_handler as marketplace_research
     from .payouts import import_handler as payouts_import
     from .planner import plan_handler  # lazy: planner imports TaskResult from here
@@ -193,6 +194,7 @@ def default_handlers() -> dict[str, Handler]:
             "repo_push": repo_push, "clip_scout": clip_scout,
             "marketplace_research": marketplace_research, "apex7_import": apex7_import,
             "clip_payouts_import": payouts_import, "creator_earnings_import": payouts_import,
+            "follower_snapshot": follower_snapshot,
             "futures_bars": futures_bars}
 
 
@@ -935,6 +937,13 @@ class Worker:
             db.commit()
             paused += pause_orphans(db)  # live ads whose Launch stopped or ended
             db.commit()
+        try:
+            from .followers import daily_sweep
+            with self.maker() as db:
+                if daily_sweep(db):
+                    db.commit()
+        except Exception:  # noqa: BLE001 - analytics must never stop the launch rules
+            log.exception("follower snapshot sweep error")
         for aid in paused:
             log.warning("ad %s paused: its launch is no longer active", aid)
         for lid, status in changed:
