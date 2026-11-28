@@ -143,12 +143,12 @@ def _csp() -> str:
     fapi = clerk_frontend_api(os.environ.get("CLERK_PUBLISHABLE_KEY"))
     if not fapi:
         return ("default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; "
-                "img-src 'self' data:; base-uri 'none'; form-action 'none'; "
+                "img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none'; "
                 "frame-ancestors 'none'")
     cf = "https://challenges.cloudflare.com"
     return (f"default-src 'none'; script-src 'self' https://{fapi} {cf}; "
             f"style-src 'self' 'unsafe-inline'; connect-src 'self' https://{fapi}; "
-            f"img-src 'self' data: https://img.clerk.com; frame-src {cf}; "
+            f"img-src 'self' data: https://img.clerk.com; font-src 'self'; frame-src {cf}; "
             "worker-src 'self' blob:; base-uri 'none'; form-action 'self'; "
             "frame-ancestors 'none'")
 

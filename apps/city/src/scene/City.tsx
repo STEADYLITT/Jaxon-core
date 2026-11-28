@@ -135,6 +135,7 @@ function CameraRig({ inOffice }: { inOffice: boolean }) {
     const c = controls as unknown as { target: THREE.Vector3; update(): void; autoRotate: boolean;
       autoRotateSpeed: number } | null;
     const t = tween.current;
+    (window as unknown as { __cityCamBusy?: boolean }).__cityCamBusy = !!t; // tests: settled?
     if (c) {
       const idle = performance.now() - lastInput.current > IDLE_DRIFT_MS;
       c.autoRotate = drift && !t && !focus && !inOffice && idle;
@@ -354,20 +355,30 @@ export default function City({ mode }: { mode: Mode }) {
   // A slow GPU drops to the light look on its own (no bloom, 1x pixels).
   const [slow, setSlow] = useState(false);
   const light = mode === "low" || slow;
+  // Adaptive resolution: PerformanceMonitor's factor (0..1) scales the pixel ratio inside a
+  // band, never above the screen's own. Desktop aims for 60 fps, phones (light) for 30.
+  const [factor, setFactor] = useState(0.5);
+  const maxDpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+  const dpr = Math.min(maxDpr, Math.round((light ? 0.75 + 0.75 * factor : 1 + factor) * 4) / 4);
+  useEffect(() => {
+    document.documentElement.dataset.cityRender = light ? "light" : "full";
+    document.documentElement.dataset.cityDpr = String(dpr);
+  }, [light, dpr]);
   if (!s) return null;
   const n = s.departments.length;
   return (
     <>
     <div ref={layer} className="label-layer" />
     <LabelLayer.Provider value={layer}>
-    <Canvas dpr={light ? 1 : [1, 2]} camera={{ position: [0, 38, 62], fov: 50, far: 1400 }}
-      gl={{ antialias: mode !== "low", powerPreference: "high-performance" }}
-      onCreated={() => { document.documentElement.dataset.cityRender = light ? "light" : "full"; }}>
+    <Canvas dpr={dpr} camera={{ position: [0, 38, 62], fov: 50, far: 1400 }}
+      gl={{ antialias: mode !== "low", powerPreference: "high-performance" }}>
       <color attach="background" args={["#07031a"]} />
       <AutoFog />
       <ambientLight intensity={0.22} />
       <pointLight position={ORB} intensity={60} color="#9b5cff" distance={80} />
-      <PerformanceMonitor onDecline={() => setSlow(true)} flipflops={1} />
+      <PerformanceMonitor bounds={(hz) => (light ? [26, Math.min(hz, 45)] : [Math.min(hz, 60) * 0.83, Math.min(hz, 60)])}
+        onChange={({ factor: f }) => setFactor(f)} onDecline={() => { if (!light) setSlow(true); }}
+        flipflops={3} />
       <CameraRig inOffice={!!floor} />
       <ScreenProbe />
       <World light={light} />

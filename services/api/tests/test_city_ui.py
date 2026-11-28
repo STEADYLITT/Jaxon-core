@@ -187,6 +187,7 @@ def test_production_bundle_has_no_fake_activity():
 def click3d(page, name, timeout=20_000):
     """Click a 3D object with the real mouse at its projected position."""
     until(page, f"window.__cityScreenOf && window.__cityScreenOf({name!r})", timeout)
+    until(page, "window.__cityCamBusy === false", timeout)  # not mid-flight
     x, y = page.evaluate(f"window.__cityScreenOf({name!r})")
     page.mouse.click(x, y)
 
@@ -436,4 +437,34 @@ def test_automation_and_reduced_motion_skip_the_intro(client, world, make_token,
     Worker(maker).city_heartbeat()
     with city(client, world, make_token(world.alice)) as (page, problems):
         until(page, "document.documentElement.dataset.cityIntro === 'off'")
+        assert problems == [], problems
+
+
+def test_glass_hud_fonts_are_self_hosted_and_allowed(client):
+    from jackson_api.routes_city import CITY
+
+    r = client.get("/city")
+    assert "font-src 'self'" in r.headers["content-security-policy"]
+    fonts = sorted(p.name for p in (CITY / "assets").glob("*.woff2"))
+    assert any("space-grotesk" in f for f in fonts) and any("montserrat" in f for f in fonts)
+    for f in fonts:
+        a = client.get(f"/city/assets/{f}")
+        assert a.status_code == 200 and a.headers["content-type"] == "font/woff2"
+
+
+def test_glass_hud_renders_with_its_fonts_and_adaptive_resolution(client, world, make_token,
+                                                                  maker, owner_db, drain):
+    Worker(maker).city_heartbeat()
+    with city(client, world, make_token(world.alice)) as (page, problems):
+        page.wait_for_selector("[data-stat=online]")
+        until(page, "document.fonts.check('600 16px Montserrat') && "
+                    "document.fonts.check('16px \"Space Grotesk\"')")
+        page.evaluate("document.fonts.load('600 16px Montserrat')")
+        until(page, "[...document.fonts].some(f => f.family.includes('Montserrat') "
+                    "&& f.status === 'loaded')")
+        font = page.evaluate("getComputedStyle(document.querySelector('.stat .v')).fontFamily")
+        assert font.startswith('"Montserrat"') or font.startswith("Montserrat"), font
+        until(page, "document.documentElement.dataset.cityDpr")
+        dpr = float(page.evaluate("document.documentElement.dataset.cityDpr"))
+        assert 0.75 <= dpr <= 2
         assert problems == [], problems

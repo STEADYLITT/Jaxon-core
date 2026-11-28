@@ -259,3 +259,89 @@ button { font: inherit; }
 /* during the opening fly-in the names would crowd a tiny far-off city: they fade in on arrival */
 .label-layer .label { transition: opacity 0.8s ease; }
 html[data-city-intro="playing"] .label-layer .label { opacity: 0; }
+
+/* --- City look 5/5: glass HUD (ADR-055) ------------------------------------------------
+   Dark translucent glass, a gold hairline, Space Grotesk for words and Montserrat with
+   tabular figures for numbers. Fonts are self-hosted (CSP font-src 'self'), latin only.
+   The List view keeps its plain look on purpose. */
+@font-face {
+  font-family: "Space Grotesk"; font-style: normal; font-display: swap; font-weight: 300 700;
+  src: url("../node_modules/@fontsource-variable/space-grotesk/files/space-grotesk-latin-wght-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Montserrat"; font-style: normal; font-display: swap; font-weight: 100 900;
+  src: url("../node_modules/@fontsource-variable/montserrat/files/montserrat-latin-wght-normal.woff2") format("woff2");
+}
+:root {
+  --glass: rgba(16, 10, 38, 0.52); --glass-strong: rgba(14, 8, 34, 0.82);
+  --gold: #f0b040; --hair: rgba(240, 176, 64, 0.38); --hair-soft: rgba(240, 176, 64, 0.18);
+  --ui: "Space Grotesk", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --num: "Montserrat", "Space Grotesk", system-ui, sans-serif;
+}
+.app { font-family: var(--ui); }
+.list { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+.glass, .stat, .toggle, .panel-side, .floor-bar, .command-bar, .replay-open, .replay-bar {
+  background: var(--glass); border: 1px solid var(--hair);
+  -webkit-backdrop-filter: blur(14px) saturate(140%); backdrop-filter: blur(14px) saturate(140%);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.hud { background: linear-gradient(rgba(7, 3, 26, 0.55), rgba(7, 3, 26, 0)); gap: 8px; }
+.stat { border-radius: 12px; padding: 7px 12px 6px; min-width: 100px; }
+.stat .v {
+  font-family: var(--num); font-weight: 600; font-size: 1.2rem; letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums lining-nums; color: #f4f1ff;
+}
+.stat.online .v, .stat.flight .v { color: #8ff3ff; }
+.stat.done .v { color: #7dffb4; }
+.stat.failed .v { color: #ff7a8e; }
+.stat.spend .v, .stat.revenue .v { color: #ffd98a; }
+.stat .k { font-size: 0.66rem; letter-spacing: 0.14em; color: rgba(233, 226, 255, 0.62); font-weight: 500; }
+.toggle, .replay-open {
+  border-color: var(--hair); color: #f4f1ff; font-weight: 500; letter-spacing: 0.04em;
+}
+.toggle:hover, .replay-open:hover { border-color: var(--gold); }
+.panel-side { background: var(--glass-strong); border-radius: 16px; }
+.panel-side header { border-bottom-color: var(--hair-soft); }
+.panel-side h2 { color: #ffe2a8; font-weight: 600; letter-spacing: 0.02em; }
+.panel-side h3 { color: rgba(233, 226, 255, 0.6); letter-spacing: 0.14em; font-weight: 500; }
+.kpis div { border-bottom-color: var(--hair-soft); }
+.kpis dd { font-family: var(--num); }
+.floor-bar { background: var(--glass-strong); }
+.replay-bar { background: var(--glass-strong); }
+.ticker { background: linear-gradient(rgba(7, 3, 26, 0), rgba(10, 6, 28, 0.78) 45%); }
+.ticker .tag { color: var(--gold); letter-spacing: 0.18em; }
+.ticker time { font-family: var(--num); font-size: 0.8rem; }
+
+/* the command bar: a glowing pill */
+.command-bar {
+  border-radius: 999px; padding: 5px 5px 5px 8px; background: rgba(14, 8, 34, 0.62);
+  border: 1px solid rgba(240, 176, 64, 0.55);
+  box-shadow: 0 0 0 1px rgba(155, 92, 255, 0.25), 0 0 28px rgba(240, 176, 64, 0.22),
+    0 0 60px rgba(155, 92, 255, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  transition: box-shadow 0.3s ease, border-color 0.3s ease;
+}
+.command-bar:focus-within {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 1px rgba(240, 176, 64, 0.5), 0 0 36px rgba(240, 176, 64, 0.38),
+    0 0 80px rgba(155, 92, 255, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+.command-bar input {
+  border: 0; border-radius: 999px; background: transparent; font-family: var(--ui); padding: 8px 14px;
+}
+.command-bar input:focus { outline: none; }
+.command-bar input::placeholder { color: rgba(233, 226, 255, 0.45); }
+.command-bar button {
+  border-radius: 999px; padding: 0 22px; font-family: var(--ui); letter-spacing: 0.06em;
+  background: linear-gradient(135deg, #ffd98a, #f0b040 55%, #c98a1c); color: #1a1000;
+  box-shadow: 0 0 18px rgba(240, 176, 64, 0.45);
+}
+.command-bar button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.label { font-family: var(--ui); }
+@media (max-width: 599px) {
+  .stat { padding: 4px 9px; min-width: auto; }
+  .stat .v { font-size: 1rem; }
+  .stat .k { font-size: 0.58rem; letter-spacing: 0.08em; }
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .stat, .toggle, .panel-side, .floor-bar, .command-bar, .replay-open, .replay-bar { background: var(--glass-strong); }
+}

@@ -39,7 +39,15 @@ The **scenery** may move and glow when nothing is happening: sky, stars, light, 
    - **Fly-to.** Clicking a building, the orb, the CEO tower or a floor flies there in a fixed 1.5 s eased curve instead of a drifting lerp.
    - **Idle drift.** After 12 s without input on the overview, the orbit turns very slowly (`autoRotateSpeed` 0.25, about 4 minutes a lap). Any input stops it. This is scenery motion, not data.
 7. **Interiors** (`scene/Office.tsx`): glass desks with edges lit in the agent's status colour, holographic monitors (lit frame, additive pane), robots in clearcoat with glowing status-coloured eyes that blink only while the agent is really working, a mirrored floor on desktop (plain on phones), a gold grid, smoked-glass walls and warm/department-coloured fill lights.
-8. Later: the HUD (glass panels, type, command pill) and adaptive resolution.
+8. **HUD** (`styles.css`, last section):
+   - Dark translucent glass (backdrop blur), gold hairline borders.
+   - Space Grotesk for words, Montserrat with tabular figures for numbers. Both are self-hosted variable fonts, latin only (60 kB). CSP gains `font-src 'self'` and `/city/assets` serves `.woff2`.
+   - The command bar is a glowing gold pill with a gold Send button.
+   - The List view keeps its plain system look.
+9. **Performance:**
+   - Adaptive resolution: `PerformanceMonitor` drives the pixel ratio. Desktop runs 1–2× aiming at 60 fps; phones/light 0.75–1.5× aiming at 30 fps. It never goes above the screen's own ratio.
+   - A desktop that keeps missing its frame rate drops to the light look (no reflector, fewer stars, no post-processing).
+   - `html[data-city-render]` and `[data-city-dpr]` show what is live.
 
 ## Proof
 `tests/city_shots.py` takes desktop (1440×900) and iPhone 15 screenshots, idle and right after a real command. They are saved under `docs/city-shots/<part>/`.
