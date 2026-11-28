@@ -51,3 +51,7 @@ The **scenery** may move and glow when nothing is happening: sky, stars, light, 
 
 ## Proof
 `tests/city_shots.py` takes desktop (1440×900) and iPhone 15 screenshots, idle and right after a real command. They are saved under `docs/city-shots/<part>/`.
+
+## Follow-up (owner notes)
+- **Labels:** labels never overlap. `LabelDeclutter` (in `scene/labels.tsx`) runs about 6 times a second and nudges a sign up when it would cover another. The CEO sign keeps its place first, then department signs, then empty lots. A test checks desktop and phone.
+- **Floor:** the hex etching is toned down (alpha 0.17 → 0.055, a tighter fade), and the office grid to 0.13.

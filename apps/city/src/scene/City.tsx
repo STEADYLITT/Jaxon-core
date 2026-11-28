@@ -18,7 +18,7 @@ import { Office } from "./Office";
 import { HAZE, Post, World } from "./World";
 import type { Department, Snapshot } from "../lib/types";
 
-import { Label, LabelLayer } from "./labels";
+import { Label, LabelDeclutter, LabelLayer } from "./labels";
 
 type Pose = { pos: Vec3; target: Vec3; key: string };
 
@@ -381,6 +381,7 @@ export default function City({ mode }: { mode: Mode }) {
         flipflops={3} />
       <CameraRig inOffice={!!floor} />
       <ScreenProbe />
+      <LabelDeclutter />
       <World light={light} />
       {floor ? <Office deptId={floor.deptId} floorId={floor.floorId} layer={layer} light={light} /> : (
         <group name="city" onPointerMissed={() => useCity.getState().setFocus(null)}>

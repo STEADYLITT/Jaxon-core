@@ -60,7 +60,7 @@ Paste these in **Railway → Jaxon-core → Variables**. **Seal** every secret. 
 
 | Service | Variables | Secret? |
 |---|---|---|
-| Claude (thinking) | `ANTHROPIC_API_KEY` | yes |
+| Claude (thinking) | `ANTHROPIC_API_KEY` | yes (Test uses the worker's own settings and names the real cause of a failure, ADR-056) |
 | Shopify | `SHOPIFY_STORE_DOMAIN` + (`SHOPIFY_CLIENT_ID`, `SHOPIFY_CLIENT_SECRET`) or `SHOPIFY_ADMIN_API_TOKEN` | yes: the secret and the token |
 | Social posting (Upload-Post) | `UPLOADPOST_API_KEY`, `UPLOADPOST_USER` | yes: the key |
 | Email (Resend) | `RESEND_API_KEY`, `RESEND_FROM`, `RESEND_WEBHOOK_SECRET` | yes: the key and the webhook secret. **Already set and LIVE.** |

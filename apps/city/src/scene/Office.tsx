@@ -140,7 +140,7 @@ export function Office({ deptId, floorId, layer, light = false }: {
             resolution={256} mixBlur={1} mixStrength={6} mirror={0.45} depthScale={0} />
         )}</mesh>
       <gridHelper args={[Math.max(width, 16), 16, "#f0b040", "#2a1a58"]} position-y={0.01}
-        material-transparent material-opacity={0.22} />
+        material-transparent material-opacity={0.13} />
       {/* back wall: smoked glass panels with the department's colour running along the top */}
       <mesh position={[0, 4, -5]}><planeGeometry args={[width, 8]} />
         <meshPhysicalMaterial color="#070414" metalness={0.2} roughness={0.25} clearcoat={1}
