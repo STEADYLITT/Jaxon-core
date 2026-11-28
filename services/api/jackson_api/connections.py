@@ -13,6 +13,7 @@ one real, harmless call (ADR-038).
     fal.ai      GET /v1/account/billing?expand=credits (balance)
     Whop        GET /api/v1/accounts/me (the account behind the key)
     ElevenLabs  GET /v1/user/subscription (plan and characters left)
+    Apify       GET /v2/users/me (account and plan)
 """
 
 import os
@@ -25,7 +26,7 @@ import httpx
 SECRET_VARS = ("ANTHROPIC_API_KEY", "SHOPIFY_CLIENT_SECRET", "SHOPIFY_ADMIN_API_TOKEN",
                "UPLOADPOST_API_KEY", "RESEND_API_KEY", "RESEND_WEBHOOK_SECRET", "FAL_KEY",
                "CLERK_SECRET_KEY", "WHOP_API_KEY", "WHOP_WEBHOOK_SECRET",
-               "ELEVENLABS_API_KEY")
+               "ELEVENLABS_API_KEY", "APIFY_TOKEN")
 
 
 def _new_client() -> httpx.Client:
@@ -168,6 +169,19 @@ def test_elevenlabs(ctx: dict) -> dict:
                 limit, int) else None, "model": el.model}
 
 
+def test_apify(ctx: dict) -> dict:
+    from .connectors.webresearch import Apify
+
+    try:
+        me = Apify(os.environ["APIFY_TOKEN"], client=_new_client()).me()
+    except Exception as e:  # noqa: BLE001
+        raise TestFailed(str(e)) from None
+    plan = me.get("plan") or {}
+    return {"account": me.get("username"), "plan": plan.get("id"),
+            "monthly_limit_usd": plan.get("maxMonthlyUsageUsd"),
+            "access": "runs only after you approve each run's cost cap"}
+
+
 # --- The list -----------------------------------------------------------------------------------
 
 @dataclass
@@ -197,6 +211,7 @@ CONNECTORS = [
     Connector("voice", "AI voice (ElevenLabs)", ["ELEVENLABS_API_KEY"],
               optional=["ELEVENLABS_MODEL", "ELEVENLABS_CENTS_PER_1K_CHARS"],
               test=test_elevenlabs),
+    Connector("research", "Web research (Apify)", ["APIFY_TOKEN"], test=test_apify),
     Connector("dns", "Domain checks (DNS)", ["SITE_DOMAIN_VERIFY"],
               note="set to dns when you launch a site on your own domain; no key needed"),
     Connector("hosting", "Website hosting", [],
