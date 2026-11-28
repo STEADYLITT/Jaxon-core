@@ -257,9 +257,8 @@ LINES: list[Line] = [
          ["No fake reviews or invented claims.", "Drafts until a Launch covers publishing."],
          ("product", "shopify", "store", "listing", "e-com", "ecom", "dropship", "fba",
           "amazon fba", "ebay", "resell", "holiday"),
-         ["shopify", "research"],
-         [("AMAZON_SP_API_KEY", "Amazon FBA data (not built yet)"),
-          ("EBAY_API_KEY", "eBay reselling research (not built yet)")],
+         ["shopify", "research", "amazon", "ebay"],
+         [],
          _ch(shopify=True), budget_monthly_cents=5_000,
          proposed=[_spec("product-researcher", "ecommerce: product researcher",
                          "Find product ideas within Steady's price and margin limits",
@@ -549,7 +548,11 @@ def kpis(db: Session, tenant_id, key: str) -> list[dict]:  # noqa: C901 - one br
                     ShopProduct).where(ShopProduct.tenant_id == tenant_id,
                                        ShopProduct.status == "ACTIVE")), "", "shop_products"),
                 _kpi("Revenue this month (Shopify)", revenue("shopify"), "USD",
-                     "revenue_entries", "no Shopify sales reported yet")]
+                     "revenue_entries", "no Shopify sales reported yet"),
+                _kpi("Amazon/eBay research runs", count(select(func.count()).select_from(
+                    Artifact).where(Artifact.tenant_id == tenant_id, Artifact.meta[
+                        "type"].as_string() == "marketplace_research")), "",
+                     "artifacts (marketplace_research)")]
     if key == "community":
         return [_kpi("Paying members (Whop, all businesses)", members(scope=None), "",
                      "whop_members", "no Whop members reported yet"),
