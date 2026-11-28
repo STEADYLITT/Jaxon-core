@@ -71,6 +71,8 @@ BUILT_IN = {
     "outreach_send": ("marketing", "email", "Outreach Sender", "sends approved email"),
     "site_build": ("factory", "build", "Site Builder", "builds websites"),
     "site_launch": ("factory", "deploy", "Site Launcher", "launches websites"),
+    "repo_push": ("factory", "build", "Repo Keeper",
+                  "puts approved builds in private GitHub repos"),
     "content_video": ("influencers", "studio", "Video Producer", "makes short clips (fal.ai)"),
     "store_build": ("ecommerce", "store", "Store Builder", "builds Shopify drafts"),
     "shopify_publish": ("ecommerce", "store", "Shop Publisher", "publishes products"),

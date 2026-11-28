@@ -23,6 +23,7 @@ from .routes_content import router as content_router
 from .routes_courses import router as courses_router
 from .routes_crm import router as crm_router
 from .routes_dashboard import router as dashboard_router
+from .routes_factory_repos import router as factory_repos_router
 from .routes_launches import router as launches_router
 from .routes_lines import router as lines_router
 from .routes_memory import router as memory_router
@@ -67,6 +68,7 @@ app.include_router(community_router)
 app.include_router(realestate_router)
 app.include_router(trading_router)
 app.include_router(ads_router)
+app.include_router(factory_repos_router)
 app.include_router(sites_router)
 app.include_router(city_router)
 app.include_router(connections_router)

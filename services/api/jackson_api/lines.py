@@ -183,8 +183,8 @@ LINES: list[Line] = [
          ("website", "landing page", "site", "app", "saas", "web app", "build a page",
           "wireframe", "gottink", "inkflow", "chart lingo", "candle rush", "cartchef",
           "domain"),
-         ["models", "dns", "hosting"],
-         [("GITHUB_APP_TOKEN", "create repos for new apps (not built yet)")],
+         ["models", "dns", "hosting", "github"],
+         [],
          _ch(note="publishing a site/app is a production change: approval or Launch"),
          budget_monthly_cents=5_000,
          proposed=[_spec("web-developer", "factory: requirements to site/app",
@@ -508,6 +508,7 @@ def kpis(db: Session, tenant_id, key: str) -> list[dict]:  # noqa: C901 - one br
                 _kpi("Outreach emails sent this month", emails(scope=None), "",
                      "outreach_messages")]
     if key == "factory":
+        from .models import RunEvent
         sites = count(select(func.count()).select_from(SiteProject).where(
             SiteProject.tenant_id == tenant_id))
         live = count(select(func.count()).select_from(SiteProject).where(
@@ -516,7 +517,11 @@ def kpis(db: Session, tenant_id, key: str) -> list[dict]:  # noqa: C901 - one br
             SiteProject.tenant_id == tenant_id, SiteProject.status == "live",
             SiteProject.live_url.like("https://%")))
         return [_kpi("Sites & apps", sites, "", "sites"), _kpi("Live", live, "", "sites"),
-                _kpi("Published on real hosting", hosted, "", "sites (https live URL)")]
+                _kpi("Published on real hosting", hosted, "", "sites (https live URL)"),
+                _kpi("Builds in private GitHub repos", count(select(func.count()).select_from(
+                    RunEvent).where(RunEvent.tenant_id == tenant_id,
+                                    RunEvent.type == "repo.pushed")), "",
+                     "run_events (repo.pushed)")]
     if key == "clips":
         return [_kpi("Clips posted this month", posts(channels=("tiktok", "youtube_shorts",
                                                                  "instagram")), "",
