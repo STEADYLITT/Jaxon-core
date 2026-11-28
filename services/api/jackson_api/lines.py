@@ -203,8 +203,8 @@ LINES: list[Line] = [
           "Track views and payouts."],
          ["Only creators whose terms allow clipping; always credit the source."],
          ("clip", "clipping", "gta", "stream highlight", "vod", "highlight", "repurpose"),
-         ["social", "video", "youtube", "twitch"],
-         [("CLIP_PAYOUTS_SOURCE", "real views/payouts")],
+         ["social", "video", "youtube", "twitch", "clip_payouts"],
+         [],
          _ch(social=("tiktok", "youtube_shorts", "instagram")), budget_monthly_cents=5_000,
          proposed=[_spec("clip-scout", "clips: find clippable moments",
                          "Find clippable moments from permitted creators' VODs and streams",
@@ -407,6 +407,27 @@ def kpis(db: Session, tenant_id, key: str) -> list[dict]:  # noqa: C901 - one br
                                     RevenueEntry.business_id.in_(biz),
                                     RevenueEntry.period == month.strftime("%Y-%m"))) or 0) / 100
 
+    def payout_sum(line: str, what: str):
+        """Real payouts only: None until the line's source has recorded at least one."""
+        from .models import PayoutLine
+
+        has = count(select(func.count()).select_from(PayoutLine).where(
+            PayoutLine.tenant_id == tenant_id, PayoutLine.line == line))
+        if not has:
+            return None
+        col = PayoutLine.views if what == "views" else PayoutLine.amount_cents
+        total = int(db.scalar(select(func.coalesce(func.sum(col), 0)).where(
+            PayoutLine.tenant_id == tenant_id, PayoutLine.line == line,
+            PayoutLine.period == month.strftime("%Y-%m"))) or 0)
+        return total if what == "views" else total / 100
+
+    def payout_reason(line: str) -> str:
+        from .connectors import payouts as P
+
+        var = P.LINES[line]["source"]
+        return (f"no {P.LINES[line]['what']} recorded yet" if P.configured(line)
+                else f"needs {var}")
+
     def members(scope=biz, **where):
         from .connectors.whop import ACCESS
         from .models import WhopMember
@@ -526,8 +547,10 @@ def kpis(db: Session, tenant_id, key: str) -> list[dict]:  # noqa: C901 - one br
                 _kpi("Clips posted this month", posts(channels=("tiktok", "youtube_shorts",
                                                                  "instagram")), "",
                      "content_items"),
-                _kpi("Views", None, "", "", "needs a views source (platform analytics)"),
-                _kpi("Payouts", None, "USD", "", "needs CLIP_PAYOUTS_SOURCE")]
+                _kpi("Views paid on this month", payout_sum("clips", "views"), "",
+                     "payout_lines", payout_reason("clips")),
+                _kpi("Payouts this month", payout_sum("clips", "amount"), "USD",
+                     "payout_lines", payout_reason("clips"))]
     if key == "creators":
         return [_kpi("Drafts waiting for approval", posts(("in_review",),
                      since=month - timedelta(days=365)), "", "content_items"),

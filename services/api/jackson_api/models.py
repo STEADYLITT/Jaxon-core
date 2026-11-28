@@ -1192,6 +1192,42 @@ class WhopMember(Base):
     updated_at: Mapped[datetime] = _updated()
 
 
+PAYOUT_LINES = ("clips", "creators")
+
+
+class PayoutLine(Base):
+    """One payout exactly as its source reported it (ADR-057): a clip campaign payout (with
+    the clip's views) or a signed creator's earnings. Recorded once per reference; each new
+    row also becomes one actual revenue entry (source import)."""
+
+    __tablename__ = "payout_lines"
+    __table_args__ = (
+        CheckConstraint("line IN ('clips','creators')", name="ck_payout_line"),
+        CheckConstraint("source IN ('feed','import')", name="ck_payout_source"),
+        CheckConstraint("amount_cents >= 0", name="ck_payout_amount"),
+        CheckConstraint("views IS NULL OR views >= 0", name="ck_payout_views"),
+        UniqueConstraint("tenant_id", "line", "reference", name="uq_payout_ref"),
+    )
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    business_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("businesses.id"))
+    line: Mapped[str] = mapped_column(String(16), nullable=False)
+    source: Mapped[str] = mapped_column(String(16), nullable=False)
+    reference: Mapped[str] = mapped_column(String(200), nullable=False)
+    subject: Mapped[str] = mapped_column(String(300), nullable=False)
+    platform: Mapped[str | None] = mapped_column(String(32))
+    campaign: Mapped[str | None] = mapped_column(String(200))
+    views: Mapped[int | None] = mapped_column(BigInteger)
+    amount_cents: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    period: Mapped[str] = mapped_column(String(7), nullable=False)
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("workflow_runs.id"))
+    created_at: Mapped[datetime] = _created()
+
+
 class AdCampaign(Base):
     """A paid-ads campaign Jackson drafted on Meta or TikTok (ADR-048). Created paused; it
     can only be switched on inside an active Launch, and is paused when that Launch stops."""
