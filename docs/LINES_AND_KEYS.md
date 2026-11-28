@@ -13,10 +13,11 @@ Paste values only in **Railway → Jaxon-core → Variables**, and seal secrets.
 | 2 | **Course & Education Factory** | `RESEND_API_KEY`, `RESEND_FROM`, `RESEND_WEBHOOK_SECRET` | built: course emails and funnels |
 | | | `FAL_KEY` | built: AI video for lessons, always approved first |
 | | | `WHOP_API_KEY`, `WHOP_WEBHOOK_SECRET` | built: course checkout links, students with access, real course revenue |
-| | | `ELEVENLABS_API_KEY` | **not built yet**: AI voice for lessons |
+| | | `ELEVENLABS_API_KEY` | built: AI voice for lessons, cost approved first |
 | 3 | **Marketing (all companies)** | `UPLOADPOST_API_KEY`, `UPLOADPOST_USER` | built: posting |
 | | | `RESEND_API_KEY`, `RESEND_FROM` | built: email |
 | | | `WHOP_API_KEY` | built: real sales for course offers |
+| | | `ELEVENLABS_API_KEY` | built: ad voiceovers, cost approved first |
 | 4 | **Agency** | `UPLOADPOST_API_KEY`, `UPLOADPOST_USER`, `RESEND_API_KEY`, `RESEND_FROM` | built: client deliverables and outreach |
 | 5 | **Sales & Lead Gen** | `RESEND_API_KEY`, `RESEND_FROM` | built: outreach email (opt-outs respected) |
 | | | (SMS and calls) | **not built yet**: call lists and scripts are drafts for your team |
@@ -29,7 +30,7 @@ Paste values only in **Railway → Jaxon-core → Variables**, and seal secrets.
 | 8 | **Creator Agency** | `UPLOADPOST_API_KEY`, `UPLOADPOST_USER`, `RESEND_API_KEY`, `RESEND_FROM` | built: always after approval, SFW only |
 | | | `CREATOR_EARNINGS_SOURCE` | **not built yet**: real creator earnings |
 | 9 | **AI Influencers** | `FAL_KEY`, `UPLOADPOST_API_KEY`, `UPLOADPOST_USER` | built: generation (cost approved first) and posting labeled as AI |
-| | | `ELEVENLABS_API_KEY` | **not built yet**: persona voice |
+| | | `ELEVENLABS_API_KEY` | built: persona voice from your own voice library, labeled as AI |
 | | | `PLATFORM_ANALYTICS` | **not built yet**: follower growth |
 | 10 | **E-commerce & Reselling** | `SHOPIFY_STORE_DOMAIN` + (`SHOPIFY_CLIENT_ID`, `SHOPIFY_CLIENT_SECRET`) or `SHOPIFY_ADMIN_API_TOKEN` | built: drafts; publishing only inside a Launch |
 | | | `AMAZON_SP_API_KEY`, `EBAY_API_KEY` | **not built yet**: FBA and eBay research |
