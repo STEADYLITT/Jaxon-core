@@ -241,8 +241,8 @@ LINES: list[Line] = [
           "Post with the AI label.", "Track growth."],
          ["Always labeled as AI; no impersonation; no fake engagement.", "SFW only."],
          ("ai influencer", "virtual model", "ai model", "persona", "ai account"),
-         ["video", "social", "voice"],
-         [("PLATFORM_ANALYTICS", "real follower growth")],
+         ["video", "social", "voice", "analytics"],
+         [],
          _ch(social=("instagram", "tiktok"), note="one launch per persona"),
          budget_monthly_cents=5_000,
          proposed=[_spec("persona-planner", "influencers: AI persona planner",
@@ -430,6 +430,20 @@ def kpis(db: Session, tenant_id, key: str) -> list[dict]:  # noqa: C901 - one br
             PayoutLine.tenant_id == tenant_id, PayoutLine.line == "creators",
             PayoutLine.period == month.strftime("%Y-%m"), PayoutLine.amount_cents > 0))
 
+    def follower_kpis():
+        from .connectors import analytics as A
+        from .followers import growth
+
+        g = growth(db, tenant_id)
+        if not g["accounts"]:
+            note = ("first reading not taken yet" if A.configured()
+                    else "needs PLATFORM_ANALYTICS")
+            return [_kpi("Followers now", None, "", "", note),
+                    _kpi("Followers gained (30 days)", None, "", "", note)]
+        return [_kpi("Followers now", g["followers_now"], "", "follower_snapshots"),
+                _kpi("Followers gained (30 days)", g["gained"], "", "follower_snapshots",
+                     f"first reading {g['first_day']}; growth shows from the next day")]
+
     def payout_reason(line: str) -> str:
         from .connectors import payouts as P
 
@@ -573,7 +587,7 @@ def kpis(db: Session, tenant_id, key: str) -> list[dict]:  # noqa: C901 - one br
                     Persona.tenant_id == tenant_id, Persona.kind == "virtual_influencer")),
                      "", "personas"),
                 _kpi("Posts published this month", posts(), "", "content_items"),
-                _kpi("Followers gained", None, "", "", "needs PLATFORM_ANALYTICS")]
+                *follower_kpis()]
     if key == "ecommerce":
         return [_kpi("Draft products", count(select(func.count()).select_from(ShopProduct)
                      .where(ShopProduct.tenant_id == tenant_id,

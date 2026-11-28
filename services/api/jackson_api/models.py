@@ -9,13 +9,14 @@ row-level security (see migrations/versions/0001_initial.py).
 """
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import (
     JSON,
     BigInteger,
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -1225,6 +1226,28 @@ class PayoutLine(Base):
     period: Mapped[str] = mapped_column(String(7), nullable=False)
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("workflow_runs.id"))
+    created_at: Mapped[datetime] = _created()
+
+
+class FollowerSnapshot(Base):
+    """One account's follower count on one day, exactly as the platform reported it
+    (ADR-058). Growth = the difference between two real readings."""
+
+    __tablename__ = "follower_snapshots"
+    __table_args__ = (
+        CheckConstraint("followers >= 0", name="ck_follower_count"),
+        UniqueConstraint("tenant_id", "platform", "account_id", "taken_on",
+                         name="uq_follower_day"),
+    )
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    platform: Mapped[str] = mapped_column(String(16), nullable=False)
+    account_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    handle: Mapped[str] = mapped_column(String(120), nullable=False, server_default="")
+    followers: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    taken_on: Mapped[date] = mapped_column(Date, nullable=False)
     created_at: Mapped[datetime] = _created()
 
 

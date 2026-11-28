@@ -30,6 +30,7 @@ one real, harmless call (ADR-038).
     APEX-7      GET APEX7_RESULTS_URL (reads the runs it publishes)
     Clip payouts GET the CLIP_PAYOUTS_SOURCE feed (reads it; records nothing)
     Creator earnings GET the CREATOR_EARNINGS_SOURCE feed (reads it; records nothing)
+    Followers   reads today's follower counts (YouTube 1 quota unit; records nothing)
 """
 
 import os
@@ -50,7 +51,7 @@ SECRET_VARS = ("ANTHROPIC_API_KEY", "SHOPIFY_CLIENT_SECRET", "SHOPIFY_ADMIN_API_
                "GITHUB_APP_TOKEN", "YOUTUBE_API_KEY", "TWITCH_CLIENT_SECRET",
                "AMAZON_SP_CLIENT_SECRET", "AMAZON_SP_REFRESH_TOKEN", "EBAY_CLIENT_SECRET",
                "DATABENTO_API_KEY", "APEX7_RESULTS_TOKEN", "CLIP_PAYOUTS_TOKEN",
-               "CREATOR_EARNINGS_TOKEN")
+               "CREATOR_EARNINGS_TOKEN", "TIKTOK_DISPLAY_TOKEN")
 
 
 def _new_client() -> httpx.Client:
@@ -377,6 +378,22 @@ def test_clip_payouts(ctx: dict) -> dict:
     return _test_payouts("clips")
 
 
+def test_analytics(ctx: dict) -> dict:
+    """Reads today's follower counts (records nothing)."""
+    from .connectors import analytics as A
+    from .worker_errors import NonRetryableError
+
+    try:
+        readings, errors = A.read_all()
+    except NonRetryableError as e:
+        raise TestFailed(str(e)) from None
+    if not readings:
+        raise TestFailed("no follower counts read: " + "; ".join(
+            f"{p}: {e}" for p, e in errors.items()))
+    return {"accounts": [{k: r[k] for k in ("platform", "handle", "followers")}
+                         for r in readings], "not_read": errors}
+
+
 def test_creator_earnings(ctx: dict) -> dict:
     return _test_payouts("creators")
 
@@ -484,6 +501,10 @@ CONNECTORS = [
     Connector("creator_earnings", "Creator earnings", ["CREATOR_EARNINGS_SOURCE"],
               optional=["CREATOR_EARNINGS_TOKEN"], test=test_creator_earnings,
               note="an https feed, or import: upload a CSV at POST /payouts/creators/import"),
+    Connector("analytics", "Follower analytics", ["PLATFORM_ANALYTICS"],
+              optional=["YOUTUBE_CHANNEL_IDS", "INSTAGRAM_USER_IDS", "TIKTOK_DISPLAY_TOKEN"],
+              test=test_analytics,
+              note="youtube uses YOUTUBE_API_KEY, instagram uses META_ACCESS_TOKEN"),
     Connector("sms", "SMS and calls", [], note="not built yet: outreach is email only"),
     Connector("artifacts", "File storage (S3)", ["S3_BUCKET"],
               note="optional: files live on the Railway disk until this is set"),
