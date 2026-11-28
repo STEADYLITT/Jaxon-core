@@ -203,10 +203,8 @@ LINES: list[Line] = [
           "Track views and payouts."],
          ["Only creators whose terms allow clipping; always credit the source."],
          ("clip", "clipping", "gta", "stream highlight", "vod", "highlight", "repurpose"),
-         ["social", "video"],
-         [("YOUTUBE_API_KEY", "find clippable moments on YouTube VODs"),
-          ("TWITCH_CLIENT_ID", "find clippable moments on Twitch streams"),
-          ("CLIP_PAYOUTS_SOURCE", "real views/payouts")],
+         ["social", "video", "youtube", "twitch"],
+         [("CLIP_PAYOUTS_SOURCE", "real views/payouts")],
          _ch(social=("tiktok", "youtube_shorts", "instagram")), budget_monthly_cents=5_000,
          proposed=[_spec("clip-scout", "clips: find clippable moments",
                          "Find clippable moments from permitted creators' VODs and streams",
@@ -523,7 +521,11 @@ def kpis(db: Session, tenant_id, key: str) -> list[dict]:  # noqa: C901 - one br
                                     RunEvent.type == "repo.pushed")), "",
                      "run_events (repo.pushed)")]
     if key == "clips":
-        return [_kpi("Clips posted this month", posts(channels=("tiktok", "youtube_shorts",
+        scouted = count(select(func.count()).select_from(Artifact).where(
+            Artifact.tenant_id == tenant_id,
+            Artifact.meta["type"].as_string() == "clip_candidates"))
+        return [_kpi("Clip scouting runs", scouted, "", "artifacts (clip_candidates)"),
+                _kpi("Clips posted this month", posts(channels=("tiktok", "youtube_shorts",
                                                                  "instagram")), "",
                      "content_items"),
                 _kpi("Views", None, "", "", "needs a views source (platform analytics)"),

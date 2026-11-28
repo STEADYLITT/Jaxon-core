@@ -504,3 +504,40 @@ fal.ai keeps generated files on its own servers. Post a clip within a few days o
 | `GITHUB_APP_TOKEN` | the fine-grained token (secret, seal it) |
 | `GITHUB_OWNER` | your GitHub username or organization |
 | `GITHUB_REPO_PREFIX` | optional: start of every repo name (default `jackson`) |
+
+---
+
+## Clip scouting: YouTube and Twitch
+
+**What Jackson does:** `POST /tenants/{t}/clips/scout` with a YouTube search (`youtube_query`), YouTube channel ids (`youtube_channel_ids`) or Twitch channels (`twitch_logins`), plus how many days back to look.
+- **YouTube:** the most-viewed recent videos, with views, likes, length and views per hour.
+- **Twitch:** the channels' most-viewed clips, with views, length and where in the stream they happened.
+- **Clip rights on every pick:**
+  - **allowed** for creators on your `CLIP_ALLOWED_CREATORS` list. That list is the creators whose terms, or written OK, let you clip them.
+  - **allowed (Creative Commons)** for YouTube videos under that licence. Credit the creator.
+  - Everything else is **ask the creator first**.
+
+  Allowed picks are listed first. Every pick keeps its link.
+- It's read-only and free. YouTube uses its daily quota of 10,000 units, and one search is about 100 units. Posting a clip still needs your approval or a Launch.
+
+### YouTube click steps
+1. Go to **console.cloud.google.com**. Create a project (e.g. "Jackson"), then **APIs & Services** → **Library** → **YouTube Data API v3** → **Enable**.
+2. **APIs & Services** → **Credentials** → **Create credentials** → **API key**. Click **Restrict key** and limit it to **YouTube Data API v3**.
+3. In Railway, add it as `YOUTUBE_API_KEY` and **Seal** it. **Connections → YouTube → Test**.
+
+### Twitch click steps
+1. Go to **dev.twitch.tv/console** → **Register Your Application**:
+   - Name: "Jackson".
+   - OAuth redirect: `http://localhost`. It isn't used, but the form needs one.
+   - Category: Analytics Tool.
+   - Client type: **Confidential**.
+2. Open the app, copy the **Client ID**, click **New Secret** and copy the secret.
+3. In Railway, add `TWITCH_CLIENT_ID` and `TWITCH_CLIENT_SECRET`. Seal the secret. **Connections → Twitch → Test**.
+
+### Variables
+| Name | What to paste |
+|---|---|
+| `YOUTUBE_API_KEY` | the API key (secret, seal it) |
+| `TWITCH_CLIENT_ID` | the Twitch app's client id |
+| `TWITCH_CLIENT_SECRET` | the Twitch app's secret (seal it) |
+| `CLIP_ALLOWED_CREATORS` | optional: comma-separated channel names you're allowed to clip (e.g. `steadyfriend,OpenClips`) |

@@ -17,6 +17,7 @@ from .routes_ads import router as ads_router
 from .routes_agents import router as agents_router
 from .routes_browser import router as browser_router
 from .routes_city import router as city_router
+from .routes_clips import router as clips_router
 from .routes_community import router as community_router
 from .routes_connections import router as connections_router
 from .routes_content import router as content_router
@@ -69,6 +70,7 @@ app.include_router(realestate_router)
 app.include_router(trading_router)
 app.include_router(ads_router)
 app.include_router(factory_repos_router)
+app.include_router(clips_router)
 app.include_router(sites_router)
 app.include_router(city_router)
 app.include_router(connections_router)

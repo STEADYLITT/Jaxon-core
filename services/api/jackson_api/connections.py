@@ -22,6 +22,8 @@ one real, harmless call (ADR-038).
     Meta ads    GET act_{id}?fields=name,account_status,currency,amount_spent
     TikTok ads  GET advertiser/info/ (the advertiser account)
     GitHub      GET /user (who the token is)
+    YouTube     GET /youtube/v3/videos?part=id (1 quota unit)
+    Twitch      app token + GET /helix/games/top?first=1
 """
 
 import os
@@ -39,7 +41,7 @@ SECRET_VARS = ("ANTHROPIC_API_KEY", "SHOPIFY_CLIENT_SECRET", "SHOPIFY_ADMIN_API_
                "NETLIFY_AUTH_TOKEN", "BATCHDATA_API_TOKEN", "TELEGRAM_WEBHOOK_SECRET",
                "ALPACA_PAPER_SECRET_KEY",
                "META_ACCESS_TOKEN", "TIKTOK_ACCESS_TOKEN",
-               "GITHUB_APP_TOKEN")
+               "GITHUB_APP_TOKEN", "YOUTUBE_API_KEY", "TWITCH_CLIENT_SECRET")
 
 
 def _new_client() -> httpx.Client:
@@ -294,6 +296,27 @@ def test_github(ctx: dict) -> dict:
             "access": "creates PRIVATE repos only, after you approve each push"}
 
 
+def test_youtube(ctx: dict) -> dict:
+    from .connectors.clips import YouTube
+
+    try:
+        YouTube(os.environ["YOUTUBE_API_KEY"], client=_new_client()).ping()
+    except Exception as e:  # noqa: BLE001
+        raise TestFailed(str(e)) from None
+    return {"key": "accepted", "cost": "1 quota unit (free daily quota is 10,000)"}
+
+
+def test_twitch(ctx: dict) -> dict:
+    from .connectors.clips import Twitch
+
+    try:
+        r = Twitch(os.environ["TWITCH_CLIENT_ID"], os.environ["TWITCH_CLIENT_SECRET"],
+                   client=_new_client()).ping()
+    except Exception as e:  # noqa: BLE001
+        raise TestFailed(str(e)) from None
+    return {"app_login": "ok", "top_game_now": r.get("top_game")}
+
+
 # --- The list -----------------------------------------------------------------------------------
 
 @dataclass
@@ -341,6 +364,10 @@ CONNECTORS = [
               optional=["TIKTOK_IDENTITY_ID", "TIKTOK_IDENTITY_TYPE"], test=test_tiktok_ads),
     Connector("github", "GitHub repos (App Factory)", ["GITHUB_APP_TOKEN", "GITHUB_OWNER"],
               optional=["GITHUB_REPO_PREFIX"], test=test_github),
+    Connector("youtube", "YouTube (clip scouting)", ["YOUTUBE_API_KEY"],
+              optional=["CLIP_ALLOWED_CREATORS"], test=test_youtube),
+    Connector("twitch", "Twitch (clip scouting)", ["TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET"],
+              optional=["CLIP_ALLOWED_CREATORS"], test=test_twitch),
     Connector("dns", "Domain checks (DNS)", ["SITE_DOMAIN_VERIFY"],
               note="set to dns when you launch a site on your own domain; no key needed"),
     Connector("hosting", "Website hosting (Netlify)", ["NETLIFY_AUTH_TOKEN"],

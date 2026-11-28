@@ -145,6 +145,7 @@ def default_handlers() -> dict[str, Handler]:
     from .ads import insights_handler as ad_insights
     from .ads import pause_handler as ad_pause
     from .agent_handlers import agent_handler, eval_handler, factory_handler
+    from .clip_scout import scout_handler as clip_scout
     from .community import announce_handler as community_announce
     from .community import sync_handler as community_sync
     from .content import generate_handler as content_generate
@@ -185,7 +186,7 @@ def default_handlers() -> dict[str, Handler]:
             "skip_trace": skip_trace, "paper_snapshot": paper_snapshot,
             "paper_order": paper_order, "ad_draft": ad_draft, "ad_activate": ad_activate,
             "ad_pause": ad_pause, "ad_creative": ad_creative, "ad_insights": ad_insights,
-            "repo_push": repo_push}
+            "repo_push": repo_push, "clip_scout": clip_scout}
 
 
 class ModelBudgetExhausted(NonRetryableError):
