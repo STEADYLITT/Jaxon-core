@@ -43,7 +43,7 @@ Paste values only in **Railway → Jaxon-core → Variables**, and seal secrets.
 | | | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | built: lapsed members removed, one-use invites for paying members, announcements approved first |
 | 12 | **Trading** | `APEX7_RESULTS_SOURCE`, `MARKET_DATA_API_KEY` | **not built yet**: real backtest and sim results |
 | | | `BROKER_API_KEY` | **not built, on purpose**: live orders stay refused until a broker connector with daily loss caps, a kill switch and your explicit approval per order exists |
-| 13 | **Real Estate (wholesaling)** | `PROPERTY_DATA_API_KEY` | **not built yet**: comps; research and simulation only |
+| 13 | **Real Estate (wholesaling)** | `BATCHDATA_API_TOKEN`, `BATCHDATA_CENTS_PER_RECORD` | built: comps and skip tracing (BatchData), research only, every lookup approved first |
 | 14 | **Legal & Admin** | none | Drafts only; always sent to you; never filed automatically |
 | 15 | **Finance & Ops** | none | Uses everything above. Revenue is real only when Whop or Shopify report it, or when you record a referenced entry. |
 

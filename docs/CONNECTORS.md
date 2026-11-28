@@ -31,6 +31,7 @@ How to paste a variable into Railway (same every time):
 | 8 | **Discord** (steps below) | `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID`, `DISCORD_MEMBER_ROLE_ID`, `DISCORD_ANNOUNCE_CHANNEL_ID` | your server, member count and the member role's name |
 | 9 | **Telegram** (steps below) | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | your bot and group name |
 | 10 | **Netlify** (steps below) | `NETLIFY_AUTH_TOKEN` | your Netlify account name |
+| 11 | **BatchData** (steps below) | `BATCHDATA_API_TOKEN`, `BATCHDATA_CENTS_PER_RECORD` | that the token and your price are set (BatchData has no free test call) |
 | — | **Claude** | `ANTHROPIC_API_KEY` (already set) | how many models your key can use (free call) |
 
 Not built yet: SMS/calls, so it always shows MOCK. File storage (S3) is optional, because files live on the Railway disk.
@@ -342,3 +343,32 @@ fal.ai keeps generated files on its own servers. Post a clip within a few days o
 |---|---|
 | `NETLIFY_AUTH_TOKEN` | the personal access token (secret, seal it) |
 | `NETLIFY_SITE_PREFIX` | optional: the start of every Netlify site name (default `jackson`) |
+
+---
+
+## Real-estate data via BatchData (comps and skip tracing, research only)
+
+**Why BatchData, not PropStream:** PropStream has no public developer API. BatchData publishes REST endpoints for comps, property lookups and skip tracing, all with one token.
+
+**What Jackson does:**
+- **Comps** (`POST /tenants/{t}/realestate/comps` with an address):
+  - Pulls comparable properties within 1 mile (you can choose 0.25 to 5) with similar beds, size and year built.
+  - Saves them with the median sale price and price per square foot. The medians use only comps that actually have those numbers.
+  - The cost (records × your price) waits for your approval.
+- **Skip tracing** (`POST /tenants/{t}/realestate/skip-trace` with one address):
+  - Finds the owner's phone numbers and emails.
+  - It's personal data, so you approve it twice: once for the personal data, once for its cost.
+  - Numbers on the Do-Not-Call list and litigator matches are flagged and never counted as callable.
+- **Research only:** nothing contacts an owner, makes an offer or sends a contract.
+
+### Click steps
+1. Sign in to **app.batchdata.com**, then left menu → **API Tokens** (key icon) → **Server Side Tokens** → **Add New Token**. Name it "Jackson" and copy it.
+2. In Railway, add `BATCHDATA_API_TOKEN` and **Seal** it.
+3. Find your plan's price per record on BatchData's billing page. Add it in **cents** as `BATCHDATA_CENTS_PER_RECORD`: for example, `3` for $0.03. Jackson uses it to show the cost before every lookup.
+4. **Connections → Real-estate data → Test.** BatchData has no free test call, so this only checks that both values are set. Your first approved comps search is the real test.
+
+### Variables
+| Name | What to paste |
+|---|---|
+| `BATCHDATA_API_TOKEN` | the server-side token (secret, seal it) |
+| `BATCHDATA_CENTS_PER_RECORD` | your plan's price per record, in cents |

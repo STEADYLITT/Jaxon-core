@@ -27,6 +27,7 @@ from .routes_lines import router as lines_router
 from .routes_memory import router as memory_router
 from .routes_opportunities import router as opportunities_router
 from .routes_policy import router as policy_router
+from .routes_realestate import router as realestate_router
 from .routes_research_web import router as web_research_router
 from .routes_runs import router as runs_router
 from .routes_shop import router as shop_router
@@ -61,6 +62,7 @@ app.include_router(whop_router)
 app.include_router(voice_router)
 app.include_router(web_research_router)
 app.include_router(community_router)
+app.include_router(realestate_router)
 app.include_router(sites_router)
 app.include_router(city_router)
 app.include_router(connections_router)

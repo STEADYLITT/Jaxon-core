@@ -315,7 +315,7 @@ LINES: list[Line] = [
          ["Research/simulation only until Steady approves; no offers or contracts sent "
           "automatically."],
          ("real estate", "wholesal", "comps", "arv", "property", "underwrit", "mao"),
-         ["models"], [("PROPERTY_DATA_API_KEY", "comps and property data (not built)")],
+         ["models", "realestate"], [],
          _ch(note="research and simulation only"), budget_monthly_cents=1_000,
          proposed=[_spec("underwriter", "real estate: comps and underwriting",
                          "Underwrite a property from comps Steady provides",
@@ -553,7 +553,10 @@ def kpis(db: Session, tenant_id, key: str) -> list[dict]:  # noqa: C901 - one br
         return [_kpi("Deals analyzed", count(select(func.count()).select_from(Opportunity)
                      .where(Opportunity.tenant_id == tenant_id,
                             Opportunity.category == "real_estate")), "", "opportunities"),
-                _kpi("Comps data", None, "", "", "needs PROPERTY_DATA_API_KEY")]
+                _kpi("Comps searches", count(select(func.count()).select_from(Artifact).where(
+                    Artifact.tenant_id == tenant_id,
+                    Artifact.meta["type"].as_string() == "property_comps")), "",
+                     "artifacts (BatchData comps)")]
     if key == "legal":
         drafts = count(select(func.count()).select_from(Artifact).where(
             Artifact.tenant_id == tenant_id, Artifact.kind == "legal_draft"))
