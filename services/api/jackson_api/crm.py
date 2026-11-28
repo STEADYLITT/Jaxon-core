@@ -257,14 +257,33 @@ class _ResendAdapter:
                             unsubscribe_url=unsubscribe_url, idempotency_key=idempotency_key)
 
 
+class _TwilioAdapter:
+    """SMS and calls through Twilio (ADR-059). Twilio has no idempotency key: the claim
+    step in send_handler (status 'sending' before the call) keeps a message from ever
+    being sent twice blindly."""
+
+    backend = "twilio"
+
+    def __init__(self, twilio):
+        self._t = twilio
+
+    def send(self, channel, to, subject, body, **_provider) -> str:
+        return self._t.sms(to, body) if channel == "sms" else self._t.call(to, body)
+
+
 def sender_for(channel: str, sender_name: str, sender_email: str):
-    """The live provider when configured (email only so far), else the labeled mock."""
+    """The live provider when configured, else the labeled mock."""
     if channel == "email":
         from .connectors import email
 
         r = email.email_backend()
         if r is not None:
             return _ResendAdapter(r, r.sender_for(sender_name, sender_email))
+    elif channel in ("sms", "call"):
+        from .connectors import telephony
+
+        if telephony.configured():
+            return _TwilioAdapter(telephony.twilio())
     return MockSender()
 
 
@@ -292,7 +311,7 @@ def send_handler(ctx):
         channel, limit, target = k.channel, k.daily_limit, (k.audience or {}).get("list")
         launch_id, sender_name, sender_email = k.launch_id, k.sender_name, k.sender_email
         db.rollback()
-    ctx.authorize(Action(Category.OUTBOUND_CAMPAIGN, f"send campaign {cid}", channel="email",
+    ctx.authorize(Action(Category.OUTBOUND_CAMPAIGN, f"send campaign {cid}", channel=channel,
                          target=target))
     sender = sender_for(channel, sender_name, sender_email)  # refuses an unverified sender
     out = {"sent": 0, "suppressed": 0, "deferred_quiet_hours": 0, "deferred_daily_limit": 0,

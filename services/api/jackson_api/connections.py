@@ -31,6 +31,7 @@ one real, harmless call (ADR-038).
     Clip payouts GET the CLIP_PAYOUTS_SOURCE feed (reads it; records nothing)
     Creator earnings GET the CREATOR_EARNINGS_SOURCE feed (reads it; records nothing)
     Followers   reads today's follower counts (YouTube 1 quota unit; records nothing)
+    Twilio      GET the account and its phone numbers (sends nothing)
 """
 
 import os
@@ -51,7 +52,8 @@ SECRET_VARS = ("ANTHROPIC_API_KEY", "SHOPIFY_CLIENT_SECRET", "SHOPIFY_ADMIN_API_
                "GITHUB_APP_TOKEN", "YOUTUBE_API_KEY", "TWITCH_CLIENT_SECRET",
                "AMAZON_SP_CLIENT_SECRET", "AMAZON_SP_REFRESH_TOKEN", "EBAY_CLIENT_SECRET",
                "DATABENTO_API_KEY", "APEX7_RESULTS_TOKEN", "CLIP_PAYOUTS_TOKEN",
-               "CREATOR_EARNINGS_TOKEN", "TIKTOK_DISPLAY_TOKEN")
+               "CREATOR_EARNINGS_TOKEN", "TIKTOK_DISPLAY_TOKEN",
+               "TWILIO_AUTH_TOKEN")
 
 
 def _new_client() -> httpx.Client:
@@ -378,6 +380,23 @@ def test_clip_payouts(ctx: dict) -> dict:
     return _test_payouts("clips")
 
 
+def test_twilio(ctx: dict) -> dict:
+    """Reads the account and checks the From number is really on it. Sends nothing."""
+    from .connectors import telephony as T
+    from .worker_errors import NonRetryableError
+
+    try:
+        t = T.Twilio(os.environ["TWILIO_ACCOUNT_SID"], os.environ["TWILIO_AUTH_TOKEN"],
+                     os.environ["TWILIO_FROM_NUMBER"], client=_new_client())
+        a = t.account()
+    except NonRetryableError as e:
+        raise TestFailed(str(e)) from None
+    if not a["from_number_owned"]:
+        raise TestFailed("TWILIO_FROM_NUMBER is not a number on this Twilio account")
+    return {**a, "sends": "only approved SMS/call campaigns to contacts with recorded "
+                          "consent, 8am-9pm their time"}
+
+
 def test_analytics(ctx: dict) -> dict:
     """Reads today's follower counts (records nothing)."""
     from .connectors import analytics as A
@@ -505,7 +524,11 @@ CONNECTORS = [
               optional=["YOUTUBE_CHANNEL_IDS", "INSTAGRAM_USER_IDS", "TIKTOK_DISPLAY_TOKEN"],
               test=test_analytics,
               note="youtube uses YOUTUBE_API_KEY, instagram uses META_ACCESS_TOKEN"),
-    Connector("sms", "SMS and calls", [], note="not built yet: outreach is email only"),
+    Connector("sms", "SMS and calls (Twilio)",
+              ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER"],
+              test=test_twilio,
+              note="STOP replies: point the number's messaging webhook at "
+                   "/webhooks/twilio/<tenant id>"),
     Connector("artifacts", "File storage (S3)", ["S3_BUCKET"],
               note="optional: files live on the Railway disk until this is set"),
 ]

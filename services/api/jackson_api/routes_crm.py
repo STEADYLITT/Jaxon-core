@@ -483,3 +483,37 @@ async def resend_webhook(tenant_id: uuid.UUID, request: Request, db: DB):
                             source="resend", external_ref=email_id))
     db.commit()
     return {"ok": True, "recorded": kind}
+
+
+# --- SMS opt-outs from Twilio (ADR-059) ---------------------------------------------------------
+
+@router.post("/webhooks/twilio/{tenant_id}", include_in_schema=False)
+async def twilio_inbound(tenant_id: uuid.UUID, request: Request, db: DB):
+    """Incoming texts. A STOP (or UNSUBSCRIBE, CANCEL, END, QUIT…) suppresses that number
+    for SMS and calls at once. Only requests signed with the account's auth token count."""
+    from .connectors import telephony
+
+    token = os.environ.get("TWILIO_AUTH_TOKEN", "")
+    base = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/")
+    from urllib.parse import parse_qsl
+
+    # Twilio posts application/x-www-form-urlencoded; parsed here so no multipart library
+    # is needed (blank values kept: they are part of the signature)
+    form = dict(parse_qsl((await request.body()).decode("utf-8", "replace"),
+                          keep_blank_values=True))
+    url = f"{base}/webhooks/twilio/{tenant_id}"
+    if not token or not telephony.valid_signature(
+            token, url, form, request.headers.get("x-twilio-signature", "")):
+        raise HTTPException(403, "bad signature")
+    if form.get("AccountSid") != os.environ.get("TWILIO_ACCOUNT_SID"):
+        raise HTTPException(403, "another account")
+    phone = norm_phone(form.get("From"))
+    if not phone or not telephony.is_stop(form.get("Body", "")):
+        return HTMLResponse("<Response/>", media_type="text/xml")
+    bind_tenant(db, tenant_id)
+    _suppress(db, tenant_id, "all", phone, "stop")
+    audit(db, tenant_id, None, "suppression.added", "Suppression", None, channel="all",
+          via="sms_stop")
+    db.commit()
+    # Twilio itself sends the carrier-required STOP confirmation: reply with nothing.
+    return HTMLResponse("<Response/>", media_type="text/xml")
